@@ -1,6 +1,6 @@
 #This module is about AMR-type algorithms for the TT
 import numpy as np
-import tt_eigb
+import fext.tt_eigb
 from tt_tensor2 import tt_tensor
 def eigb(A,y0,eps,rmax=150,kickrank=5,nswp=20,verb=1):
     """ Approximate matrix-by-vector multiplication

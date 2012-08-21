@@ -20,9 +20,9 @@ from numpy.linalg import svd,norm,qr
 from numpy import prod, reshape, nonzero, size, sqrt
 from math import sqrt
 from numbers import Number
-import tt_f90
+import fext.tt_f90 as tt_f90
 #import tt2
-import tt_matrix_f90 #This is for my own matrix-by-vector procedure (full)
+import fext.tt_matrix_f90 as tt_matrix_f90#This is for my own matrix-by-vector procedure (full)
 
 #Technical utilities for the conversion (ugly)
 
