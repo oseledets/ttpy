@@ -1,0 +1,30 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+python module tt_eigb
+    interface
+        module tt_block_eig ! in tt_eigb.f90
+        real(kind=8), allocatable,dimension(:) :: result_core
+        subroutine deallocate_result ! in tt_eigb.f90:tt_block_eig
+        end subroutine deallocate_result
+        subroutine tt_eigb(d,n,m,ra,cra,cry0,ry,eps,rmax,lambda, B, kickrank,nswp,verb) ! in tt_eigb.f90:tt_block_eig
+            integer intent(in) :: d
+            integer, intent(in) :: B
+            integer dimension(*),intent(in) :: n
+            integer dimension(*),intent(in) :: m
+            integer dimension(*),intent(in) :: ra
+            real(kind=8) dimension(*),intent(in) :: cra
+            real(kind=8) dimension(*),intent(in) :: cry0
+            real(kind=8) dimension(B), intent(out) :: lambda
+            integer dimension(*),intent(inout) :: ry
+            real(kind=8) intent(in) :: eps
+            integer intent(in) :: rmax
+            integer, optional,intent(in) :: kickrank
+            integer, optional,intent(in) :: nswp
+            integer, optional,intent(in) :: verb
+        end subroutine tt_eigb
+    end module tt_block_eig
+    end interface
+end python module tt_eigb
+
+! This file was auto-generated with f2py (version:2).
+! See http://cens.ioc.ee/projects/f2py2e/

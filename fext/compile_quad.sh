@@ -1,1 +1,1 @@
-f2py -c -m quadgauss hermite_rule.f90
+f2py -c -m quadgauss tt-fort/hermite_rule.f90

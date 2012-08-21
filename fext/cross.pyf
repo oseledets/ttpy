@@ -1,0 +1,37 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+python module tt_cross__user__routines 
+    interface tt_cross_user_interface 
+        function fun(d,x) result(res)
+            integer, intent(in) :: x(d)
+            integer, optional, depend(x), intent(in,hide) :: d = len(x) 
+            double precision :: res
+        end function fun
+    end interface tt_cross_user_interface
+end python module tt_cross__user__routines
+
+python module cross ! in 
+    interface  ! in :cross
+        module cross ! in :cross:cross.f90
+            use tt_lib
+            use time_lib
+            use ttop_lib
+            double precision, allocatable :: core(:)
+	    subroutine tt_cross(d,n,r,ps,fun,eps) ! in :cross:cross.f90:cross
+                use tt_cross__user__routines
+                integer, optional,intent(in,hide),check(len(n)>=d),depend(n) :: d=len(n)
+                integer dimension(d),intent(in) :: n
+		        integer dimension(d+1), intent(out) :: r
+		        integer dimension(d+1), intent(out) :: ps
+                external fun
+                double precision :: fun
+                double precision intent(in) :: eps
+            end subroutine tt_cross
+            subroutine cross_dealloc()
+            end subroutine cross_dealloc
+        end module cross
+    end interface 
+end python module cross
+
+! This file was auto-generated with f2py (version:2).
+! See http://cens.ioc.ee/projects/f2py2e/

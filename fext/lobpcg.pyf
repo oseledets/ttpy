@@ -1,0 +1,41 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+
+python module lobpcg__user__routines 
+    interface lobpcg_user_interface 
+        subroutine avec(n,m,x,ax) ! in lobpcg.f90:blopex:lobpcg:unknown_interface
+            double precision, intent(in) :: x(n,m)
+            double precision, intent(in) :: ax(n,m)
+            integer, optional, depend(x), intent(in,hide) :: m = shape(x,2), n = shape(x,1) 
+        end subroutine avec
+        subroutine bvec(n,m,x,ax) ! in lobpcg.f90:blopex:lobpcg:unknown_interface
+            double precision, intent(in) :: x(n,m)
+            double precision, intent(in) :: ax(n,m)
+            integer, optional, depend(x), intent(in,hide) :: m = shape(x,2), n = shape(x,1) 
+        end subroutine bvec
+        subroutine tvec(n,m,x,ax) ! in lobpcg.f90:blopex:lobpcg:unknown_interface
+            double precision, intent(in) :: x(n,m)
+            double precision, intent(in) :: ax(n,m)
+            integer, optional, depend(x), intent(in,hide) :: m = shape(x,2), n = shape(x,1) 
+        end subroutine tvec
+    end interface lobpcg_user_interface
+end python module lobpcg__user__routines
+python module blopex ! in 
+    interface  ! in :blopex
+        module blopex ! in :blopex:lobpcg.f90
+            subroutine lobpcg2(n,m,avec,bvec,tvec,x,maxiter,tol,lambda) ! in :blopex:lobpcg.f90:blopex
+                use lobpcg__user__routines
+                integer, optional,intent(in),check(shape(x,0)==n),depend(x) :: n=shape(x,0)
+                integer, optional,intent(in),check(shape(x,1)==m),depend(x) :: m=shape(x,1)
+                external avec,bvec,tvec
+                double precision dimension(n,m),intent(inout) :: x
+                integer intent(in) :: maxiter
+                double precision intent(in) :: tol
+                double precision dimension(3 * m),intent(out),depend(m) :: lambda
+            end subroutine lobpcg
+        end module blopex
+    end interface 
+end python module blopex
+
+! This file was auto-generated with f2py (version:2).
+! See http://cens.ioc.ee/projects/f2py2e/
