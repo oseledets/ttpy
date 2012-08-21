@@ -1,0 +1,67 @@
+
+ifeq ($(CPU),mac-gfort)
+      FOPT    = -m64 -fopenmp #-fdefault-integer-8 #-xSSE4.2
+      FORT     = gfortran -O3 -ffree-line-length-none ${FOPT}
+      FORTNO   = gfortran -O0 -ffree-line-length-none ${FOPT}
+      LDR     = gfortran ${FOPT}
+      CC      = gcc # ${FOPT}
+      #LIB     = -L/usr/local/lib  -lgoto2 -lfftw3
+      #LIB     = -L/usr/local/lib -lpthread -llapack_goto -lblas_goto -ldfftpack -lfftw3
+      #LIB = -L/Library/Frameworks/EPD64.framework/Versions/7.2/lib -lmkl_intel_ilp64 -lmkl_intel_thread -lmkl_core -liomp5 -lpthread -lm
+      #LIB =  -L/usr/local/lib libgoto2.a 
+      #LIB = -L/usr/local/lib/ -lmkl  -llapack  -lgomp
+      #LDFLAG = '-undefined dynamic_lookup ${LIB}'
+      LIB = -llapack -lblas -lgomp
+      #LIB = /Applications/MATLAB_R2011a.app/bin/maci64/mkl.dylib  /Applications/MATLAB_R2011a.app/bin/maci64/mllapack.dylib
+      #LIB = -L/Applications/MATLAB_R2011a.app/bin/maci64/ -lmwlapack -lmwblas
+      #LIB =  -L/usr/local/lib/    -lmkl_intel_ilp64
+      #LIB     = -framework veclib
+      #/usr/local/lib  -llapack -lblas -lfftw3
+endif
+ifeq ($(CPU),fujik-sun)
+      FORT   = sunf95 -O3 -xopenmp -xautopar ${FOPT}
+      FORTNO = sunf95 -O0 ${FOPT}
+      LDR   = sunf95 ${FOPT}
+      CC    = suncc ${FOPT}
+      LIB   = -O3 -xlic_lib=sunperf -xopenmp -xautopar
+endif
+ifeq ($(CPU),fujik-ifort)
+      FORT   = ifort -O2 -openmp-report=1 ${FOPT}
+      FORTNO = ifort -O0 ${FOPT}
+      LDR   = ifort ${FOPT}
+      CC    = icc ${FOPT}
+      LIB   = -mkl
+endif
+ifeq ($(CPU),spring-ifort)
+      FOPT    = -i4
+      FORT   = ifort -O2 -fPIC -vec-report=0 ${FOPT}
+      FORTNO = ifort -O0 ${FOPT}
+      LDR   = ifort ${FOPT}
+      CC    = icc ${FOPT}
+      LIB   = -mkl
+      #LIB   = -L /opt/local/acml/ifort64_mp/lib -lacml_mp -lfftw3
+endif
+ifeq ($(CPU),mpg-gfort)
+      FORT     = gfortran -O2 -ffree-line-length-none ${FOPT}
+      FORTNO   = gfortran -O0 -ffree-line-length-none ${FOPT}
+      LDR     = gfortran ${FOPT}
+      CC      = gcc # ${FOPT}
+      #LIB   = -L /opt/local/acml/gfortran64_mp/lib -lacml_mp -lfftw3
+      #LIB   = -L /opt/local/intel/fce/11.0.070/mkl/lib/em64t/ -lmkl -lfftw3
+      LIB = -lblas -llapack -lfftw3
+endif
+ifeq ($(CPU),mpg-mpi)
+      FORT     = mpif90 -O2 -ffree-line-length-none ${FOPT}
+      FORTNO   = mpif90 -O0 -ffree-line-length-none ${FOPT}
+      LDR     = mpif90 ${FOPT}
+      CC      = mpicc # ${FOPT}
+      LIB = -lblas -llapack -lfftw3
+endif
+ifeq ($(CPU),ost)
+      FORT     = mpif77 -fast -m64 -xvector=simd 
+      FORTNO   = mpif77 -O0 -m64 -xvector=simd 
+      LDR     = mpif77 -fast -m64 -xvector=simd 
+      CC      = mpicc -fast -m64 -xvector=simd  -xautopar
+      LIB     = -xlic_lib=sunperf
+endif
+

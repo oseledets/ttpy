@@ -1,0 +1,1 @@
+f2py --build-dir f2py_temp --fcompiler=gnu95 -c tt_matrix.pyf  tensor_util.f90 tt_matrix.f90   --f90flags="-ffree-line-length-none   -Wall  -Wline-truncation  -Wcharacter-truncation  -Wsurprising  -Waliasing  -Wimplicit-interface  -Wunused-parameter  -fcheck=bounds  -fcheck=do  -fcheck=mem  -fcheck=recursion  -std=f2008   -fbacktrace" 

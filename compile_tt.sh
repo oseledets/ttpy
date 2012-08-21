@@ -1,0 +1,2 @@
+f2py --build-dir f2py_temp -c tt_f90.pyf  matrix_util.f90 say.f90 ptype.f90 timef.f90 sort.f90 rnd.f90 mat.f90 trans.f90  ort.f90  svd.f90\
+ tt.f90 ttaux.f90 ttop.f90 python_conv.f90 tt_f90.f90 --fcompiler=gnu95 --f90flags="-ffree-line-length-none   -Wall  -Wline-truncation  -Wcharacter-truncation  -Wsurprising  -Waliasing  -Wimplicit-interface  -Wunused-parameter  -fcheck=bounds  -fcheck=do  -fcheck=mem  -fcheck=recursion  -std=f2008   -fbacktrace" 
