@@ -22,7 +22,7 @@ from math import sqrt
 from numbers import Number
 import fext.tt_f90 as tt_f90
 #import tt2
-import fext.tt_matrix_f90 as tt_matrix_f90#This is for my own matrix-by-vector procedure (full)
+#import fext.tt_matrix_f90 as tt_matrix_f90#This is for my own matrix-by-vector procedure (full)
 
 #Technical utilities for the conversion (ugly)
 
@@ -493,16 +493,16 @@ def tt_mv(a,b):
 
 #TT-by-a-full matrix product (wrapped in Fortran 90, inspired by
 #MATLAB prototype)
-def tt_full_mv(a,b):
-    mv = tt_matrix_f90.tt_matrix.tt_mv_full
-    if b.ndim is 1:
-        rb = 1
-    else:
-        rb = b.shape[1]
-    x1 = b.reshape(b.shape[0],rb)
-    y = np.zeros(a.n.prod(),dtype=np.float)
-    y = mv(a.n,a.m,a.tt.r,a.tt.ps,a.tt.core,x1,a.n.prod())
-    return y
+#def tt_full_mv(a,b):
+#    mv = tt_matrix_f90.tt_matrix.tt_mv_full
+#    if b.ndim is 1:
+#        rb = 1
+#    else:
+#        rb = b.shape[1]
+#    x1 = b.reshape(b.shape[0],rb)
+#    y = np.zeros(a.n.prod(),dtype=np.float)
+#    y = mv(a.n,a.m,a.tt.r,a.tt.ps,a.tt.core,x1,a.n.prod())
+#    return y
 
 def col(a,k):
     """Get the column of the block TT-tensor"""

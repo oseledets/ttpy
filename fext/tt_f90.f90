@@ -17,11 +17,12 @@ contains
     integer, intent(out) :: r(d+1)
     integer, intent(out) :: ps(d+1)
     real(8), intent(in) :: a(:)
+    integer :: n1(d)
     type(dtt) :: tt
     character(len=*),parameter :: subnam='full_to_tt'
     integer :: i,M,lwork,info
     call svd(n,a,tt,eps)
-    call sdv_to_arrays(n,r,d,ps,core,tt)
+    call sdv_to_arrays(n1,r,d,ps,core,tt)
     call dealloc(tt)
   end subroutine dfull_to_tt
   
@@ -33,11 +34,12 @@ contains
     integer, intent(out) :: r(d+1)
     integer, intent(out) :: ps(d+1)
     complex(8), intent(in) :: a(:)
+    integer :: n1(d)
     type(ztt) :: tt
     character(len=*),parameter :: subnam='full_to_tt'
     integer :: i,M,lwork,info
     call svd(n,a,tt,eps)
-    call sdv_to_arrays(n,r,d,ps,zcore,tt)
+    call sdv_to_arrays(n1,r,d,ps,zcore,tt)
     call dealloc(tt)
   end subroutine zfull_to_tt
 
@@ -99,11 +101,12 @@ contains
     real(8),    intent(in) :: core1(:)
     real(8),    intent(in) :: core2(:)
     type(dtt) :: tt1, tt2, tt
+    integer :: n1(d)
     call arrays_to_sdv(n,r1,d,ps1,core1,tt1)
     call arrays_to_sdv(n,r2,d,ps2,core2,tt2)
     call axpy(1.d0,tt1,1.d0,tt2)
     !tt1 is the sum
-    call sdv_to_arrays(n,rres,d,psres,core,tt2)
+    call sdv_to_arrays(n1,rres,d,psres,core,tt2)
 
     call dealloc(tt1)
     call dealloc(tt2)
@@ -125,12 +128,13 @@ contains
     complex(8),    intent(in) :: core2(:)
     complex(8) :: ONE
     type(ztt) :: tt1, tt2, tt
+    integer :: n1(d)
     ONE = (1d0, 0d0)
     call arrays_to_sdv(n,r1,d,ps1,core1,tt1)
     call arrays_to_sdv(n,r2,d,ps2,core2,tt2)
     call axpy(ONE,tt1,ONE,tt2)
     !tt1 is the sum
-    call sdv_to_arrays(n,rres,d,psres,zcore,tt2)
+    call sdv_to_arrays(n1,rres,d,psres,zcore,tt2)
 
     call dealloc(tt1)
     call dealloc(tt2)
@@ -148,9 +152,10 @@ contains
     real(8), intent(in) :: cr(:)
     real(8), intent(in) :: eps
     type(dtt) :: tt
+    integer :: n1(d)
     call arrays_to_sdv(n,r,d,ps,cr,tt)
     call svd(tt,eps)
-    call sdv_to_arrays(n,r,d,ps,core,tt)
+    call sdv_to_arrays(n1,r,d,ps,core,tt)
   end subroutine dtt_compr2
   
   subroutine ztt_compr2(n,d,r,ps,cr,eps)
@@ -162,9 +167,10 @@ contains
     complex(8), intent(in) :: cr(:)
     real(8), intent(in) :: eps
     type(ztt) :: tt
+    integer :: n1(d)
     call arrays_to_sdv(n,r,d,ps,cr,tt)
     call svd(tt,eps)
-    call sdv_to_arrays(n,r,d,ps,zcore,tt)
+    call sdv_to_arrays(n1,r,d,ps,zcore,tt)
   end subroutine ztt_compr2
 
   subroutine dtt_nrm(n,d,r,ps,cr,nrm)
@@ -253,12 +259,13 @@ contains
       real(8),    intent(in) :: core1(:)
       real(8),    intent(in) :: core2(:)
       type(dtt) :: tt1, tt2, tt
+      integer :: n1(d)
       call arrays_to_sdv(n,r1,d,ps1,core1,tt1)
       call arrays_to_sdv(n,r2,d,ps2,core2,tt2)
       call dtt_ha1(tt1,tt2,tt)
       call dealloc(tt1)
       call dealloc(tt2)
-      call sdv_to_arrays(n,rres,d,psres,core,tt)
+      call sdv_to_arrays(n1,rres,d,psres,core,tt)
       call dealloc(tt)
     end subroutine dtt_hdm
 
