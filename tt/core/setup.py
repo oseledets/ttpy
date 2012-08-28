@@ -7,7 +7,7 @@ def configuration(parent_package='',top_path=None):
     lib_tt = ['../tt-fort/mytt.a']
     src = ['tt_f90.f90','tt_f90.pyf']
     inc_dir = ['../tt-fort']
-    config.add_extension('tt_f90',sources=src,depends=lib_tt,include_dirs=inc_dir,extra_objects="../tt-fort/mytt.a")
+    config.add_extension('tt_f90',sources=src,include_dirs=inc_dir),#extra_objects="../tt-fort/mytt.a")
     return config
     
 #from distutils.core import setup
