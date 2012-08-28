@@ -22,7 +22,7 @@ from math import sqrt
 from numbers import Number
 import fext.tt_f90 as tt_f90
 #import tt2
-#import fext.tt_matrix_f90 as tt_matrix_f90#This is for my own matrix-by-vector procedure (full)
+#import fext.matrix_f90 as matrix_f90#This is for my own matrix-by-vector procedure (full)
 
 #Technical utilities for the conversion (ugly)
 
@@ -32,7 +32,7 @@ import fext.tt_f90 as tt_f90
 
 #The main class for working with TT-tensors
 
-class tt_tensor:
+class tensor:
     def __init__(self,a=None,eps=1e-14):
         if a is None:
             self.core = 0
@@ -65,7 +65,7 @@ class tt_tensor:
     @staticmethod
     def from_list(a):
         d = len(a) #Number of cores
-        res = tt_tensor()
+        res = tensor()
         n = np.zeros(d,dtype=np.int32)
         r = np.zeros(d+1,dtype=np.int32)
         cr = np.array([])
@@ -98,7 +98,7 @@ class tt_tensor:
 
     #Print statement
     def __repr__(self):
-        res = "This is a %d-dimensional tt_tensor \n" % self.d
+        res = "This is a %d-dimensional tensor \n" % self.d
         r = self.r
         d = self.d
         n = self.n
@@ -127,7 +127,7 @@ class tt_tensor:
     def __add__(self,other):
         if other is None:
             return self
-        c = tt_tensor()
+        c = tensor()
         c.r = np.zeros((self.d+1,),dtype=np.int32)
         c.ps = np.zeros((self.d+1,),dtype=np.int32)
         c.n = self.n
@@ -150,7 +150,7 @@ class tt_tensor:
 
     #@profile
     def round(self,eps):
-       c=tt_tensor()
+       c=tensor()
        c.n=self.n
        c.d=self.d
        c.r=self.r.copy()
@@ -173,7 +173,7 @@ class tt_tensor:
         return nrm
 	
     def __rmul__(self,other):
-       c = tt_tensor()
+       c = tensor()
        c.d = self.d
        c.n = self.n
        if isinstance(other,Number):
@@ -189,7 +189,7 @@ class tt_tensor:
        return c
 	
     def __mul__(self,other):
-        c = tt_tensor()
+        c = tensor()
         c.d = self.d
         c.n = self.n
         if isinstance(other,Number):
@@ -213,7 +213,7 @@ class tt_tensor:
             return self
         a = self
         b = other
-        c = tt_tensor()
+        c = tensor()
         c.d = a.d + b.d
         c.n = np.concatenate((a.n,b.n))
         c.r = np.concatenate((a.r[0:a.d],b.r[0:b.d+1]))
@@ -236,7 +236,7 @@ class tt_tensor:
         return dt
 
     def __col__(self,k):
-        c = tt_tensor()
+        c = tensor()
         d = self.d
         r = self.r.copy()
         n = self.n.copy()
@@ -259,7 +259,7 @@ class tt_tensor:
         return c
 
     def __diag__(self):
-        cl = tt_tensor.to_list(self)
+        cl = tensor.to_list(self)
         d = self.d
         r = self.r
         n = self.n
@@ -271,7 +271,7 @@ class tt_tensor:
                 for s2 in xrange(r[i+1]):
                     res_core[s1,:,:,s2] = np.diag(cur_core[s1,:,s2].reshape(n[i],order='F'))
             res.append(res_core)
-        return tt_matrix.from_list(res)
+        return matrix.from_list(res)
     
     def __neg__(self):
        return self*(-1)
@@ -284,7 +284,7 @@ class tt_tensor:
         self.core = np.zeros((self.ps[self.d]-1,),dtype=np.float)
 
     def copy(self):
-        c = tt_tensor()
+        c = tensor()
         c.core = self.core.copy()
         c.d = self.d
         c.n = self.n.copy()
@@ -293,14 +293,14 @@ class tt_tensor:
         return c
 	
 
-class tt_matrix:
+class matrix:
     def __init__(self,a=None,eps=1e-14, n=None, m=None):
         if a is None:
             self.n = 0 #Only two additional fields
             self.m = 0
-            self.tt = tt_tensor()
+            self.tt = tensor()
             return
-        if isinstance(a,tt_tensor): #Convert from a tt-tensor
+        if isinstance(a,tensor): #Convert from a tt-tensor
             if ( n is None or m is None):
                 n1 = np.sqrt(a.n).astype(np.int32)
                 m1 = np.sqrt(a.n).astype(np.int32)
@@ -309,7 +309,7 @@ class tt_matrix:
                 m1 = np.array(m,dtype=int32)
                 self.n = n1
                 self.m = m1
-                self.tt = tt_tensor()
+                self.tt = tensor()
                 self.tt.core = a.core.copy()
                 self.tt.ps = a.ps.copy()
                 self.tt.r = a.r.copy()
@@ -326,7 +326,7 @@ class tt_matrix:
             prm = prm.flatten('F')
             sz = self.n * self.m
             b = c.transpose(prm).reshape(sz,order='F')
-            self.tt=tt_tensor(b,eps)
+            self.tt=tensor(b,eps)
             return
         except ValueError:
             pass
@@ -334,7 +334,7 @@ class tt_matrix:
     @staticmethod
     def from_list(a):
         d = len(a) #Number of cores
-        res = tt_matrix()
+        res = matrix()
         n = np.zeros(d,dtype=np.int32)
         r = np.zeros(d+1,dtype=np.int32)
         m = np.zeros(d,dtype=np.int32)
@@ -347,7 +347,7 @@ class tt_matrix:
             m[i] = a[i].shape[2]
         res.n = n
         res.m = m
-        tt = tt_tensor()
+        tt = tensor()
         tt.n = n * m 
         tt.core = cr
         tt.r = r
@@ -358,7 +358,7 @@ class tt_matrix:
 	
 
     def __repr__(self):
-        res = "This is a %d-dimensional tt_matrix \n" % self.tt.d
+        res = "This is a %d-dimensional matrix \n" % self.tt.d
         r = self.tt.r
         d = self.tt.d
         n = self.n
@@ -371,7 +371,7 @@ class tt_matrix:
     def __add__(self,other):
         if other is None:
             return self
-        c = tt_matrix()
+        c = matrix()
         c.tt = self.tt + other.tt
         c.n = np.asanyarray(self.n,dtype=np.int32).copy()
         c.m = np.asanyarray(self.m,dtype=np.int32).copy()
@@ -383,7 +383,7 @@ class tt_matrix:
         return other + self
 
     def __sub__(self,other):
-		c = tt_matrix()
+		c = matrix()
 		c.tt = self.tt-other.tt
 		c.n = np.asanyarray(self.n,dtype=np.int32).copy()
 		c.m = np.asanyarray(self.m,dtype=np.int32).copy()
@@ -393,7 +393,7 @@ class tt_matrix:
         return (-1)*self
 
     def __rmul__(self,other):
-		c = tt_matrix()
+		c = matrix()
 		c.n = np.asanyarray(self.n,dtype=np.int32).copy()
 		c.m = np.asanyarray(self.m,dtype=np.int32).copy()
 		if isinstance(other,Number):
@@ -403,7 +403,7 @@ class tt_matrix:
 		return c
 	
     def __mul__(self,other):
-        c = tt_matrix()
+        c = matrix()
         c.n = np.asanyarray(self.n,dtype=np.int32).copy()
         c.m = np.asanyarray(self.m,dtype=np.int32).copy()
         if isinstance(other,Number):
@@ -418,7 +418,7 @@ class tt_matrix:
             return self
         a = self
         b = other
-        c = tt_matrix()
+        c = matrix()
         c.n = np.concatenate((a.n,b.n))
         c.m = np.concatenate((a.m,b.m))
         c.tt = kron(a.tt,b.tt)
@@ -431,7 +431,7 @@ class tt_matrix:
         """ Computes an approximation to a 
 	    TT-matrix in with accuracy EPS 
 	"""
-        c = tt_matrix()
+        c = matrix()
         c.tt = self.tt.round(eps)
         c.n = self.n.copy()
         c.m = self.m.copy()
@@ -439,7 +439,7 @@ class tt_matrix:
 	
     def copy(self):
         """ Creates a copy of the TT-matrix """
-        c = tt_matrix()
+        c = matrix()
         c.tt = self.tt.copy()
         c.n = self.n.copy()
         c.m = self.m.copy()
@@ -447,7 +447,7 @@ class tt_matrix:
 
     def __diag__(self):
         """ Computes the diagonal of the TT-matrix"""
-        c = tt_tensor()
+        c = tensor()
         c.n = self.n.copy()
         c.r = self.tt.r.copy()
         c.d = self.tt.d #Number are NOT referenced
@@ -494,7 +494,7 @@ def tt_mv(a,b):
 #TT-by-a-full matrix product (wrapped in Fortran 90, inspired by
 #MATLAB prototype)
 #def tt_full_mv(a,b):
-#    mv = tt_matrix_f90.tt_matrix.tt_mv_full
+#    mv = matrix_f90.matrix.tt_mv_full
 #    if b.ndim is 1:
 #        rb = 1
 #    else:
@@ -545,7 +545,7 @@ def mkron(a):
                          
 
 def _hdm (a,b):
-    c = tt_tensor()
+    c = tensor()
     c.d = a.d
     c.n = a.n
     c.r = np.zeros((a.d+1,1),dtype=np.int32)
@@ -562,7 +562,7 @@ def _hdm (a,b):
 
 def ones(n,d=None):
 	""" Creates a TT-tensor of all ones"""
-	c = tt_tensor()
+	c = tensor()
 	if d is None:
             c.n = np.array(n,dtype=np.int32)
             c.d = c.n.size
@@ -585,7 +585,7 @@ def rand(n,d,r):
 		r0 = np.ones((d+1,),dtype=np.int32)*r0
 		r0[0] = 1
 		r0[d] = 1
-	c = tt_tensor()
+	c = tensor()
 	c.d = d
 	c.n = n0
 	c.r = r0
@@ -597,8 +597,8 @@ def rand(n,d,r):
 #Identity matrix
 def eye(n,d=None):
 	""" Creates an identity TT-matrix"""
-	c = tt_matrix()
-	c.tt = tt_tensor()
+	c = matrix()
+	c.tt = tensor()
 	if d is None:
 		n0=np.asanyarray(n,dtype=np.int32)
 		c.tt.d=n0.size
@@ -620,7 +620,7 @@ def eye(n,d=None):
 #Laplace operator
 def qlaplace_dd(d):
     """Creates a QTT representation of the Laplace operator"""
-    res = tt_matrix()
+    res = matrix()
     d0 = d[::-1]
     D = len(d0)
     I = np.eye(2)
@@ -698,13 +698,13 @@ def qlaplace_dd(d):
                         cur_core[2,:,:,0]=J;
                         cur_core[3,:,:,3]=I;
                 cr.append(cur_core)
-    return tt_matrix.from_list(cr)
+    return matrix.from_list(cr)
 
 
 def xfun(n,d=None):
     """ Create a QTT-representation of 0:prod(n) vector"""
-    c = tt_matrix()
-    c.tt = tt_tensor()
+    c = matrix()
+    c.tt = tensor()
     if d is None:
         n0=np.anyarray(n,dtype=np.int32)
         c.tt.d=n0.size
@@ -726,7 +726,7 @@ def xfun(n,d=None):
     cur_core = np.ones((2,n0[d-1],1))
     cur_core[1,:,0] = ni*np.arange(n0[d-1])
     cr.append(cur_core)
-    return tt_tensor.from_list(cr)
+    return tensor.from_list(cr)
 
 
 
