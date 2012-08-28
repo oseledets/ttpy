@@ -1,0 +1,47 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+
+python module amr_f90 ! in 
+    interface  ! in :amr_f90
+        module tt_adapt_als ! in :amr_f90:../tt-fort/tt_adapt_als.f90
+            real(kind=8), allocatable,dimension(:) :: result_core
+            subroutine tt_mvk4(d,n,m,rx,ra,cra,crx,cry0,ry,eps,rmax,kickrank,nswp,verb) ! in :amr_f90:../tt-fort/tt_adapt_als.f90:tt_adapt_als
+                integer intent(in) :: d
+                integer dimension(*),intent(in) :: n
+                integer dimension(*),intent(in) :: m
+                integer dimension(*),intent(in) :: rx
+                integer dimension(*),intent(in) :: ra
+                real(kind=8) dimension(*),intent(in) :: cra
+                real(kind=8) dimension(*),intent(in) :: crx
+                real(kind=8) dimension(*),intent(in) :: cry0
+                integer dimension(*),intent(inout) :: ry
+                real(kind=8) intent(in) :: eps
+                integer intent(in) :: rmax
+                integer, optional,intent(in) :: kickrank
+                integer, optional,intent(in) :: nswp
+                integer, optional,intent(in) :: verb
+            end subroutine tt_mvk4
+            subroutine tt_amr_solve(d,n,m,ry,ra,cra,cry,crx0,rx,eps,kickrank,nswp,verb,prec,nrestart,niters) ! in :amr_f90:../tt-fort/tt_adapt_als.f90:tt_adapt_als
+                integer intent(in) :: d
+                integer dimension(*),intent(in) :: n
+                integer dimension(*),intent(in) :: m
+                integer dimension(*),intent(in) :: ry
+                integer dimension(*),intent(in) :: ra
+                real(kind=8), target,dimension(*),intent(in) :: cra
+                real(kind=8) dimension(*),intent(in) :: cry
+                real(kind=8) dimension(*),intent(in) :: crx0
+                integer dimension(*),intent(inout) :: rx
+                real(kind=8) intent(in) :: eps
+                integer, optional,intent(in) :: kickrank
+                integer, optional,intent(in) :: nswp
+                integer, optional,intent(in) :: verb
+                character, optional,intent(in) :: prec
+                integer, optional,intent(in) :: nrestart
+                integer, optional,intent(in) :: niters
+            end subroutine tt_amr_solve
+        end module tt_adapt_als
+    end interface 
+end python module amr_f90
+
+! This file was auto-generated with f2py (version:2).
+! See http://cens.ioc.ee/projects/f2py2e/

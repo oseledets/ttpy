@@ -4,9 +4,9 @@
 import numpy as np
 from scipy.linalg import toeplitz
 from eigb import *
-#from tt_tensor2 import *
-import tt_tensor2 as tt
-from tt_tensor2 import tt_tensor, tt_matrix #These two lines seems
+#from tt.tensor2 import *
+import tt.tensor2 as tt
+#from tt.tensor2 import tt.tensor, tt.matrix #These two lines seems
 import time
 from math import pi,sqrt
 from numpy.polynomial.hermite import Hermite
@@ -40,7 +40,7 @@ for i in xrange(N):
             lp[i,j] = (-1)**(i - j)*(2*(x[i] - x[j])**(-2) - 0.5)
         else:
             lp[i,j] = 1.0/6*(4*N - 1 - 2 * x[i]**2)
-lp = tt_matrix(lp)
+lp = tt.matrix(lp)
 #h = 2 * pi/N
 #x = h * np.arange(1,N+1)
 #x = L * (x - pi)/pi
@@ -50,7 +50,7 @@ lp = tt_matrix(lp)
 #lp = -lp
 e = tt.eye([N])
 
-#lp = tt_matrix(lp)
+#lp = tt.matrix(lp)
 #Calculate the kinetic energy (Laplace) operator
 lp2 = None
 eps = 1e-8
@@ -66,7 +66,7 @@ for i in xrange(f):
 
 #Now we will compute Henon-Heiles stuff
 xx = []
-t = tt_tensor(x)
+t = tt.tensor(x)
 ee = tt.ones([N])
 for  i in xrange(f):
     t0 = t
