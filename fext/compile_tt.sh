@@ -1,2 +1,0 @@
-f2py --build-dir tt-fort/f2py_temp -c tt_f90.pyf  tt-fort/matrix_util.f90 tt-fort/say.f90 tt-fort/ptype.f90 tt-fort/timef.f90 tt-fort/sort.f90 tt-fort/rnd.f90 tt-fort/mat.f90 tt-fort/trans.f90  tt-fort/ort.f90  tt-fort/svd.f90\
- tt-fort/tt.f90 tt-fort/ttaux.f90 tt-fort/ttop.f90 tt-fort/python_conv.f90 tt_f90.f90 --fcompiler=gnu95 --f90flags="-ffree-line-length-none   -Wall  -Wline-truncation  -Wcharacter-truncation  -Wsurprising  -Waliasing  -Wimplicit-interface  -Wunused-parameter  -fcheck=bounds  -fcheck=do  -fcheck=mem  -fcheck=recursion  -std=f2008   -fbacktrace" 
