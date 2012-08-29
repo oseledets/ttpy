@@ -1,13 +1,16 @@
 #This script will build the main subpackages  
 def configuration(parent_package='',top_path=None):
     from numpy.distutils.misc_util import Configuration, get_info
-    config = Configuration('tt_f90', parent_package, top_path)
+    config = Configuration('kls', parent_package, top_path)
     #import ipdb; ipdb.set_trace()
     #config.add_library()
-    lib_tt = ['tt-fort/mytt.a']
-    src = ['tt_f90.f90','tt_f90.pyf']
-    inc_dir = ['tt-fort']
-    config.add_extension('tt_f90',sources=src,depends=lib_tt,include_dirs=inc_dir,extra_objects="mytt.a")
+    tt_dir = '../tt-fort/'
+
+    src = ['putstrmodule.F90','dispmodule.f90','matrix_util.f90','ttals.f90','dlacn1.f','dlapst.f','dlarpc.f',
+           'zlacn1.f','expokit.f','explib.f90','normest.f90','tt_kls.f90']
+    src = [tt_dir + x for x in src]
+    src.append('tt_kls.pyf')
+    config.add_extension('dyn_tt',sources=src,include_dirs=[tt_dir])
     #config.add_extension['
     return config
     
@@ -21,8 +24,7 @@ def configuration(parent_package='',top_path=None):
 
 
 if __name__ == '__main__':
-    from numpy.distutils.core import setup
-    setup(**configuration(top_path='').todict())
+    print 'This is the wrong setup.py to run'
 
 
 #, include_dirs=None, define_macros=None, undef_macros=None, library_dirs=None, libraries=None, runtime_library_dirs=None, extra_objects=None, extra_compile_args=None, extra_link_args=None, export_symbols=None, swig_opts=None, depends=None, language=None, f2py_options=None, module_dirs

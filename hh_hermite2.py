@@ -4,10 +4,9 @@
 import numpy as np
 from numpy.fft import fft
 from scipy.linalg import toeplitz
-from kls import *
-#from tt_tensor2 import *
-import tt_tensor2 as tt
-from tt_tensor2 import tt_tensor, tt_matrix #These two lines seems
+from tt.kls import *
+#from tt.tensor2 import *
+import tt
 import time
 from math import pi,sqrt
 import quadgauss
@@ -40,7 +39,7 @@ for i in xrange(N):
             lp[i,j] = (-1)**(i - j)*(2*(x[i] - x[j])**(-2) - 0.5)
         else:
             lp[i,j] = 1.0/6*(4*N - 1 - 2 * x[i]**2)
-lp = tt_matrix(lp)
+lp = tt.matrix(lp)
 #h = 2 * pi/N
 #x = h * np.arange(1,N+1)
 #x = L * (x - pi)/pi
@@ -50,7 +49,7 @@ lp = tt_matrix(lp)
 #lp = -lp
 e = tt.eye([N])
 
-#lp = tt_matrix(lp)
+#lp = tt.matrix(lp)
 #Calculate the kinetic energy (Laplace) operator
 lp2 = None
 eps = 1e-8
@@ -66,7 +65,7 @@ for i in xrange(f):
 
 #Now we will compute Henon-Heiles stuff
 xx = []
-t = tt_tensor(x)
+t = tt.tensor(x)
 ee = tt.ones([N])
 for  i in xrange(f):
     t0 = t
@@ -96,7 +95,7 @@ H = 1j*A
 #Generate the initial Gaussian, which is just shifted
 
 gs = np.exp(-0.5*(x-2)**2)
-gs = tt_tensor(gs,1e-8)
+gs = tt.tensor(gs,1e-8)
 start = None
 for i in xrange(f):
     start = tt.kron(start,gs)
@@ -107,7 +106,7 @@ y = start.copy()
 print 'initial value norm:', start.norm()
 cf = []
 tf = 8.0
-nit = 1000
+nit = 5
 tau = (tf/nit)
 i = 0
 t = 0

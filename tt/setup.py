@@ -18,6 +18,7 @@ def configuration(parent_package='',top_path=None):
     print config
     config.add_subpackage('core')
     config.add_subpackage('amr')
+    config.add_subpackage('kls')
     return config
     
 #from distutils.core import setup
