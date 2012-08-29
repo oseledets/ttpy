@@ -11,9 +11,9 @@ def configuration(parent_package='',top_path=None):
     #config.add_library('mytt',sources = tt_src)
     #config.add_include_dirs(config.paths([tt_fort]))
     config.add_subpackage('core')
-    #config.add_subpackage('amr')
-    #config.add_subpackage('kls')
-    #config.add_subpackage('eigb')
+    config.add_subpackage('amr')
+    config.add_subpackage('kls')
+    config.add_subpackage('eigb')
     return config
     
 #from distutils.core import setup
