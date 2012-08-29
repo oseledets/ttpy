@@ -7,19 +7,13 @@ def configuration(parent_package='',top_path=None):
                        delegate_options_to_subpackages=True,
                        quiet=False,     
     )
-    tt_fort = 'tt-fort'
-    tt_src = ['nan.f90', 'timef.f90', 'say.f90', 'rnd.f90', 'ptype.f90', 'sort.f90', 'trans.f90', 'ort.f90', 
-              'mat.f90', 'check.f90', 'lr.f90', 'maxvol.f90', 'svd.f90', 'matrix_util.f90', 'tt.f90', 'ttaux.f90', 
-              'ttop.f90', 'ttio.f90',  'tts.f90', 'python_conv.f90', 'putstrmodule.F90', 'dispmodule.f90', 'tt_linalg.f90']
-    tt_src = [tt_fort +'/'+ x for x in tt_src]
     
-    config.add_library('mytt',sources = tt_src)
-    #config.add_include_dirs(tt_fort)
-    print config
+    #config.add_library('mytt',sources = tt_src)
+    #config.add_include_dirs(config.paths([tt_fort]))
     config.add_subpackage('core')
-    config.add_subpackage('amr')
-    config.add_subpackage('kls')
-    config.add_subpackage('eigb')
+    #config.add_subpackage('amr')
+    #config.add_subpackage('kls')
+    #config.add_subpackage('eigb')
     return config
     
 #from distutils.core import setup

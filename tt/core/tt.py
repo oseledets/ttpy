@@ -20,7 +20,7 @@ from numpy.linalg import svd,norm,qr
 from numpy import prod, reshape, nonzero, size, sqrt
 from math import sqrt
 from numbers import Number
-import fext.tt_f90 as tt_f90
+import tt_f90
 #import tt2
 #import fext.matrix_f90 as matrix_f90#This is for my own matrix-by-vector procedure (full)
 
