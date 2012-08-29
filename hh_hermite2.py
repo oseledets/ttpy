@@ -106,16 +106,20 @@ y = start.copy()
 print 'initial value norm:', start.norm()
 cf = []
 tf = 8.0
-nit = 5
+nit = 1000
 tau = (tf/nit)
 i = 0
 t = 0
+import time
+t1 = time.time()
 while t <= tf:
     print '%f/%f' % (t,tf)
     y = kls(H,y,tau)
     #cf.append(np.dot(y.full().flatten(),start.full().flatten()))
     cf.append(tt.dot(y,start))
     t += tau
+t2 = time.time()
+print("Elapsed time: %f" % (t2-t1))
 #Redirect.stop_redirect()
 
 zz = np.abs(fft(np.conj(cf)))

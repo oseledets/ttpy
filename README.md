@@ -9,6 +9,8 @@ and are wrapped with f2py tool.
 
 Installation
 ============
+
+##Downloading the code
 This installation works with git submodules, so you should be sure, that you got them all right.
 The best way is to work with this repository is to use git with a version >= 1.6.5.
 Then, to clone the repository, you can simply run
@@ -21,6 +23,8 @@ git pull --recurse-submodules
 ```
 This command will update the submodules as well.
 
+
+##Installing the package
 The installation of the package is done via **setup.py** scripts.
 
 The installation script is a very newbie one, but it seems to work.
@@ -32,6 +36,24 @@ This builds the package tt with submodules amr, eigb, kls.
 For some of the examples the quadgauss package is required, so go to 
 **quadgauss** directory and run setup.py there
 
+##BLAS and so on
+
+Almost all of the packages depend on the BLAS/LAPACK libraries, but the code 
+is not explicitly linked against them, so if you do not have the BLAS/LAPACK
+in the global namespace of your Python interpreter, you will encounter "undefined symbols"
+error during the import of the tt package. There are two possibilities how to deal with 
+this situation
+
+- Use the Enthought Python Distribution (EPD) (non-Free version, but it is free for academics).
+It loads the well-tuned MKL library into the global namespace, and you do not have to do anything.
+
+- Use ctypes to load the BLAS (preferrably MKL) dynamic library. If you have MKL installed somewhere on 
+your PATH, you can simply use
+```python
+import ctypes
+ctypes.CDLL("libmkl_rt.so", ctypes.RTLD_GLOBAL)
+```
+before the tt import 
 
 What those packages do
 ======================
