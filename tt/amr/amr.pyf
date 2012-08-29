@@ -21,6 +21,8 @@ python module amr_f90 ! in
                 integer, optional,intent(in) :: nswp
                 integer, optional,intent(in) :: verb
             end subroutine tt_mvk4
+            subroutine deallocate_result
+            end subroutine deallocate_result
             subroutine tt_amr_solve(d,n,m,ry,ra,cra,cry,crx0,rx,eps,kickrank,nswp,verb,prec,nrestart,niters) ! in :amr_f90:../tt-fort/tt_adapt_als.f90:tt_adapt_als
                 integer intent(in) :: d
                 integer dimension(*),intent(in) :: n
