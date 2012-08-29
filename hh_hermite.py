@@ -3,9 +3,9 @@
 #The goal is to compute many eigenfunctions of this operator
 import numpy as np
 from scipy.linalg import toeplitz
-from eigb import *
+from tt.eigb import *
 #from tt.tensor2 import *
-import tt.tensor2 as tt
+import tt
 #from tt.tensor2 import tt.tensor, tt.matrix #These two lines seems
 import time
 from math import pi,sqrt
