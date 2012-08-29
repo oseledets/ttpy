@@ -19,6 +19,7 @@ def configuration(parent_package='',top_path=None):
     config.add_subpackage('core')
     config.add_subpackage('amr')
     config.add_subpackage('kls')
+    config.add_subpackage('eigb')
     return config
     
 #from distutils.core import setup
