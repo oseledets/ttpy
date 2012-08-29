@@ -6,7 +6,6 @@ module tt_f90
   real(8), allocatable :: core(:)
   complex(8), allocatable :: zcore(:)
 contains
-
   
 
   subroutine dfull_to_tt(a,n,d,eps,r,ps)
@@ -51,6 +50,70 @@ contains
       deallocate(zcore)
   end if
   end subroutine tt_dealloc
+  
+  subroutine dtt_write_2(n,r,d,ps,cr,crsize,fnam)
+    use ttio_lib
+    implicit none
+    integer, intent(in) :: d
+    integer, intent(in) :: n(d)
+    integer, intent(in) :: r(d+1)
+    integer, intent(in) :: ps(d+1)
+    character(len=*),intent(in) :: fnam
+    integer, intent(in) :: crsize
+    double precision, intent(in) :: cr(crsize)
+    type(dtt) :: tt
+    call arrays_to_sdv(n,r,d,ps,cr,tt)
+    call write(tt,fnam)
+    call dealloc(tt)
+  end subroutine dtt_write_2
+  
+  subroutine ztt_write_2(n,r,d,ps,cr,crsize,fnam)
+    use ttio_lib
+    implicit none
+    integer, intent(in) :: d
+    integer, intent(in) :: n(d)
+    integer, intent(in) :: r(d+1)
+    integer, intent(in) :: ps(d+1)
+    character(len=*),intent(in) :: fnam
+    integer, intent(in) :: crsize
+    complex(8), intent(in) :: cr(crsize)
+    type(ztt) :: tt
+    call arrays_to_sdv(n,r,d,ps,cr,tt)
+    call write(tt,fnam)
+    call dealloc(tt)
+  end subroutine ztt_write_2
+  
+  subroutine dtt_read_2(n,r,d,d0,ps,fnam)
+    use ttio_lib
+    implicit none
+    integer, intent(in) :: d0
+    integer, intent(out) :: d
+    integer, intent(inout) :: n(d0)
+    integer, intent(inout) :: r(d0+1)
+    integer, intent(inout) :: ps(d0+1)
+    character(len=*),intent(in) :: fnam
+    type(dtt) :: tt
+    !call arrays_to_sdv(n,r,d,ps,cr,tt)
+    call read(tt,fnam)
+    call sdv_to_arrays(n,r,d,ps,core,tt)
+    call dealloc(tt)
+  end subroutine dtt_read_2
+  
+  subroutine ztt_read_2(n,r,d,d0,ps,fnam)
+    use ttio_lib
+    implicit none
+    integer, intent(in) :: d0
+    integer, intent(out) :: d
+    integer, intent(inout) :: n(d0)
+    integer, intent(inout) :: r(d0+1)
+    integer, intent(inout) :: ps(d0+1)
+    character(len=*),intent(in) :: fnam
+    type(ztt) :: tt
+    !call arrays_to_sdv(n,r,d,ps,cr,tt)
+    call read(tt,fnam)
+    call sdv_to_arrays(n,r,d,ps,zcore,tt)
+    call dealloc(tt)
+  end subroutine ztt_read_2
   
   
   !a should be preallocated, and filled by zeros

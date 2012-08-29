@@ -23,13 +23,13 @@ import sys
 
 
 
-f = 10 #The number of degrees of freedom
+f = 20 #The number of degrees of freedom
 L = 7 #The domain is [-L, L], periodic
 lm = 0.111803 #The magic constant
 #lm = 0 #The magic constant
-
+#lm = 1e-2
 #lm = 
-N = 20 # The size of the spectral discretization
+N = 15 # The size of the spectral discretization
 
 x, ws = quadgauss.cdgqf(N,6,0,0.5) #Generation of hermite quadrature
 #Generate Laplacian
@@ -87,10 +87,11 @@ V = None
 for s in xrange(f-1):
     V = V + (xx[s]*xx[s]*xx[s+1] - (1.0/3)*xx[s+1]*xx[s+1]*xx[s+1])
     V = V.round(eps)
-B = 3
+B = 4
 
 
 A = 0.5*lp2 + tt.diag(0.5*harm + lm*V)
+A0 = 0.5*lp2 + tt.diag(0.5*harm)
 A = A.round(eps) 
 
 n = A.n
@@ -106,7 +107,8 @@ x0 = tt.rand(n,d,r)
 #np.savez("test", core = x0.core, ps = x0.ps)
 t1 = time.time()
 print 'Matrices are done'
-y,lam = eigb(A,x0,1e-5)
+y,lam = eigb(A,x0,1e-6)
+#y,lam = eigb(A0,y,1e-6)
 #y,lam = eigb(A,y,1e-6,nswp=1)
 #y,lam = eigb(A,y,1e-5)
 #y,lam = eigb(A,y,1e-6)

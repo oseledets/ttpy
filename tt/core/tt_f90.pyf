@@ -1,6 +1,3 @@
-!    -*- f90 -*-
-! Note: the context of this file is case sensitive.
-
 python module tt_f90 ! in 
     interface  ! in :tt_f90
         module tt_f90 ! in :tt_f90:tt_f90.f90
@@ -9,6 +6,7 @@ python module tt_f90 ! in
             use ttop_lib
             real(kind=8), allocatable,dimension(:) :: core
             complex(kind=8), allocatable,dimension(:) :: zcore
+
             subroutine dfull_to_tt(a,n,d,eps,r,ps) ! in :tt_f90:tt_f90.f90:tt_f90
                 real(kind=8) dimension(:),intent(in) :: a
                 integer dimension(:),intent(in) :: n
@@ -17,6 +15,7 @@ python module tt_f90 ! in
                 integer dimension(d + 1),intent(out),depend(d) :: r
                 integer dimension(d + 1),intent(out),depend(d) :: ps
             end subroutine dfull_to_tt
+
             subroutine zfull_to_tt(a,n,d,eps,r,ps) ! in :tt_f90:tt_f90.f90:tt_f90
                 complex(kind=8) dimension(:),intent(in) :: a
                 integer dimension(:),intent(in) :: n
@@ -25,8 +24,20 @@ python module tt_f90 ! in
                 integer dimension(d + 1),intent(out),depend(d) :: r
                 integer dimension(d + 1),intent(out),depend(d) :: ps
             end subroutine zfull_to_tt
+
             subroutine tt_dealloc ! in :tt_f90:tt_f90.f90:tt_f90
             end subroutine tt_dealloc
+            
+            subroutine dtt_write_2(n,r,d,ps,cr,crsize,fnam)
+                integer dimension(d),intent(in) :: n
+                integer dimension(d + 1),intent(in),depend(d) :: r
+                integer, optional,intent(in),check(len(n)>=d),depend(n) :: d=len(n)
+                integer dimension(d + 1),intent(in),depend(d) :: ps
+                character(len=*),intent(in) :: fnam
+                double precision dimension(crsize),intent(in) :: cr
+                integer, optional,intent(in),check(len(cr)>=crsize),depend(cr) :: crsize=len(cr)
+            end subroutine dtt_write_2
+            
             subroutine dtt_to_full(n,r,d,ps,cr,crsize,a,asize) ! in :tt_f90:tt_f90.f90:tt_f90
                 integer dimension(d),intent(in) :: n
                 integer dimension(d + 1),intent(in),depend(d) :: r
@@ -37,6 +48,7 @@ python module tt_f90 ! in
                 double precision dimension(asize),intent(out),depend(asize) :: a
                 integer intent(in) :: asize
             end subroutine dtt_to_full
+            
             subroutine ztt_to_full(n,r,d,ps,cr,crsize,a,asize) ! in :tt_f90:tt_f90.f90:tt_f90
                 integer dimension(d),intent(in) :: n
                 integer dimension(d + 1),intent(in),depend(d) :: r
@@ -47,6 +59,7 @@ python module tt_f90 ! in
                 complex(8) dimension(asize),intent(out),depend(asize) :: a
                 integer intent(in) :: asize
             end subroutine ztt_to_full
+            
             subroutine dtt_add(n,d,r1,r2,ps1,ps2,core1,core2,rres,psres) ! in :tt_f90:tt_f90.f90:tt_f90
                 integer dimension(d),intent(in) :: n
                 integer, optional,intent(in),check(len(n)>=d),depend(n) :: d=len(n)
@@ -59,6 +72,7 @@ python module tt_f90 ! in
                 integer dimension(d + 1),intent(out),depend(d) :: rres
                 integer dimension(d + 1),intent(out),depend(d) :: psres
             end subroutine dtt_add
+            
             subroutine ztt_add(n,d,r1,r2,ps1,ps2,core1,core2,rres,psres) ! in :tt_f90:tt_f90.f90:tt_f90
                 integer dimension(d),intent(in) :: n
                 integer, optional,intent(in),check(len(n)>=d),depend(n) :: d=len(n)

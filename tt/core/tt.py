@@ -53,15 +53,13 @@ class tensor:
             self.r,self.ps = tt_f90.tt_f90.dfull_to_tt(np.real(a).flatten('F'),self.n,self.d,eps)
             self.core = tt_f90.tt_f90.core.copy()
 
-
         tt_f90.tt_f90.tt_dealloc()        
         #b = a.flatten('F').copy()
         #self.r = tt2.tt2.full_to_tt(b,self.n,eps)
         #print 'Done'
         #self.get_ps()
         #self.core = tt2.tt2.core.copy()
-        #tt2.tt2.tt_dealloc()
-    
+        #tt2.tt2.tt_dealloc() 
     @staticmethod
     def from_list(a):
         d = len(a) #Number of cores
@@ -106,6 +104,12 @@ class tensor:
             res = res + ("r(%d)=%d, n(%d)=%d \n" % (i, r[i],i,n[i]))
         res = res + ("r(%d)=%d \n" % (d,r[d]))
         return res
+    
+    def write(self,fname):
+        if ( np.iscomplex(self.core).any()):
+            pass
+        else:
+            tt_f90.tt_f90.dtt_write_2(self.n,self.r,self.ps,np.real(self.core),fname)
 
     def full(self):
         #Generate correct size vector
