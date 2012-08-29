@@ -9,6 +9,20 @@ and are wrapped with f2py tool.
 
 Installation
 ============
+This installation works with git submodules, so you should be sure, that you got them all right.
+The best way is to work with this repository is to use git with a version >= 1.6.5.
+Then, to clone the repository, you can simply run
+```
+git clone --recursive git://github.com/oseledets/ttpy.git
+```
+To update to a newer version, run
+```
+git pull --recurse-submodules
+```
+This command will update the submodules as well.
+
+The installation of the package is done via **setup.py** scripts.
+
 The installation script is a very newbie one, but it seems to work.
 Go to the **tt** directory and run
 ```
