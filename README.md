@@ -16,6 +16,8 @@ The best way is to work with this repository is to use git with a version >= 1.6
 Then, to clone the repository, you can simply run
 ```
 git clone --recursive git://github.com/oseledets/ttpy.git
+cd ttpy
+git submodule foreach git checkout master 
 ```
 To update to a newer version, run
 ```
