@@ -21,6 +21,7 @@ from numpy import prod, reshape, nonzero, size, sqrt
 from math import sqrt
 from numbers import Number
 import tt_f90
+import core_f90
 #import tt2
 #import fext.matrix_f90 as matrix_f90#This is for my own matrix-by-vector procedure (full)
 
@@ -371,7 +372,11 @@ class matrix:
             res = res + ("r(%d)=%d, n(%d)=%d, m(%d)=%d \n" % (i, r[i],i,n[i],i,m[i]))
         res = res + ("r(%d)=%d \n" % (d,r[d]))
         return res
-	
+
+    @property
+    def is_complex(self):
+        return np.iscomplex(self.tt.core).any()
+
     def __add__(self,other):
         if other is None:
             return self
@@ -396,26 +401,43 @@ class matrix:
     def __neg__(self):
         return (-1)*self
 
+    def __matmul__(self,other):
+        if self.is_complex or other.is_complex:
+            pass
+        else:
+            c = matrix()
+            c.n = self.n.copy()
+            c.m = other.m.copy()
+            tt = tensor()
+            tt.d = self.tt.d 
+            tt.n = c.n * c.m
+            tt.r = core_f90.core.dmat_mat(self.n,self.m,other.m,np.real(self.tt.core),np.real(other.tt.core),self.tt.r,other.tt.r)
+            tt.core = core_f90.core.result_core.copy()
+            core_f90.core.dealloc()
+            tt.get_ps()
+            c.tt = tt
+            return c
+
     def __rmul__(self,other):
-		c = matrix()
-		c.n = np.asanyarray(self.n,dtype=np.int32).copy()
-		c.m = np.asanyarray(self.m,dtype=np.int32).copy()
-		if isinstance(other,Number):
-			c.tt=self.tt * other
-		else:
-			c.tt=self.tt * other.tt
-		return c
-	
-    def __mul__(self,other):
         c = matrix()
         c.n = np.asanyarray(self.n,dtype=np.int32).copy()
         c.m = np.asanyarray(self.m,dtype=np.int32).copy()
         if isinstance(other,Number):
-            c.tt = self.tt * other
+            c.tt=self.tt * other
         else:
-            c.tt = self.tt * other.tt
+            c.tt=self.tt * other.tt
         return c
-    
+	
+    def __mul__(self,other):
+        if hasattr(other,'__matmul__'):
+            return self.__matmul__(other)
+        else:
+            c = matrix()
+            c.tt = self.tt * other
+            return c
+        #if isinstance(other,Number):
+        #    c.tt = self.tt * other
+        #    return c
     def __kron__(self,other):
         """ Kronecker product of two TT-matrices """
         if other is None:

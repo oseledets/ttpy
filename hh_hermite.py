@@ -9,7 +9,6 @@ import tt
 #from tt.tensor2 import tt.tensor, tt.matrix #These two lines seems
 import time
 from math import pi,sqrt
-from numpy.polynomial.hermite import Hermite
 import quadgauss
 import os
 import sys

@@ -10,7 +10,11 @@ def configuration(parent_package='',top_path=None):
     #config.add_library("mytt",sources=)
     src += ['tt_f90.f90','tt_f90.pyf']
     #inc_dir = ['../tt-fort']
-    config.add_extension('tt_f90',sources=src)#,libraries="mytt")#,include_dirs=inc_dir),#extra_objects="../tt-fort/mytt.a")
+    config.add_extension('tt_f90',sources=src)#,libraries="mytt")#,include_dirs=inc_dir),#extra_objects="../tt-fort/mytt.a") 
+    tt_src = ['matrix_util.f90','core.f90']
+    src = [tt_fort + '/' + x for x in tt_src]
+    src += ['core.pyf']
+    config.add_extension('core_f90',sources=src) 
     return config
     
 #from distutils.core import setup

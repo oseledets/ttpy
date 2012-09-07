@@ -1,0 +1,29 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+
+python module core_f90 ! in 
+    interface  ! in :core_f90
+        module core ! in :core_f90:core.f90
+            complex(kind=8), allocatable,dimension(:) :: zresult_core
+            real(kind=8), allocatable,dimension(:) :: result_core
+            subroutine dealloc ! in :core_f90:core.f90:core
+            end subroutine dealloc
+            subroutine dmat_mat(d,n,m,k,cr1,cr1size,cr2,cr2size,r1,r2,rres) ! in :core_f90:core.f90:core
+                integer, optional,intent(in),check(len(n)>=d),depend(n) :: d=len(n)
+                integer dimension(d),intent(in) :: n
+                integer dimension(d),intent(in),depend(d) :: m
+                integer dimension(d),intent(in),depend(d) :: k
+                real(kind=8) dimension(cr1size),intent(in) :: cr1
+                integer, optional,intent(in),check(len(cr1)>=cr1size),depend(cr1) :: cr1size=len(cr1)
+                real(kind=8) dimension(cr2size),intent(in) :: cr2
+                integer, optional,intent(in),check(len(cr2)>=cr2size),depend(cr2) :: cr2size=len(cr2)
+                integer dimension(d + 1),intent(in),depend(d) :: r1
+                integer dimension(d + 1),intent(in),depend(d) :: r2
+                integer dimension(d + 1),intent(out),depend(d) :: rres
+            end subroutine dmat_mat
+        end module core
+    end interface 
+end python module core_f90
+
+! This file was auto-generated with f2py (version:2).
+! See http://cens.ioc.ee/projects/f2py2e/
