@@ -419,25 +419,25 @@ class matrix:
             return c
 
     def __rmul__(self,other):
-        c = matrix()
-        c.n = np.asanyarray(self.n,dtype=np.int32).copy()
-        c.m = np.asanyarray(self.m,dtype=np.int32).copy()
-        if isinstance(other,Number):
-            c.tt=self.tt * other
+        if hasattr(other,'__matmul__'):
+            return other.__matmul__(self)
         else:
-            c.tt=self.tt * other.tt
-        return c
-	
+            c = matrix()
+            c.tt = other * self.tt
+            c.n = self.n
+            c.m = self.m
+            return c
+
     def __mul__(self,other):
         if hasattr(other,'__matmul__'):
             return self.__matmul__(other)
         else:
             c = matrix()
             c.tt = self.tt * other
+            c.n = self.n
+            c.m = self.m
             return c
-        #if isinstance(other,Number):
-        #    c.tt = self.tt * other
-        #    return c
+    
     def __kron__(self,other):
         """ Kronecker product of two TT-matrices """
         if other is None:
