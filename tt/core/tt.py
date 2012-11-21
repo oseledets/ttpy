@@ -1,20 +1,4 @@
-#This module contains basic operations with TT-tensors.
-#It includes the basic TT-tensor class.
-#The storage scheme, as I think should be:
-
-#n(i) - numpy int array
-#r(i) - numpy int array
-#d    - integer
-#ps   - position vector (numpy int array) 
-#core - numpy double/complex array
-#This class will support the following functionaly,
-#based on the MATLAB prototypes:
-#round
-#full -> tt
-#+,-,*
-#indexing into the array
-#The language of implementation: presumably, Fortran for all of
-#the procedures, described above.
+""" Basic subroutines for ttpy """  
 import numpy as np
 from numpy.linalg import svd,norm,qr
 from numpy import prod, reshape, nonzero, size, sqrt
@@ -22,10 +6,6 @@ from math import sqrt
 from numbers import Number
 import tt_f90
 import core_f90
-#import tt2
-#import fext.matrix_f90 as matrix_f90#This is for my own matrix-by-vector procedure (full)
-
-#Technical utilities for the conversion (ugly)
 
 
 

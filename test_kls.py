@@ -1,7 +1,5 @@
 import numpy as np
 from math import pi,sqrt
-#from kls import *
-#from tt_tensor2 import *
 import tt
 from tt.kls import kls
 import time

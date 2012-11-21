@@ -41,7 +41,7 @@ def gen_heisen(d):
     return A
 es = []
 lm = []
-ds = [1000]
+ds = [20]
 for d in ds:
     B = 3
     A = gen_heisen(d)

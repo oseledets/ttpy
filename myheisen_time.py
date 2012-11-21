@@ -46,12 +46,19 @@ if __name__ == '__main__':
     n = A.n
     d = A.tt.d
 #In this case we will start from the rank-1 tensor "all spins up"
-    e0 = np.ones(2)
-    e0 = tt.tensor(e0,1e-12)
+#It is not good, since it leads to an eigenvector
+#Random start also seems to be quite useless
+#Maybe first d/2 is up other d/2 are down?
+    v0 = np.array([1,0],dtype=np.float); v0 = tt.tensor(v0,1e-12)
+    v1 = np.array([0,1],dtype=np.float); v1 = tt.tensor(v1,1e-12)
     e1 = None
     for j in xrange(d):
+        if j % 2:
+            e0 = v0#np.random.rand(2)
+        else:
+            e0 = v1#e0 = tt.tensor(e0,1e-12)
         e1 = tt.kron(e1,e0)
-    r = [2]*(d+1)
+    r = [8]*(d+1)
     r[0] = 1
     r[d] = 1
     x0 = tt.rand(n,d,r)
@@ -59,7 +66,7 @@ if __name__ == '__main__':
     tf = 100
     t = 0
     start = e1 
-    psi = start
+    psi = start + 0 * x0
     cf = []
     while t <= tf: 
         print '%f/%f' % (t,tf)
