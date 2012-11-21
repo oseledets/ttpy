@@ -5,20 +5,12 @@ import numpy as np
 from numpy.fft import fft
 from scipy.linalg import toeplitz
 from tt.kls import *
-#from tt.tensor2 import *
 import tt
 import time
 from math import pi,sqrt
 import quadgauss
 import os
 import sys
-# open 2 fds
-# put /dev/null fds on 1 and 2
-#import Redirect
-#Redirect.start_redirect()
-#os.dup2(null_fds[1], 2)
-#os.close(null_fds[0])
-#os.close(null_fds[1])
 
 
 
@@ -40,16 +32,8 @@ for i in xrange(N):
         else:
             lp[i,j] = 1.0/6*(4*N - 1 - 2 * x[i]**2)
 lp = tt.matrix(lp)
-#h = 2 * pi/N
-#x = h * np.arange(1,N+1)
-#x = L * (x - pi)/pi
-#column = -0.5*((-1)**(np.arange(1,N)))/(np.sin(h*np.arange(1,N)/2)**2)
-#column = np.concatenate(([-pi**2/(3*h**2)-1.0/6],column))  
-#lp = (pi/L)**2*toeplitz(column)
-#lp = -lp
 e = tt.eye([N])
 
-#lp = tt.matrix(lp)
 #Calculate the kinetic energy (Laplace) operator
 lp2 = None
 eps = 1e-8
@@ -115,12 +99,10 @@ t1 = time.time()
 while t <= tf:
     print '%f/%f' % (t,tf)
     y = kls(H,y,tau)
-    #cf.append(np.dot(y.full().flatten(),start.full().flatten()))
     cf.append(tt.dot(y,start))
     t += tau
 t2 = time.time()
 print("Elapsed time: %f" % (t2-t1))
-#Redirect.stop_redirect()
 
 zz = np.abs(fft(np.conj(cf)))
 lls = np.arange(zz.size)*pi/(0.5*tf)
