@@ -5,7 +5,7 @@ sys.path.append("/Users/ivan/work/python/ttpy")
 sys.path.append("/Users/iv/work/python/ttpy")
 import tt
 import numpy as np
-from tt.eigb import eigb
+from tt.kls import kls
 import time
 #This example is about the spin-system example
 def gen_1d(mat,e,i,d):
@@ -39,21 +39,43 @@ def gen_heisen(d):
         A = A + 0.5 * (ssp[i] * ssm[i+1] + ssm[i] * ssp[i+1]) +  (ssz[i] * ssz[i+1])
         A = A.round(1e-8)
     return A
-es = []
-lm = []
-ds = [20]
-for d in ds:
-    B = 3
+
+if __name__ == '__main__':
+    d =  5
     A = gen_heisen(d)
     n = A.n
     d = A.tt.d
-    r = [2]*(d+1)
+#In this case we will start from the rank-1 tensor "all spins up"
+#It is not good, since it leads to an eigenvector
+#Random start also seems to be quite useless
+#Maybe first d/2 is up other d/2 are down?
+    v0 = np.array([1,0],dtype=np.float); v0 = tt.tensor(v0,1e-12)
+    v1 = np.array([0,1],dtype=np.float); v1 = tt.tensor(v1,1e-12)
+    e1 = None
+    for j in xrange(d):
+        if j % 2:
+            e0 = v0#np.random.rand(2)
+        else:
+            e0 = v1#e0 = tt.tensor(e0,1e-12)
+        e1 = tt.kron(e1,e0)
+    r = [8]*(d+1)
     r[0] = 1
-    r[d] = B
+    r[d] = 1
     x0 = tt.rand(n,d,r)
-    t1 = time.time()
-    print 'Matrices are done'
-    y, lam = eigb(A,x0,1e-3)
-    es.append(lam[0]/d)
-    lm.append(d)
-    t2 = time.time()
+    tau = 1e-2
+    tf = 100
+    t = 0
+    start = e1 
+    psi = start + 0 * x0
+    cf = []
+    while t <= tf: 
+        print '%f/%f' % (t,tf)
+        psi = kls(-1.0j*A,psi,tau)
+        cf.append(tt.dot(psi,start))
+        t += tau
+    #x0 = tt.rand(n,d,r)
+    #t1 = time.time()
+    #print 'Matrices are done'
+    #y, lam = eigb(A,x0,1e-3)
+    #lm.append(d)
+    #t2 = time.time()

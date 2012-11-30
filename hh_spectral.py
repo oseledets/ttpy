@@ -2,10 +2,8 @@
 #The goal is to compute many eigenfunctions of this operator
 import numpy as np
 from scipy.linalg import toeplitz
-from eigb import *
-#from tt_tensor2 import *
-import tt_tensor2 as tt
-from tt_tensor2 import tt_tensor, tt_matrix #These two lines seems
+import tt
+from tt.eigb import eigb
 import time
 from math import pi
 
@@ -25,7 +23,7 @@ lp = (pi/L)**2*toeplitz(column)
 lp = -lp
 e = tt.eye([N])
 
-lp = tt_matrix(lp)
+lp = tt.matrix(lp)
 #Calculate the kinetic energy (Laplace) operator
 lp2 = None
 eps = 1e-8
@@ -41,7 +39,7 @@ for i in xrange(f):
 
 #Now we will compute Henon-Heiles stuff
 xx = []
-t = tt_tensor(x)
+t = tt.tensor(x)
 ee = tt.ones([N])
 for  i in xrange(f):
     t0 = t
@@ -74,11 +72,6 @@ r = [3]*(d+1)
 r[0] = 1
 r[d] = B
 x0 = tt.rand(n,d,r)
-#Save here 
-#np.savez("test", core = x0.core, ps = x0.ps)
-#q = np.load("test.npz")
-#x0.core = q['core']
-#x0.ps = q['ps']
 t1 = time.time()
 #print 'Matrices are done'
 y,lam = eigb(A,x0,1e-6)

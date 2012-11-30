@@ -2,10 +2,9 @@
 #The goal is to compute many eigenfunctions of this operator
 import numpy as np
 from scipy.linalg import toeplitz
-from kls import *
+import tt
+from tt.kls import kls
 #from tt_tensor2 import *
-import tt_tensor2 as tt
-from tt_tensor2 import tt_tensor, tt_matrix #These two lines seems
 import time
 from math import pi
 
@@ -25,7 +24,7 @@ lp = (pi/L)**2*toeplitz(column)
 lp = -lp
 e = tt.eye([N])
 
-lp = tt_matrix(lp)
+lp = tt.matrix(lp)
 #Calculate the kinetic energy (Laplace) operator
 lp2 = None
 eps = 1e-8
@@ -41,7 +40,7 @@ for i in xrange(f):
 
 #Now we will compute Henon-Heiles stuff
 xx = []
-t = tt_tensor(x)
+t = tt.tensor(x)
 ee = tt.ones([N])
 for  i in xrange(f):
     t0 = t
@@ -73,7 +72,7 @@ A = A.round(eps)
 #Generate the initial condition
 psi = None
 pp1 = np.exp(-0.5*((x-2)**2))
-pp1 = tt_tensor(pp1,1e-12)
+pp1 = tt.tensor(pp1,1e-12)
 for i in xrange(f):
     psi = tt.kron(psi,pp1)
 
@@ -100,16 +99,3 @@ while t <= tf:
     t += tau
 t2 = time.time()
 print('Total time: %f' % (t2-t1))
-#n = A.n
-#d = A.tt.d
-#r = [3]*(d+1)
-#r[0] = 1
-#r[d] = B
-#x0 = tt.rand(n,d,r)
-
-#The initial approximation is a Gaussian
-
-#Save here 
-#q = np.load("test.npz")
-#x0.core = q['core']
-#x0.ps = q['ps']
