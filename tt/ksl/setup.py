@@ -11,14 +11,14 @@ except:
     print "copy from www.cython.org and install it"
     sys.exit(1)
 
-surf3d_ext = Extension("surf3d", ["surf3d.pyx"], extra_compile_args = ["-O3", "-Wall", "-undefined,dynamic_lookup"], include_dirs = [np.get_include()])
+ksl = Extension("ksl", ["ksl.pyx"], extra_compile_args = ["-O3", "-Wall", "-undefined,dynamic_lookup"], include_dirs = [np.get_include()])
 
 
-extensions = [surf3d_ext]
+extensions = [ksl]
 
 # finally, we can pass all this to distutils
 setup(
-    name="ani3d",
+    name="ksl",
     packages=find_packages(),
     ext_modules=extensions,
     cmdclass = {'build_ext': build_ext},

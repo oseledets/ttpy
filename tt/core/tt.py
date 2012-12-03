@@ -1,4 +1,6 @@
 """ Basic subroutines for ttpy """  
+""" They still focus on the linear format for passing the data around, 
+    and still convert to list (and back for some simple tasks) """ 
 import numpy as np
 from numpy.linalg import svd,norm,qr
 from numpy import prod, reshape, nonzero, size, sqrt
@@ -35,12 +37,7 @@ class tensor:
             self.core = tt_f90.tt_f90.core.copy()
 
         tt_f90.tt_f90.tt_dealloc()        
-        #b = a.flatten('F').copy()
-        #self.r = tt2.tt2.full_to_tt(b,self.n,eps)
-        #print 'Done'
-        #self.get_ps()
-        #self.core = tt2.tt2.core.copy()
-        #tt2.tt2.tt_dealloc() 
+    
     @staticmethod
     def from_list(a):
         d = len(a) #Number of cores
