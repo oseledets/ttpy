@@ -14,21 +14,22 @@ import numpy as np
 from numpy.linalg import qr
 cimport numpy as cnp
 from tt import tensor
-def ksl(A,y0, double tau):
+""" The method for the solution of non-stationary problems in the TT-format """
+def ksl(A,y0, f = None, double tau = 1e-3):
     cdef int d = y0.d
     cdef int[:] ry = y0.r
-    cdef int[:] ra = A.tt.r
+    cdef int[:] ra = A.tt.r    
     cdef int[:] n = y0.n
     cdef double [:] cry = y0.core
     cdef double [:] cra = A.tt.core
     cdef int[:] psa = A.tt.ps
     cdef int[:] psy = y0.ps
     cdef int p1,p2
-    cdef i
+    cdef int i
     for i in range(d-1,-1,-1):
-        p1 = psy[i] - 1
-        p2 = psy[i+1]
-        cr = cry[<int>p1]
+        #p1 = psy[i] - 1
+        #p2 = psy[i+1]
+        cr = cry[psy[i]-1:psy[i+1]]
         #cr = cr.reshape((ry[i] * n[i], ry[i+1]),order='F')
         #cr = cr.T
         #q,r = qr(cr)

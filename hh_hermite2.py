@@ -4,7 +4,7 @@
 import numpy as np
 from numpy.fft import fft
 from scipy.linalg import toeplitz
-from tt.kls import *
+from tt.kls import ksl
 import tt
 import time
 from math import pi,sqrt
@@ -16,8 +16,8 @@ import sys
 
 f = 18 #The number of degrees of freedom
 L = 7 #The domain is [-L, L], periodic
-lm = 0.111803 #The magic constant
-#lm = 0 #The magic constant
+#lm = 0.111803 #The magic constant
+lm = 0 #The magic constant
 
 #lm = 
 N = 20 # The size of the spectral discretization
@@ -98,7 +98,7 @@ import time
 t1 = time.time()
 while t <= tf:
     print '%f/%f' % (t,tf)
-    y = kls(H,y,tau)
+    y = ksl(H,y,tau)
     cf.append(tt.dot(y,start))
     t += tau
 t2 = time.time()

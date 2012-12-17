@@ -39,23 +39,23 @@ class tensor:
         tt_f90.tt_f90.tt_dealloc()        
     
     @staticmethod
-    def from_list(a):
+    def from_list(a,order='F'):
         d = len(a) #Number of cores
         res = tensor()
         n = np.zeros(d,dtype=np.int32)
         r = np.zeros(d+1,dtype=np.int32)
         cr = np.array([])
         for i in xrange(d):
-            cr = np.concatenate((cr,a[i].flatten('F')))
+            cr = np.concatenate((cr,a[i].flatten(order)))
             r[i] = a[i].shape[0]
             r[i+1] = a[i].shape[2]
             n[i] = a[i].shape[1]
-            res.d = d
-            res.n = n
-            res.r = r
-            res.core = cr
-            res.get_ps()
-            return res
+        res.d = d
+        res.n = n
+        res.r = r
+        res.core = cr
+        res.get_ps()
+        return res
 
     @staticmethod
     def to_list(tt):

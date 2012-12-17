@@ -5,7 +5,7 @@ sys.path.append("/Users/ivan/work/python/ttpy")
 sys.path.append("/Users/iv/work/python/ttpy")
 import tt
 import numpy as np
-from tt.kls import kls
+from tt.kls import kls,ksl
 import time
 #This example is about the spin-system example
 def gen_1d(mat,e,i,d):
@@ -58,7 +58,7 @@ if __name__ == '__main__':
         else:
             e0 = v1#e0 = tt.tensor(e0,1e-12)
         e1 = tt.kron(e1,e0)
-    r = [8]*(d+1)
+    r = [1]*(d+1)
     r[0] = 1
     r[d] = 1
     x0 = tt.rand(n,d,r)
@@ -67,11 +67,14 @@ if __name__ == '__main__':
     t = 0
     start = e1 
     psi = start + 0 * x0
+    psi1 = start + 0 * x0
     cf = []
     while t <= tf: 
         print '%f/%f' % (t,tf)
-        psi = kls(-1.0j*A,psi,tau)
+        psi = ksl(-1.0j*A,psi,tau)
+        #psi1 = kls(-1.0j*A,psi1,tau)
         cf.append(tt.dot(psi,start))
+        #import ipdb; ipdb.set_trace()
         t += tau
     #x0 = tt.rand(n,d,r)
     #t1 = time.time()
