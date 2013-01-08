@@ -1,3 +1,4 @@
 [submodule "tt/tt-fort"]
 	path = tt/tt-fort
-	url = git@github.com:oseledets/tt-fort
+    #url = git@github.com:oseledets/tt-fort
+    url = https://github.com/oseledets/tt-fort.git
