@@ -72,9 +72,7 @@ They have the following functionality
 - **tt.eigb** : Contains a test version of the ALS block eigenvalue solver in the TT-format 
             (subroutine **tt.eigb.eigb**) 
 
-- **tt.kls** : A very experimental implementation of the dynamical low-rank approximation in the TT-format
-           using the **KLS scheme**, which is much faster, than other known approaches. The scheme 
-           has the second order. Both real and complex versions are available.
+- **tt.kls** :  **OUTDATED** and will be fixed in a few weeks (with the KSL scheme). Please check again soon.  
 
 Examples
 ========
