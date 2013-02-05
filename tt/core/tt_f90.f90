@@ -197,7 +197,8 @@ contains
     call arrays_to_sdv(n,r2,d,ps2,core2,tt2)
     call axpy(ONE,tt1,ONE,tt2)
     !tt1 is the sum
-    call sdv_to_arrays(n1,rres,d,psres,zcore,tt2)
+    print *,'d:',d,'n1:',n1
+    !call sdv_to_arrays(n1,rres,d,psres,zcore,tt2)
 
     call dealloc(tt1)
     call dealloc(tt2)

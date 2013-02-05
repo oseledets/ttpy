@@ -23,9 +23,8 @@ def kls(A,y0,tau,rmax=150,kickrank=5,verb=1,nswp=10):
     y.r = ry 
     y.get_ps()
     return y
-
+"""
 def ksl(A,y0,tau,rmax=150,kickrank=5,verb=1,nswp=10):
-    """ Dynamical TT-approximation """
     ry = y0.r.copy()
     #lam = np.zeros(ry[y0.d])
     #for i in xrange(10):
@@ -45,3 +44,4 @@ def ksl(A,y0,tau,rmax=150,kickrank=5,verb=1,nswp=10):
     y.r = ry 
     y.get_ps()
     return y
+ """

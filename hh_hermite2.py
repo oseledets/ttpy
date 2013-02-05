@@ -13,7 +13,6 @@ import os
 import sys
 
 
-
 f = 18 #The number of degrees of freedom
 L = 7 #The domain is [-L, L], periodic
 #lm = 0.111803 #The magic constant
