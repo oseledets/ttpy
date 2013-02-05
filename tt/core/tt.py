@@ -115,7 +115,7 @@ class tensor:
         c.d = self.d
         if ( np.iscomplex(self.core).any() or np.iscomplex(other.core).any()):
             c.r,c.ps = tt_f90.tt_f90.ztt_add(self.n,self.r,other.r,self.ps,other.ps,self.core+0j,other.core+0j)
-            #c.core = tt_f90.tt_f90.zcore.copy()
+            c.core = tt_f90.tt_f90.zcore.copy()
         else:
              #This could be a real fix in the case we fell to the real world
             c.r,c.ps = tt_f90.tt_f90.dtt_add(self.n,self.r,other.r,self.ps,other.ps,np.real(self.core),np.real(other.core))

@@ -16,10 +16,9 @@ contains
     integer, intent(out) :: r(d+1)
     integer, intent(out) :: ps(d+1)
     real(8), intent(in) :: a(:)
-    integer :: n1(d)
     type(dtt) :: tt
-    character(len=*),parameter :: subnam='full_to_tt'
     integer :: i,M,lwork,info
+    integer :: n1(d)
     call svd(n,a,tt,eps)
     call sdv_to_arrays(n1,r,d,ps,core,tt)
     call dealloc(tt)
@@ -33,10 +32,9 @@ contains
     integer, intent(out) :: r(d+1)
     integer, intent(out) :: ps(d+1)
     complex(8), intent(in) :: a(:)
-    integer :: n1(d)
     type(ztt) :: tt
-    character(len=*),parameter :: subnam='full_to_tt'
     integer :: i,M,lwork,info
+    integer :: n1(d)
     call svd(n,a,tt,eps)
     call sdv_to_arrays(n1,r,d,ps,zcore,tt)
     call dealloc(tt)
@@ -93,9 +91,9 @@ contains
     integer, intent(inout) :: ps(d0+1)
     character(len=*),intent(in) :: fnam
     type(dtt) :: tt
-    !call arrays_to_sdv(n,r,d,ps,cr,tt)
+    integer :: n1(d0)
     call read(tt,fnam)
-    call sdv_to_arrays(n,r,d,ps,core,tt)
+    call sdv_to_arrays(n1,r,d,ps,core,tt)
     call dealloc(tt)
   end subroutine dtt_read_2
   
@@ -109,9 +107,10 @@ contains
     integer, intent(inout) :: ps(d0+1)
     character(len=*),intent(in) :: fnam
     type(ztt) :: tt
-    !call arrays_to_sdv(n,r,d,ps,cr,tt)
+    integer :: n1(d0)
+
     call read(tt,fnam)
-    call sdv_to_arrays(n,r,d,ps,zcore,tt)
+    call sdv_to_arrays(n1,r,d,ps,zcore,tt)
     call dealloc(tt)
   end subroutine ztt_read_2
   
@@ -197,8 +196,7 @@ contains
     call arrays_to_sdv(n,r2,d,ps2,core2,tt2)
     call axpy(ONE,tt1,ONE,tt2)
     !tt1 is the sum
-    print *,'d:',d,'n1:',n1
-    !call sdv_to_arrays(n1,rres,d,psres,zcore,tt2)
+    call sdv_to_arrays(n1,rres,d,psres,zcore,tt2)
 
     call dealloc(tt1)
     call dealloc(tt2)
@@ -246,7 +244,6 @@ contains
     real(8), intent(in) :: cr(:)
     real(8), intent(out) :: nrm
     type(dtt) :: tt
-    !real(8):: t1,t2
     integer :: i
     call arrays_to_sdv(n,r,d,ps,cr,tt)
     nrm=norm(tt)
@@ -261,7 +258,6 @@ contains
     complex(8), intent(in) :: cr(:)
     real(8), intent(out) :: nrm
     type(ztt) :: tt
-    !real(8):: t1,t2
     integer :: i
     call arrays_to_sdv(n,r,d,ps,cr,tt)
     nrm=norm(tt)
@@ -283,7 +279,6 @@ contains
     call arrays_to_sdv(n,r1,d,ps1,core1,tt1)
     call arrays_to_sdv(n,r2,d,ps2,core2,tt2)
     dt = dot(tt1,tt2)
-    !tt1 is the sum
     call dealloc(tt1)
     call dealloc(tt2)
   end subroutine dtt_dotprod
@@ -304,7 +299,6 @@ contains
     call arrays_to_sdv(n,r1,d,ps1,core1,tt1)
     call arrays_to_sdv(n,r2,d,ps2,core2,tt2)
     dt = dot(tt1,tt2)
-    !tt1 is the sum
     call dealloc(tt1)
     call dealloc(tt2)
   end subroutine ztt_dotprod
@@ -331,7 +325,7 @@ contains
       call dealloc(tt2)
       call sdv_to_arrays(n1,rres,d,psres,core,tt)
       call dealloc(tt)
-    end subroutine dtt_hdm
+ end subroutine dtt_hdm
 
 ! Check, if we can call an external python function from Fortran
 
