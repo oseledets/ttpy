@@ -336,7 +336,22 @@ class matrix:
         tt.get_ps()
         res.tt = tt
         return res
-	
+
+    @staticmethod
+    def to_list(ttmat):
+        tt = ttmat.tt
+        d = tt.d
+        r = tt.r
+        n = ttmat.n
+        m = ttmat.m
+        ps = tt.ps
+        core = tt.core
+        res = []
+        for i in xrange(d):
+            cur_core = core[ps[i]-1:ps[i+1]-1]
+            cur_core = cur_core.reshape((r[i],n[i],m[i],r[i+1]),order='F')
+            res.append(cur_core)
+        return res
 
     def __repr__(self):
         res = "This is a %d-dimensional matrix \n" % self.tt.d
