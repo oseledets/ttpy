@@ -5,12 +5,11 @@ def configuration(parent_package='',top_path=None):
     config = Configuration('eigb', parent_package, top_path)
     tt_fort = '../tt-fort/'
     primme_dir = '../tt-fort/primme/'
-    src = ['putstrmodule.F90','dispmodule.f90','matrix_util.f90','ttals.f90','tt_eigb.f90']
+    src = ['ttals.f90', 'tt_eigb.f90']
     src = [ tt_fort + '/' + x for x in src]
     config.add_library('primme',sources=[join(primme_dir,'*.c')] + [join(primme_dir,'*.f')])#,macros=['F77UNDERSCORE'])
     src.append('tt_eigb.pyf')
-    config.add_extension('tt_eigb',sources=src,depends=['primme'],libraries=['primme'])
-    #config.add_extension['
+    config.add_extension('tt_eigb',sources=src,depends=['primme','mytt','print_lib'],libraries=['primme','mytt','print_lib'])
     return config
     
 

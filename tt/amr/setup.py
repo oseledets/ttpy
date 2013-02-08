@@ -3,7 +3,7 @@ def configuration(parent_package='',top_path=None):
     from numpy.distutils.misc_util import Configuration, get_info
     config = Configuration('amr', parent_package, top_path)
     tt_fort = '../tt-fort'
-    src = ['putstrmodule.F90','dispmodule.f90','tt_linalg.f90','tt_adapt_als.f90']
+    src = ['tt_adapt_als.f90']
     src = [ tt_fort + '/' + x for x in src]
     src.append('amr.pyf')
     #config.add_library('mytt2',my_src)
@@ -12,7 +12,7 @@ def configuration(parent_package='',top_path=None):
     #src = ['../tt-fort/tt_linalg.f90','../tt-fort/tt_adapt_als.f90','amr.pyf']
     #tt_fort_dir = '../tt-fort'
     #src = ['tt-fort/' + x for x in src]
-    config.add_extension('amr_f90',sources=src)#,include_dirs=inc_di)
+    config.add_extension('amr_f90',sources=src,depends=['mytt','print_lib'],libraries=['mytt','print_lib'])#,include_dirs=inc_di)
     return config
     
 #from distutils.core import setup

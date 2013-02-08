@@ -4,7 +4,7 @@
 import numpy as np
 from numpy.fft import fft
 from scipy.linalg import toeplitz
-from tt.kls import ksl
+from tt.kls import kls
 import tt
 import time
 from math import pi,sqrt
@@ -97,7 +97,7 @@ import time
 t1 = time.time()
 while t <= tf:
     print '%f/%f' % (t,tf)
-    y = ksl(H,y,tau)
+    y = kls(H,y,tau)
     cf.append(tt.dot(y,start))
     t += tau
 t2 = time.time()
