@@ -5,9 +5,14 @@ def configuration(parent_package='',top_path=None):
     #import ipdb; ipdb.set_trace()
     #config.add_library()
     tt_dir = '../tt-fort/'
-
+    
     src = ['putstrmodule.F90','dispmodule.f90','matrix_util.f90','ttals.f90','dlacn1.f','dlapst.f','dlarpc.f',
            'zlacn1.f','expokit.f','explib.f90','normest.f90','tt_kls.f90']
+    exp_src = ['explib.f90, expokit.f','normest.f90','dlancn1.f','dlapst.f','dlarpc.f'] + tt_dir
+    config.add_library('expokit',sources=[primme_dir+]
+    config.add_library('primme',sources=[join(primme_dir,'*.c')] + [join(primme_dir,'*.f')])#,macros=['F77UNDERSCORE'])
+    src.append('tt_eigb.pyf')
+    config.add_extension('tt_eigb',sources=src,depends=['primme'],libraries=['primme'])
     src = [tt_dir + x for x in src]
     src.append('tt_kls.pyf')
     config.add_extension('dyn_tt',sources=src,include_dirs=[tt_dir])
