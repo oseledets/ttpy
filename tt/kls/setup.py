@@ -12,7 +12,8 @@ def configuration(parent_package='',top_path=None):
     config.add_library('expokit',sources=exp_src)
     src = [tt_dir + x for x in src]
     src.append('tt_kls.pyf')
-    config.add_extension('dyn_tt',sources=src,depends=['print_lib','expokit','mytt'],libraries=['print_lib','expokit','mytt'])
+    config.add_extension('dyn_tt',sources=src,depends=['print_lib','expokit','mytt'],
+			libraries=['print_lib','expokit','mytt'],)
     return config
     
 #from distutils.core import setup
