@@ -1,7 +1,7 @@
 import numpy as np
 from math import pi,sqrt
 import tt
-from tt.kls import kls
+from tt.ksl import ksl
 import time
 from scipy.linalg import expm
 d = 6
@@ -20,7 +20,7 @@ ns_fin = 8
 tau0 = 1.0
 tau_ref = tau0/2**ns_fin
 for i in xrange(2**ns_fin):  
-    y=kls(-1.0*A,y,tau_ref)
+    y=ksl(-1.0*A,y,tau_ref)
 yref = y.copy()
 tau = 5e-2
 res = ""
@@ -29,7 +29,7 @@ while ( ns <= ns_fin ):
     tau = tau0/(2**ns) 
     y = x.copy()
     for i in xrange(2**ns):
-        y = kls(-1.0*A,y,tau)
+        y = ksl(-1.0*A,y,tau)
     er = (y - yref).norm()/y.norm()
     res += 'tau=%3.1e er=%3.1e ns=%d \n' % (tau,er,2**ns)
     ns += 1
