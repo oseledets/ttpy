@@ -14,25 +14,20 @@ t = np.arange(1,n0+1)*1.0/(n0+1)
 #x = np.exp(-10*(t-0.5)**2)
 x = np.sin(pi*t)
 x = tt.tensor(x.reshape([2]*d,order='F'),1e-8)
-#x = tt.ones(2,d)
+x = tt.ones(2,d)
+x = x + 0 * tt.rand(2,d,1)
 tau = 1
 tau1 = 1
 y = x.copy()
 ns_fin = 8
 tau0 = 1.0
 tau_ref = tau0/2**ns_fin
+import matplotlib.pyplot as plt
+plt.ion()
+fig = plt.figure()
+ax = fig.add_subplot(111)
+line1, = ax.plot(np.real(y.full().flatten("F")))
 for i in xrange(2**ns_fin):  
     y=ksl(1j*A,y,tau_ref)
-yref = y.copy()
-tau = 5e-2
-res = ""
-ns = 2
-while ( ns <= ns_fin ):
-    tau = tau0/(2**ns) 
-    y = x.copy()
-    for i in xrange(2**ns):
-        y = ksl(1.0j*A,y,tau)
-    er = (y - yref).norm()/y.norm()
-    res += 'tau=%3.1e er=%3.1e ns=%d \n' % (tau,er,2**ns)
-    ns += 1
-print res
+    line1.set_ydata(np.real(y.full().flatten("F")))
+    fig.canvas.draw()
