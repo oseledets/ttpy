@@ -6,15 +6,16 @@ import time
 from scipy.linalg import expm
 d = 6
 f = 1
-#A = tt.qlaplace_dd([d]*f)
-A = tt.eye(2,d)
+A = tt.qlaplace_dd([d]*f)*(2**d+1)**2
+#A = tt.eye(2,d)
 n = [2]*(d*f)
 n0 = 2**d
 t = np.arange(1,n0+1)*1.0/(n0+1)
-#x = np.exp(-10*(t-0.5)**2)
-x = np.sin(pi*t)
+x = np.exp(-10*(t-0.5)**2)
+#x = np.sin(pi*t)
 x = tt.tensor(x.reshape([2]*d,order='F'),1e-8)
 #x = tt.ones(2,d)
+
 tau = 1
 tau1 = 1
 y = x.copy()

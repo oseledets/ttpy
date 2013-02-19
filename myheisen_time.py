@@ -5,7 +5,7 @@ sys.path.append("/Users/ivan/work/python/ttpy")
 sys.path.append("/Users/iv/work/python/ttpy")
 import tt
 import numpy as np
-from tt.kls import kls,ksl
+from tt.ksl import ksl
 import time
 #This example is about the spin-system example
 def gen_1d(mat,e,i,d):

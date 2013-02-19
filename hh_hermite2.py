@@ -4,7 +4,7 @@
 import numpy as np
 from numpy.fft import fft
 from scipy.linalg import toeplitz
-from tt.kls import kls
+from tt.ksl import ksl
 import tt
 import time
 from math import pi,sqrt
@@ -13,10 +13,10 @@ import os
 import sys
 
 
-f = 18 #The number of degrees of freedom
+f = 4 #The number of degrees of freedom
 L = 7 #The domain is [-L, L], periodic
-#lm = 0.111803 #The magic constant
-lm = 0 #The magic constant
+lm = 0.111803 #The magic constant
+#lm = 0 #The magic constant
 
 #lm = 
 N = 20 # The size of the spectral discretization
@@ -82,14 +82,13 @@ gs = tt.tensor(gs,1e-8)
 start = None
 for i in xrange(f):
     start = tt.kron(start,gs)
-tau = 1e-2
-radd = 3
+radd = 20
 start = start+0*tt.rand(start.n,start.d,radd)
 y = start.copy()
 print 'initial value norm:', start.norm()
 cf = []
-tf = 8.0
-nit = 1000
+tf = 150.0
+nit = 5000
 tau = (tf/nit)
 i = 0
 t = 0
@@ -97,7 +96,7 @@ import time
 t1 = time.time()
 while t <= tf:
     print '%f/%f' % (t,tf)
-    y = kls(H,y,tau)
+    y = ksl(H,y,tau)
     cf.append(tt.dot(y,start))
     t += tau
 t2 = time.time()
