@@ -273,6 +273,20 @@ class tensor:
         c.ps = self.ps.copy()
         return c
 	
+    def rmean(self):
+        """ Calculates the mean rank of a TT-tensor"""
+        if self.n == 0:
+            return 0
+        # Solving quadratic equation ar^2 + br + c = 0;
+        a = np.sum(self.n[1:-1])
+        b = self.n[0] + self.n[-1]
+        c = - np.sum(self.n * self.r[1:] * self.r[:-1])
+        D = b ** 2 - 4 * a * c
+        r = 0.5 * (-b + sqrt(D)) / a
+        return r
+
+
+
 
 class matrix:
     def __init__(self,a=None,eps=1e-14, n=None, m=None):
