@@ -245,12 +245,13 @@ class tensor:
         r = self.r
         n = self.n
         res = []
+        dtype = self.core.dtype 
         for i in xrange(d):
             cur_core = cl[i]
-            res_core = np.zeros((r[i],n[i],n[i],r[i+1]))
+            res_core = np.zeros((r[i], n[i], n[i], r[i+1]), dtype = dtype)
             for s1 in xrange(r[i]):
                 for s2 in xrange(r[i+1]):
-                    res_core[s1,:,:,s2] = np.diag(cur_core[s1,:,s2].reshape(n[i],order='F'))
+                    res_core[s1, :, :, s2] = np.diag(cur_core[s1, :, s2].reshape(n[i], order='F'))
             res.append(res_core)
         return matrix.from_list(res)
     

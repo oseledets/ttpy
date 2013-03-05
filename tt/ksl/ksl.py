@@ -2,15 +2,19 @@
 import numpy as np
 import dyn_tt
 from tt import tensor
-def ksl(A,y0,tau,rmax=150,kickrank=5,verb=1,nswp=10):
+def ksl(A,y0,tau,rmax=150,kickrank=5,verb=1,nswp=10, scheme = 'symm'):
     """ Dynamical TT-approximation """
     ry = y0.r.copy()
+    if scheme is 'symm':
+        tp = 2
+    else:
+        tp = 1
     #lam = np.zeros(ry[y0.d])
     #for i in xrange(10):
     #Check for dtype
     y = tensor()
     if np.iscomplex(A.tt.core).any() or np.iscomplex(y0.core).any():
-        dyn_tt.dyn_tt.ztt_ksl(y0.d,A.n,A.m,A.tt.r,A.tt.core +0j, y0.core+0j, ry, tau, rmax, kickrank, nswp, verb)
+        dyn_tt.dyn_tt.ztt_ksl(y0.d,A.n,A.m,A.tt.r,A.tt.core +0j, y0.core+0j, ry, tau, rmax, kickrank, nswp, verb, tp)
         y.core = dyn_tt.dyn_tt.zresult_core.copy()    
     else:
         A.tt.core = np.real(A.tt.core)

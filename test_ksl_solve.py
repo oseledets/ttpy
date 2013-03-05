@@ -127,7 +127,7 @@ radd = 1
 start = start+0*tt.rand(start.n,start.d,radd)
 start = start*(1.0/start.norm())
 y = start.copy()
-y = ksl(H, y, 0.1, scheme = 'first')
+#y = ksl(H, y, 0.1, scheme = 'first')
 print 'initial value norm:', start.norm()
 cf = []
 
@@ -155,7 +155,7 @@ for ns in [0,1,2]:
         print '%f/%f' % (t,tf)
         cf[round(t,3)] = tt.dot(y, start)
         y1 = y.copy()
-        y = ksl(H,y,tau,scheme = 'symm')
+        y = ksl(H,y,tau,scheme = 'first')
         print y.norm()
         t += tau
     Z[j] = y
