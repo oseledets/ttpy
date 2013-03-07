@@ -32,7 +32,7 @@ The installation of the package is done via **setup.py** scripts.
 The installation script is a very newbie one, but it seems to work.
 Go to the **tt** directory and run
 ```
-python setup.py build_ext --inplace
+python setup.py install
 ```
 This builds the package tt with submodules amr, eigb, kls. 
 For some of the examples the quadgauss package is required, so go to 
@@ -76,6 +76,10 @@ They have the following functionality
 
 Examples
 ========
+
+Few examples are available right now under examples/ directory
+
+
 
 Right now the examples are located in the top of the directory, which is not correct, of course. 
 When I will figure out, how it should be done in a right way (via unittests or something?) I will fix that.

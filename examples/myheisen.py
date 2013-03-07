@@ -1,13 +1,10 @@
 
-import sys
-import os
-sys.path.append("/Users/ivan/work/python/ttpy")
-sys.path.append("/Users/iv/work/python/ttpy")
 import tt
 import numpy as np
 from tt.eigb import eigb
 import time
-#This example is about the spin-system example
+
+""" Compute minimal eigenvalues for the Heisenberg model """
 def gen_1d(mat,e,i,d):
     w = mat
     for j in xrange(i):
@@ -39,11 +36,13 @@ def gen_heisen(d):
         A = A + 0.5 * (ssp[i] * ssm[i+1] + ssm[i] * ssp[i+1]) +  (ssz[i] * ssz[i+1])
         A = A.round(1e-8)
     return A
-es = []
-lm = []
-ds = [20]
-for d in ds:
-    B = 3
+
+if __name__ == '__main__':
+    
+    d = 20 #The dimension of the problem (number of spins)
+    B = 3  # Number of eigenvalues sought
+    eps = 1e-6 #Accuracy of the computations 
+    
     A = gen_heisen(d)
     n = A.n
     d = A.tt.d
@@ -53,7 +52,7 @@ for d in ds:
     x0 = tt.rand(n,d,r)
     t1 = time.time()
     print 'Matrices are done'
-    y, lam = eigb(A,x0,1e-3)
-    es.append(lam[0]/d)
-    lm.append(d)
+    y, lam = eigb(A, x0, eps)
     t2 = time.time()
+    print 'Elapsed time: %3.1f' % (t2 - t1)
+    print 'Eigenvalues:', lam

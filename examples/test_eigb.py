@@ -1,8 +1,10 @@
 import numpy as np
 import tt
 from tt.eigb import *
-#from tt_tensor2 import *
 import time
+
+""" This code computes many eigenvalus of the Laplacian operator """
+
 d = 8
 f = 20
 A = tt.qlaplace_dd([d]*f)

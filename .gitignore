@@ -1,1 +1,7 @@
-*.pyc *.so 
+*.pyc
+*.so
+*f2pywrappers2*
+tt/build/*
+.DS_STORE
+quadgauss/build/
+*module.c*

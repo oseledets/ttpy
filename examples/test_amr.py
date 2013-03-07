@@ -9,6 +9,4 @@ x = tt.ones(2,d)
 y = mvk4(A,x,x,1e-6)
 y = amr_solve(A,x,x,1e-6)
 
-import os.path
-os.path.abs
 
