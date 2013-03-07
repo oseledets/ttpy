@@ -12,7 +12,7 @@ import quadgauss
 import mctdh
 import dvr
 
-f = 4 #The number of degrees of freedom
+f = 2 #The number of degrees of freedom
 lm = 0.111803 #The magic constant
 #lm = 0 #The magic constant
 
@@ -123,15 +123,14 @@ gs = tt.tensor(gs,1e-8)
 start = None
 for i in xrange(f):
     start = tt.kron(start,gs)
-radd = 1
-start = start+0*tt.rand(start.n,start.d,radd)
+radd = 8
+#start = start+0*tt.rand(start.n,start.d,radd)
 start = start*(1.0/start.norm())
 y = start.copy()
-y = ksl(H, y, 0.1, scheme = 'first')
 print 'initial value norm:', start.norm()
 cf = []
 
-tf = 1e-2
+tf = 10
 ns = 2
 i = 0
 t = 0
@@ -144,26 +143,20 @@ t1 = time.time()
 #s2 = np.dot(np.conj(y1),start.full().flatten('F'))
 #s1 = 0.52021138426564-0.80781148446727j
 cf = {}
-Z = {}
-j = 0
+tau = 1e-2
 y0 = y.copy()
-for ns in [0,1,2]:
-    y = y0.copy()
-    t = 0
-    tau = tf/2 ** ns
-    for i in xrange(2 ** ns):
-        print '%f/%f' % (t,tf)
-        cf[round(t,3)] = tt.dot(y, start)
-        y1 = y.copy()
-        y = ksl(H,y,tau,scheme = 'symm')
-        print y.norm()
-        t += tau
-    Z[j] = y
-    j += 1
-rf = (Z[1] - Z[0]).norm()/((Z[2] - Z[1]).norm())
-print 'Runge factor:', rf
+while t <= tf:    
+    print '%f/%f' % (t, tf)
+    cf[round(t,3)] = tt.dot(y, start)
+    y = ksl(H, y, tau, scheme = 'symm')
+    print y.norm()
+    t += tau
 t2 = time.time()
 print("Elapsed time: %f" % (t2-t1))
+
+#Load MCTDH computations
+#work/python/henon-heiles/4d
+
 
 #from scipy.linalg import expm
 #H1 = H.full()

@@ -13,8 +13,8 @@ import mctdh
 import dvr
 
 f = 4 #The number of degrees of freedom
-lm = 0.111803 #The magic constant
-#lm = 0 #The magic constant
+#lm = 0.111803 #The magic constant
+lm = 0 #The magic constant
 
 #lm = 
 N = 20 # The size of the spectral discretization
@@ -127,7 +127,6 @@ radd = 1
 start = start+0*tt.rand(start.n,start.d,radd)
 start = start*(1.0/start.norm())
 y = start.copy()
-#y = ksl(H, y, 0.1, scheme = 'first')
 print 'initial value norm:', start.norm()
 cf = []
 
@@ -144,24 +143,17 @@ t1 = time.time()
 #s2 = np.dot(np.conj(y1),start.full().flatten('F'))
 #s1 = 0.52021138426564-0.80781148446727j
 cf = {}
-Z = {}
-j = 0
+tau = 0.1
 y0 = y.copy()
 for ns in [0,1,2]:
     y = y0.copy()
-    t = 0
-    tau = tf/2 ** ns
-    for i in xrange(2 ** ns):
-        print '%f/%f' % (t,tf)
-        cf[round(t,3)] = tt.dot(y, start)
-        y1 = y.copy()
-        y = ksl(H,y,tau,scheme = 'first')
-        print y.norm()
-        t += tau
-    Z[j] = y
-    j += 1
-rf = (Z[1] - Z[0]).norm()/((Z[2] - Z[1]).norm())
-print 'Runge factor:', rf
+    print '%f/%f' % (t,tf)
+    cf[round(t,3)] = tt.dot(y, start)
+    y1 = y.copy()
+    y = ksl(H,y,tau,scheme = 'symm')
+    print y.norm()
+    t += tau
+Z[j] = y
 t2 = time.time()
 print("Elapsed time: %f" % (t2-t1))
 
