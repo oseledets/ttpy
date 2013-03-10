@@ -2,7 +2,6 @@
 """ They still focus on the linear format for passing the data around, 
     and still convert to list (and back for some simple tasks) """ 
 import numpy as np
-from numpy.linalg import svd,norm,qr
 from numpy import prod, reshape, nonzero, size, sqrt
 from math import sqrt
 from numbers import Number

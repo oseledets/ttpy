@@ -23,7 +23,7 @@ python module dyn_tt
             integer, optional,intent(in) :: verb
         end subroutine tt_ksl
         
-        subroutine ztt_ksl(d,n,m,ra,cra,cry0,ry,tau,rmax,kickrank,nswp,verb, typ0) 
+        subroutine ztt_ksl(d,n,m,ra,cra,cry0,ry,tau,rmax,kickrank,nswp,verb, typ0, order0) 
             integer intent(in) :: d
             integer dimension(*),intent(in) :: n
             integer dimension(*),intent(in) :: m
@@ -37,6 +37,7 @@ python module dyn_tt
             integer, optional, intent(in) :: nswp
             integer, optional, intent(in) :: verb
             integer, optional, intent(in) :: typ0 
+            integer, optional, intent(in) :: order0
         end subroutine ztt_ksl
         
         

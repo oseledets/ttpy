@@ -247,6 +247,7 @@ contains
     integer :: i
     call arrays_to_sdv(n,r,d,ps,cr,tt)
     nrm=norm(tt)
+    call dealloc(tt)
   end subroutine dtt_nrm
   
     subroutine ztt_nrm(n,d,r,ps,cr,nrm)
@@ -261,6 +262,8 @@ contains
     integer :: i
     call arrays_to_sdv(n,r,d,ps,cr,tt)
     nrm=norm(tt)
+    call dealloc(tt)
+
     end subroutine ztt_nrm
   
  subroutine dtt_dotprod(n,d,r1,r2,ps1,ps2,core1,core2,dt,dtsize)
