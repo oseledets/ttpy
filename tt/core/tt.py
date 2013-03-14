@@ -3,6 +3,7 @@
     and still convert to list (and back for some simple tasks) """ 
 import numpy as np
 from numpy import prod, reshape, nonzero, size, sqrt
+import math
 from math import sqrt
 from numbers import Number
 import tt_f90
@@ -760,8 +761,28 @@ def xfun(n,d=None):
     return tensor.from_list(cr)
 
 
+def sin(d, alpha=1.0, phase=0.0):
+    """ Create TT-tensor for sin(alpha n + phi)"""
+    cr = []
+    cur_core = np.zeros([1, 2, 2], dtype=np.float)
+    cur_core[0, 0, :] = [math.cos(phase)        , math.sin(phase)        ]
+    cur_core[0, 1, :] = [math.cos(alpha + phase), math.sin(alpha + phase)]
+    cr.append(cur_core)
+    for i in xrange(1, d-1):
+        cur_core = np.zeros([2, 2, 2], dtype=np.float)
+        cur_core[0, 0, :] = [1.0                     , 0.0                      ]
+        cur_core[1, 0, :] = [0.0                     , 1.0                      ]
+        cur_core[0, 1, :] = [ math.cos(alpha * 2 ** i), math.sin(alpha * 2 ** i)]
+        cur_core[1, 1, :] = [-math.sin(alpha * 2 ** i), math.cos(alpha * 2 ** i)]
+        cr.append(cur_core)
+    cur_core = np.zeros([2, 2, 1], dtype=np.float)
+    cur_core[0, :, 0] = [0.0, math.sin(alpha * 2 ** (d-1))]
+    cur_core[1, :, 0] = [1.0, math.cos(alpha * 2 ** (d-1))]
+    cr.append(cur_core)
+    return tensor.from_list(cr)
 
-    
-    
 
+def cos(d, alpha=1.0, phase=0.0):
+    """ Create TT-tensor for cos(alpha n + phi)"""
+    return sin(d, alpha, phase + math.pi * 0.5)
     
