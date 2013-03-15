@@ -1,0 +1,18 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+
+python module maxvol ! in 
+    interface  ! in :maxvol
+        subroutine dmaxvol(a,n,r,ind,nswp,tol) ! in :maxvol:maxvol.f90
+            real(kind=8) dimension(n,r),intent(in) :: a
+            integer, optional,intent(in),check(shape(a,0)==n),depend(a) :: n=shape(a,0)
+            integer, optional,intent(in),check(shape(a,1)==r),depend(a) :: r=shape(a,1)
+            integer dimension(r),intent(out),depend(r) :: ind
+            integer intent(in) :: nswp
+            real(kind=8) intent(in) :: tol
+        end subroutine dmaxvol
+    end interface 
+end python module maxvol
+
+! This file was auto-generated with f2py (version:2).
+! See http://cens.ioc.ee/projects/f2py2e/
