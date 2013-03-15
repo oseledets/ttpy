@@ -72,7 +72,7 @@ They have the following functionality
 - **tt.eigb** : Contains a test version of the ALS block eigenvalue solver in the TT-format 
             (subroutine **tt.eigb.eigb**) 
 
-- **tt.kls** :  **OUTDATED** and will be fixed in a few weeks (with the KSL scheme). Please check again soon.  
+- **tt.ksl** :  Solution of the linear dynamic problems in the TT-format, using the KSL scheme. Looks like it is very effective. 
 
 Examples
 ========
