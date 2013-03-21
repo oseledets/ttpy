@@ -10,3 +10,5 @@ except:
         except:
             print "Did not find MKL or LAPACK library"
     from core.tt import *
+
+from multifuncrs import multifuncrs
