@@ -738,25 +738,25 @@ def xfun(n,d=None):
     c = matrix()
     c.tt = tensor()
     if d is None:
-        n0=np.anyarray(n,dtype=np.int32)
-        c.tt.d=n0.size
+        n0 = np.anyarray(n, dtyte=np.int32)
+        c.tt.d = n0.size
     else:
-        n0 = np.array([n]*d,dtype=np.int32)
+        n0 = np.array([n]*d, dtype=np.int32)
         c.tt.d = d
     cr=[]
     cur_core = np.ones((1,n0[0],2))
-    cur_core[0,:,0]=np.arange(n0[0])
+    cur_core[0,:,0] = np.arange(n0[0])
     cr.append(cur_core)
     ni = n0[0]
-    for i in xrange(1,d-2):
-        cur_core=np.zeros((2,n0[i],2))
+    for i in xrange(1, d - 1):
+        cur_core = np.zeros((2,n0[i],2))
         for j in xrange(n0[i]):
-            cur_core[:,j,:]=np.eye(2)
-        cur_core[1,:,0]=ni*np.arange(n0[i])
+            cur_core[:, j, :] = np.eye(2)
+        cur_core[1, :, 0] = ni * np.arange(n0[i])
         ni *= n0[i]
         cr.append(cur_core)
-    cur_core = np.ones((2,n0[d-1],1))
-    cur_core[1,:,0] = ni*np.arange(n0[d-1])
+    cur_core = np.ones((2, n0[d - 1], 1))
+    cur_core[1,:,0] = ni*np.arange(n0[d - 1])
     cr.append(cur_core)
     return tensor.from_list(cr)
 
