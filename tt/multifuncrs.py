@@ -8,12 +8,10 @@ import copy
 def reshape(a, size):
     return np.reshape(a, size, order='F')
 
-
 def my_chop2(sv, eps):
     if eps <= 0.0:
         r = len(sv)
         return r
-    eos = eps ** 2
     sv0 = np.cumsum(abs(sv[::-1]) ** 2)[::-1]
     ff = [i for i in range(len(sv0)) if sv0[i] < eps ** 2]
     if len(ff) == 0:
@@ -21,6 +19,32 @@ def my_chop2(sv, eps):
     else:
         return np.amin(ff)
 
+# Cross approximation of a (vector-)function of several TT-tensors.
+# [Y]=MULTIFUNCRS(X,FUNS,EPS,VARARGIN)
+# Computes approximation to the functions FUNS(X{1},...,X{N}) with accuracy EPS
+# X should be a cell array of nx TT-tensors of equal sizes.
+# The function FUNS should receive a 2d array V of sizes I x N, where the
+# first dimension stays for the reduced set of spatial indices, and the
+# second is the enumerator of X.
+# The returned sizes should be I x D2, where D2 is the number of
+# components in FUNS. D2 should be either provided as the last (d+1)-th
+# TT-rank of the initial guess, or given explicitly as an option (see
+# below).
+# For example, a linear combination reads FUNS=@(x)(x*W), W is a N x D2
+# matrix.
+#
+# Options are provided in form
+# 'PropertyName1',PropertyValue1,'PropertyName2',PropertyValue2 and so
+# on. The parameters are set to default (in brackets in the following)
+# The list of option names and default values are:
+#   o y0 - initial approximation [random rank-2 tensor]
+#   o nswp - maximal number of DMRG sweeps [10]
+#   o rmax - maximal TT rank [Inf]
+#   o verb - verbosity level, 0-silent, 1-sweep info, 2-block info [1]
+#   o kickrank - the rank-increasing parameter [5]
+#   o d2 - the last rank of y, that is dim(FUNS) [1]
+#   o qr - do (or not) qr before maxvol [false]
+#   o pcatype - How to compute the enrichment of the basis, 'uchol' - Incomplete Cholesky, 'svd' - SVD [svd]
 
 def multifuncrs(X, funs, eps=1E-6, varargin=[]):
     nswp = 10
@@ -85,6 +109,7 @@ def multifuncrs(X, funs, eps=1E-6, varargin=[]):
     
     block_order = [+d, -d]
     
+    # orth
     for i in range(0, d - 1):
         cr = cry[i]
         cr = reshape(cr, (ry[i] * n[i], ry[i + 1]))
@@ -105,7 +130,6 @@ def multifuncrs(X, funs, eps=1E-6, varargin=[]):
             curind = np.random.permutation(n[i] * ry[i])[:ry[i + 1]]
         else:
             curind = maxvol(Ry[i + 1])
-            # curind = maxvol2(Ry[i + 1], 'qr', do_qr) # TODO
         Ry[i + 1] = Ry[i + 1][curind, :]
         for j in range(0, nx):
             Rx[i + 1, j] = reshape(crx[i, j], (rx[i, j], n[i] * rx[i + 1, j]))
@@ -279,7 +303,6 @@ def multifuncrs(X, funs, eps=1E-6, varargin=[]):
                 if kicktype == 'amr-two':
                     # compute the X superblocks
                     ind2 = np.unique(np.random.randint(0, ry[i - 1] * n[i - 1], ry[i]))
-                    #ind2 = np.unique(np.floor(np.random.rand(ry[i]) * (ry[i - 1] * n[i - 1])))
                     rkick = len(ind2)
                     curbl = np.zeros((rkick * n[i] * ry[i + 1], nx))
                     for j in range(nx):
@@ -343,7 +366,6 @@ def multifuncrs(X, funs, eps=1E-6, varargin=[]):
             newy = reshape(newy, (d2, ry[i], n[i], ry[i + 1]))
             cry[i] = newy
         
-        #import ipdb; ipdb.set_trace() 
         i = i + dirn
         cur_order[order_index] = cur_order[order_index] - dirn
         if cur_order[order_index] == 0:
@@ -358,8 +380,6 @@ def multifuncrs(X, funs, eps=1E-6, varargin=[]):
                 last_sweep = True
                 kickrank = 0
             
-            #import ipdb; ipdb.set_trace();
-            
             if order_index >= len(cur_order):
                 cur_order = copy.copy(block_order)
                 order_index = 0
@@ -372,35 +392,7 @@ def multifuncrs(X, funs, eps=1E-6, varargin=[]):
             dirn = int(math.copysign(1, cur_order[order_index]))
             i = i + dirn
             
-        
     cry[d - 1] = np.transpose(cry[d - 1][:, :, :, 0], [1, 2, 0])
     y = tt.tensor.from_list(cry)
     return y
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     
