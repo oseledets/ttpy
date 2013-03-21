@@ -25,7 +25,7 @@ def my_chop2(sv, eps):
 def multifuncrs(X, funs, eps=1E-6, varargin=[]):
     nswp = 10
     kickrank = 5
-    y = []
+    y = None
     verb = 1
     kicktype = 'amr-two'
     pcatype = 'svd'
@@ -67,7 +67,7 @@ def multifuncrs(X, funs, eps=1E-6, varargin=[]):
     rx = np.transpose(np.array([ttx.r for ttx in X]))
     crx = np.transpose(np.array([tt.tensor.to_list(ttx) for ttx in X], dtype=np.object))
     
-    if len(y) == 0:
+    if y is None:
         ry = d2 * np.ones((d + 1,), dtype=np.int32)
         ry[0] = 1
         y = tt.rand(n, d, ry)
@@ -148,6 +148,7 @@ def multifuncrs(X, funs, eps=1E-6, varargin=[]):
             newy = reshape(newy, (ry[i], n[i] * ry[i + 1] * d2))
             newy = np.linalg.solve(Ry[i], newy) # y = R \ y
             newy = reshape(newy, (ry[i] * n[i] * ry[i + 1], d2))
+            uu, ss, vv = np.linalg.svd(Ry[i+1])
             newy = reshape(np.transpose(newy), (d2 * ry[i] * n[i], ry[i + 1]))
             newy = np.transpose(np.linalg.solve(np.transpose(Ry[i + 1]), np.transpose(newy))) # y=y/R
             newy = reshape(newy, (d2 * ry[i] * n[i] * ry[i + 1],))
@@ -310,7 +311,6 @@ def multifuncrs(X, funs, eps=1E-6, varargin=[]):
             u = np.concatenate((u, np.zeros((d2 * ry[i], radd))), axis=1)
             u = np.dot(u, np.transpose(rv))
             r = v.shape[1]
-            
             cr2 = cry[i - 1]
             cr2 = reshape(cr2, (ry[i - 1] * n[i - 1], ry[i]))
             u = reshape(u, (d2, ry[i] * r))
@@ -327,7 +327,7 @@ def multifuncrs(X, funs, eps=1E-6, varargin=[]):
             
             Ry[i] = np.dot(reshape(v, (ry[i] * n[i], ry[i + 1])), Ry[i + 1])
             Ry[i] = reshape(Ry[i], (ry[i], n[i] * ry[i + 1]))
-            curind = maxvol(Ry[i])
+            curind = maxvol(np.transpose(Ry[i]))
             Ry[i] = Ry[i][:, curind]
             for j in range(nx):
                 Rx[i, j] = reshape(crx[i, j], (rx[i, j] * n[i], rx[i + 1, j]))
@@ -343,7 +343,7 @@ def multifuncrs(X, funs, eps=1E-6, varargin=[]):
             newy = reshape(newy, (d2, ry[i], n[i], ry[i + 1]))
             cry[i] = newy
         
-        
+        #import ipdb; ipdb.set_trace() 
         i = i + dirn
         cur_order[order_index] = cur_order[order_index] - dirn
         if cur_order[order_index] == 0:

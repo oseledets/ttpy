@@ -5,7 +5,7 @@ import tt
 
 d = 20
 n = 2 ** d
-b = 1e+3
+b = 1.0
 h = b / (n + 1)
 x = np.arange(n)
 x = np.reshape(x, [2] * d, order = 'F')
@@ -16,9 +16,9 @@ x = x + e
 x = x * h 
 
 
-sf = lambda x : np.sin(x) #Should be rank 2
+sf = lambda x : np.ones(x.shape) #Should be rank 2
 
-y = tt.multifuncrs([x], sf, 1e-6)
+y = tt.multifuncrs([x], sf, 1e-6, ['y0', tt.ones(2, d)])
 y1 = tt.tensor(sf(x.full()), 1e-8)
 
 print (y - y1).norm() / y.norm()
