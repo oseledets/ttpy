@@ -735,14 +735,19 @@ def qlaplace_dd(d):
 
 def xfun(n,d=None):
     """ Create a QTT-representation of 0:prod(n) vector"""
-    c = matrix()
-    c.tt = tensor()
+    # call examples:
+    #   tt.xfun(2, 5)         # create 2 x 2 x 2 x 2 x 2 TT-tensor
+    #   tt.xfun(3)            # create [0, 1, 2] one-dimensional TT-tensor
+    #   tt.xfun([3, 5, 7], 2) # create 3 x 5 x 7 x 3 x 5 x 7 TT-tensor
+    if isinstance(n, (int, long)):
+        n = [n]
     if d is None:
         n0 = np.asanyarray(n, dtype=np.int32)
-        c.tt.d = n0.size
     else:
-        n0 = np.array([n]*d, dtype=np.int32)
-        c.tt.d = d
+        n0 = np.array(n * d, dtype=np.int32)
+    d = n0.size
+    if d == 1:
+        return tensor.from_list([np.reshape(np.arange(n0[0]), (1, n0[0], 1))])
     cr=[]
     cur_core = np.ones((1,n0[0],2))
     cur_core[0,:,0] = np.arange(n0[0])
@@ -785,4 +790,31 @@ def sin(d, alpha=1.0, phase=0.0):
 def cos(d, alpha=1.0, phase=0.0):
     """ Create TT-tensor for cos(alpha n + phi)"""
     return sin(d, alpha, phase + math.pi * 0.5)
+
+def delta(n, d=None, center=0):
+    """ Create TT-tensor for delta(x - x_0) """
+    if isinstance(n, (int, long)):
+        n = [n]
+    if d is None:
+        n0 = np.asanyarray(n, dtype=np.int32)
+    else:
+        n0 = np.array(n * d, dtype=np.int32)
+    d = n0.size
     
+    if center < 0:
+        cind = [0] * d
+    else:
+        cind = []
+        for i in xrange(d):
+            cind.append(center % n0[i])
+            center /= n0[i]
+        if center > 0:
+            cind = [0] * d
+    
+    cr=[]
+    for i in xrange(d):
+        cur_core = np.zeros((1, n0[i], 1))
+        cur_core[0, cind[i], 0] = 1
+        cr.append(cur_core)
+    return tensor.from_list(cr)
+
