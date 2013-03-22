@@ -738,7 +738,7 @@ def xfun(n,d=None):
     c = matrix()
     c.tt = tensor()
     if d is None:
-        n0 = np.anyarray(n, dtype=np.int32)
+        n0 = np.asanyarray(n, dtype=np.int32)
         c.tt.d = n0.size
     else:
         n0 = np.array([n]*d, dtype=np.int32)
