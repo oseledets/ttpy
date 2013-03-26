@@ -46,44 +46,20 @@ def my_chop2(sv, eps):
 #   o qr - do (or not) qr before maxvol [false]
 #   o pcatype - How to compute the enrichment of the basis, 'uchol' - Incomplete Cholesky, 'svd' - SVD [svd]
 
-def multifuncrs(X, funs, eps=1E-6, varargin=[]):
-    nswp = 10
-    kickrank = 5
-    y = None
-    verb = 1
-    kicktype = 'amr-two'
-    pcatype = 'svd'
-    rmax = 999999 # TODO: infinity
-    d2 = 1
-    wasrand = False
-    trunctype = 'fro'
-    do_qr = False
+def multifuncrs(X, funs, eps=1E-6, \
+        nswp=10,                   \
+        kickrank=5,                \
+        y0=None,                   \
+        rmax=999999,#TODO:infinity \ 
+        kicktype='amr-two',        \
+        pcatype='svd',             \
+        trunctype='fro',           \
+        d2=1,                      \
+        do_qr=False,               \
+        verb=1):
     
-    for i in range(0, len(varargin) - 1, 2):
-        tmp = varargin[i].lower()
-        arg = varargin[i + 1]
-        if tmp == 'nswp':
-            nswp      = arg
-        elif tmp == 'y0':
-            y         = arg
-        elif tmp == 'kickrank':
-            kickrank  = arg
-        elif tmp == 'rmax':
-            rmax      = arg
-        elif tmp == 'verb':
-            verb      = arg
-        elif tmp == 'kicktype':
-            kicktype  = arg
-        elif tmp == 'pcatype':
-            pcatype   = arg
-        elif tmp == 'trunctype':
-            trunctype = arg
-        elif tmp == 'd2':
-            d2        = arg
-        elif tmp == 'qr':
-            do_qr     = arg
-        else:
-            print "Unrecognized option: %s" % tmp
+    y = y0
+    wasrand = False
     
     nx = len(X)
     d = X[0].d
