@@ -18,12 +18,12 @@ def mvk4(A,x,y0,eps,rmax=150,kickrank=5,nswp=20,verb=1):
     amr_f90.tt_adapt_als.deallocate_result()
     y.get_ps()
     return y
-def amr_solve(A,f,x0,eps,rmax=150,kickrank=5,nswp=20,verb=1,prec='n',nrestart=40,niters=2):
+def amen_solve(A,f,x0,eps,rmax=150,kickrank=5,nswp=20,verb=1,prec='n',nrestart=40,niters=2):
     """ Approximate linear system solution 
             X = AMR_SOLVE(A,F,X0,EPS), using AMR/DMRG algorithm
     """
     rx0 = x0.r.copy()
-    amr_f90.tt_adapt_als.tt_amr_solve(f.d,A.n,A.m,f.r,A.tt.r,A.tt.core,f.core,x0.core,rx0,eps,kickrank,nswp,verb,prec,nrestart,niters)
+    amr_f90.tt_adapt_als.tt_amen_solve(f.d,A.n,A.m,f.r,A.tt.r,A.tt.core,f.core,x0.core,rx0,eps,kickrank,nswp,verb,prec,nrestart,niters)
     x = tensor()
     x.d = f.d 
     x.n = f.n.copy()

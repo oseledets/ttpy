@@ -23,7 +23,7 @@ python module amr_f90 ! in
             end subroutine tt_mvk4
             subroutine deallocate_result
             end subroutine deallocate_result
-            subroutine tt_amr_solve(d,n,m,ry,ra,cra,cry,crx0,rx,eps,kickrank,nswp,verb,prec,nrestart,niters) ! in :amr_f90:../tt-fort/tt_adapt_als.f90:tt_adapt_als
+            subroutine tt_amen_solve(d,n,m,ry,ra,cra,cry,crx0,rx,eps,kickrank,nswp,verb,prec,nrestart,niters) ! in :amr_f90:../tt-fort/tt_adapt_als.f90:tt_adapt_als
                 integer intent(in) :: d
                 integer dimension(*),intent(in) :: n
                 integer dimension(*),intent(in) :: m
@@ -40,7 +40,7 @@ python module amr_f90 ! in
                 character, optional,intent(in) :: prec
                 integer, optional,intent(in) :: nrestart
                 integer, optional,intent(in) :: niters
-            end subroutine tt_amr_solve
+            end subroutine tt_amen_solve
         end module tt_adapt_als
     end interface 
 end python module amr_f90
