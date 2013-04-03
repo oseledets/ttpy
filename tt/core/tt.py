@@ -519,8 +519,21 @@ class matrix:
 
 #Some binary operations (put aside to wrap something in future)
 #TT-matrix by a TT-vector product
-def tt_mv(a,b):
-    mv=tt
+def matvec(a,b):
+    acrs = tensor.to_list(a.tt)
+    bcrs = tensor.to_list(b)
+    ccrs = []
+    d = b.d
+    for i in xrange(d):
+        acr = np.reshape(acrs[i], (a.tt.r[i], a.n[i], a.m[i], a.tt.r[i + 1]), order='F')
+        acr = acr.transpose([3, 0, 1, 2]) # a(R_{i+1}, R_i, n_i, m_i)
+        bcr = bcrs[i].transpose([1, 0, 2]) # b(m_i, r_i, r_{i+1})
+        ccr = np.tensordot(acr, bcr, axes=(3, 0)) # c(R_{i+1}, R_i, n_i, r_i, r_{i+1})
+        ccr = ccr.transpose([1, 3, 2, 0, 4]).reshape((a.tt.r[i] * b.r[i], a.n[i], a.tt.r[i+1] * b.r[i+1]), order='F')
+        ccrs.append(ccr)
+    return tensor.from_list(ccrs)
+        
+
 
 
 #TT-by-a-full matrix product (wrapped in Fortran 90, inspired by
@@ -647,6 +660,90 @@ def eye(n,d=None):
 		c.tt.core[c.tt.ps[i]-1:c.tt.ps[i+1]-1] = np.eye(c.n[i]).flatten()
 	return c
 
+#Arbitrary Toeplitz matrix
+def Toeplitz(x, kind='F'):
+    """ Creates Toeplitz TT-matrix of size 2^d x 2^d.
+        
+        Possible matrix types:
+        'F' - full Toeplitz matrix,             size(x) = 2^{d+1}
+        'C' - circulant matrix,                 size(x) = 2^d
+        'L' - lower triangular Toeplitz matrix, size(x) = 2^d
+        'U' - upper triangular Toeplitz matrix, size(x) = 2^d
+    """
+    if kind not in ['F', 'C', 'L', 'U']:
+        raise ValueError("Toeplitz matrix kind must be one of F, C, L, U.")
+    d = (x.d - 1) if kind == 'F' else x.d
+    # predefined matrices and tensors:
+    I = [[1, 0], [0, 1]]
+    J = [[0, 1], [0, 0]]
+    JT= [[0, 0], [1, 0]]
+    H = [[0, 1], [1, 0]]
+    S = np.array([[[0], [1]], [[1], [0]]]).transpose() # 2 x 2 x 1
+    P = np.zeros((2, 2, 2, 2))
+    #P[0, :, :, 0] = I; P[1, :, :, 0] = H
+    #P[0, :, :, 1] = H; P[1, :, :, 1] = I
+    P[:, :, 0, 0] = I; P[:, :, 1, 0] = H
+    P[:, :, 0, 1] = H; P[:, :, 1, 1] = I
+    P = np.transpose(P) # 2 x 2! x 2 x 2 x '1'
+    Q = np.zeros((2, 2, 2, 2))
+    #Q[0, :, :, 0] = I; Q[1, :, :, 0] = JT
+    #Q[0, :, :, 1] = JT
+    Q[:, :, 0, 0] = I; Q[:, :, 1, 0] = JT
+    Q[:, :, 0, 1] = JT
+    Q = np.transpose(Q) # 2 x 2! x 2 x 2 x '1'
+    R = np.zeros((2, 2, 2, 2))
+    #R[1, :, :, 0] = J
+    #R[1, :, :, 1] = I; R[0, :, :, 1] = J;
+    R[:, :, 1, 0] = J
+    R[:, :, 0, 1] = J; R[:, :, 1, 1] = I;
+    R = np.transpose(R) # 2 x 2! x 2 x 2 x '1'
+    W = np.zeros([2] * 5) # 2 x 2! x 2 x 2 x 2
+    W[0, :, :, 0, 0] = W[1, :, :, 1, 1] = I
+    W[0, :, :, 1, 0] = W[0, :, :, 0, 1] = JT
+    W[1, :, :, 1, 0] = W[1, :, :, 0, 1] = J
+    W = np.transpose(W) # 2 x 2! x 2 x 2 x 2
+    V = np.zeros((2, 2, 2, 2))
+    V[0, :, :, 0] = I
+    V[0, :, :, 1] = JT
+    V[1, :, :, 1] = J
+    V = np.transpose(V) # '1' x 2! x 2 x 2 x 2
+    crs = []
+    xcrs = tensor.to_list(x)
+    xcr = xcrs[0] # 1 x 2 x r_1
+    cr = np.tensordot(V, xcr, (0, 1)) # <'1'| x 2 x 2 x |2> x <1| x |r_1>
+    cr = cr.reshape((1, 2, 2, 2 * x.r[1]), order='F') # <1| x 2 x 2 x |2r_1>
+    crs.append(cr)
+    for i in xrange(1, d - 1):
+        xcr = xcrs[i] # r_i x 2 x r_{i+1}
+        cr = np.tensordot(W, xcr, (1, 1)) # (<2| x 2 x 2 x |2>) x <r_i| x |r_{i+1}>
+        cr = cr.transpose([0, 4, 1, 2, 3, 5]) # <2| x <r_i| x 2 x 2 x |2> x |r_{i+1}>
+        cr = cr.reshape((2 * x.r[i], 2, 2, 2 * x.r[i+1]), order='F') # <2r_i| x 2 x 2 x |2r_{i+1}>
+        crs.append(cr)
+    if kind == 'F':
+        xcr = xcrs[d-1] # r_{d-1} x 2 x r_d
+        cr = np.tensordot(W, xcr, (1, 1)).transpose([0, 4, 1, 2, 3, 5])
+        cr = cr.reshape((2 * x.r[d-1], 2, 2, 2 * x.r[d]), order='F') # <2r_{d-1}| x 2 x 2 x |2r_d>
+        xcr = xcrs[d] # r_d x 2 x 1
+        tmp = np.tensordot(S, xcr, (1, 1)) # <2| x |1> x <r_d| x |1>
+        #tmp = tmp.transpose([0, 2, 1, 3]) # TODO: figure out WHY THE HELL this spoils everything
+        tmp = tmp.reshape((2 * x.r[d], 1), order='F') # <2r_d| x |1>
+        cr = np.tensordot(cr, tmp, (3, 0)) # <2r_{d-1}| x 2 x 2 x |1>
+        crs.append(cr)
+    else:
+        dotcore = None
+        if kind == 'C':
+            dotcore = P
+        elif kind == 'L':
+            dotcore = Q
+        elif kind == 'U':
+            dotcore = R
+        xcr = xcrs[d-1] # r_{d-1} x 2 x 1
+        cr = np.tensordot(dotcore, xcr, (1, 1)) # <2| x 2 x 2 x |'1'> x <r_{d-1}| x |1>
+        cr = cr.transpose([0, 3, 1, 2, 4]) # <2| x <r_{d-1}| x 2 x 2 x |1>
+        cr = cr.reshape((2 * x.r[d-1], 2, 2, 1), order='F')
+        crs.append(cr) 
+    return matrix.from_list(crs)
+    
 
 
 #Laplace operator
