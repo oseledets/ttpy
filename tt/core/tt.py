@@ -276,7 +276,7 @@ class tensor:
 	
     def rmean(self):
         """ Calculates the mean rank of a TT-tensor"""
-        if self.n == 0:
+        if np.prod(self.n) == 0:
             return 0
         # Solving quadratic equation ar^2 + br + c = 0;
         a = np.sum(self.n[1:-1])
@@ -382,6 +382,33 @@ class matrix:
     @property
     def is_complex(self):
         return np.iscomplex(self.tt.core).any()
+
+    def __getitem__(self, index):
+        if len(index) == 2:
+            if isinstance(index[0], int) and index[1] == slice(None):
+                # row requested
+                row = index[0]
+                mycrs = matrix.to_list(self)
+                crs = []
+                for i in xrange(self.tt.d):
+                    crs.append(mycrs[i][:, row % self.n[i], :, :].copy())
+                    row /= self.n[i]
+                return tensor.from_list(crs)
+            elif isinstance(index[1], int) and index[0] == slice(None):
+                # col requested
+                col = index[1]
+                mycrs = matrix.to_list(self)
+                crs = []
+                for i in xrange(self.tt.d):
+                    crs.append(mycrs[i][:, :, col % self.m[i], :].copy())
+                    col /= self.m[i]
+                return tensor.from_list(crs)
+            elif isinstance(index[0], int) and isinstance(index[1], int):
+                # element requested
+                pass
+            else:
+                # complicated submatrix requested
+                pass
 
     def __add__(self,other):
         if other is None:
