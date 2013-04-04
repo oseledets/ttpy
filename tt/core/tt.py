@@ -698,10 +698,13 @@ def Toeplitz(x, d=None, D=None, kind='F'):
         'U' - upper triangular Toeplitz matrix, size(x) = 2^d
         
         Sample call for one-level Toeplitz matrix:
-          T = tt.Toeplitz(x, kind='F')
+          T = tt.Toeplitz(x)
         
-        Sample call for three-level Toeplitz matrix:
-          T = tt.Toeplitz(x, D=3, kind='F')
+        Sample call for one-level circulant matrix:
+          T = tt.Toeplitz(x, kind='C')
+        
+        Sample call for three-level upper-triangular Toeplitz matrix:
+          T = tt.Toeplitz(x, D=3, kind='U')
           
         Sample call for two-level mixed-type Toeplitz matrix:
           T = tt.Toeplitz(x, kind=['L', 'U'])
@@ -990,4 +993,89 @@ def delta(n, d=None, center=0):
         cur_core[0, cind[i], 0] = 1
         cr.append(cur_core)
     return tensor.from_list(cr)
+
+def stepfun(n, d=None, center=1, direction=1):
+    """ Create TT-tensor for Heaviside step function H(x - x_0)
+    
+    H(x) = 1 when x >= 0 and = 0 when x < 0.
+    For negative direction H(x_0 - x) is approximated. """
+    if isinstance(n, (int, long)):
+        n = [n]
+    if d is None:
+        n0 = np.asanyarray(n, dtype=np.int32)
+    else:
+        n0 = np.array(n * d, dtype=np.int32)
+    d = n0.size
+    N = np.prod(n0)
+    
+    if center >= N and direction < 0 or center <= 0 and direction > 0:
+        return ones(n0)
+    
+    if center <= 0 and direction < 0 or center >= N and direction > 0:
+        raise ValueError("Heaviside function with specified center and direction gives zero tensor!")
+    if direction > 0:   
+        center = N - center
+    cind = []
+    for i in xrange(d):
+        cind.append(center % n0[i])
+        center /= n0[i]
+    
+    def gen_notx(currcind, currn):
+        return [0.0] * (currn - currcind) + [1.0] * currcind
+    def gen_notx_rev(currcind, currn):
+        return [1.0] * currcind + [0.0] * (currn - currcind)
+    def gen_x(currcind, currn):
+        result = [0.0] * currn
+        result[currn - currcind - 1] = 1.0
+        return result
+    def gen_x_rev(currcind, currn):
+        result = [0.0] * currn
+        result[currcind] = 1.0
+        return result
+    
+    if direction > 0:
+        x = gen_x
+        notx = gen_notx
+    else:
+        x    = gen_x_rev
+        notx = gen_notx_rev
+    
+    crs = []
+    prevrank = 1
+    for i in range(d)[::-1]:
+        break_further = max([0] + cind[:i])
+        nextrank = 2 if break_further else 1
+        one = [1] * n0[i]
+        cr = np.zeros([nextrank, n0[i], prevrank], dtype=np.float)
+        tempx = x(cind[i], n0[i])
+        tempnotx = notx(cind[i], n0[i])
+        # high-conditional magic
+        if not break_further:
+            if cind[i]:
+                if prevrank > 1:
+                    cr[0, :, 0] = one
+                    cr[0, :, 1] = tempnotx
+                else:
+                    cr[0, :, 0] = tempnotx
+            else:
+                cr[0, :, 0] = one
+        else:
+            if prevrank > 1:
+                cr[0, :, 0] = one
+                if cind[i]:
+                    cr[0, :, 1] = tempnotx
+                    cr[1, :, 1] = tempx
+                else:
+                    cr[1, :, 1] = tempx
+            else:
+                if cind[i]:
+                    cr[0, :, 0] = tempnotx
+                    cr[1, :, 0] = tempx
+                else:
+                    nextrank = 1
+                    cr = cr[:1, :, :]
+                    cr[0, :, 0] = tempx
+        prevrank = nextrank
+        crs.append(cr)
+    return tensor.from_list(crs[::-1])        
 
