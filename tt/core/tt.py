@@ -259,7 +259,6 @@ class tensor:
        return self*(-1)
 
     def get_ps(self):
-		
         self.ps = np.cumsum(np.concatenate(([1],self.n*self.r[0:self.d]*self.r[1:self.d+1]))).astype(np.int32)
 
     def alloc_core(self):
@@ -610,10 +609,31 @@ def diag(a):
         raise ValueError('Can be called only on TT-tensor or a TT-matrix')
 
 
-def mkron(a):
+def mkron(a, *args):
     """Kronecker product of all the arguments"""
-    pass # TODO
-        
+    if not isinstance(a, list):
+        a = [a]
+    a = list(a) # copy list
+    for i in args:
+        if isinstance(i, list):
+            a.extend(i)
+        else:
+            a.append(i)
+    
+    c = tensor()
+    c.d = 0
+    c.n = np.array([], dtype=np.int32)
+    c.r = np.array([], dtype=np.int32)
+    c.core = []
+    
+    for t in a:
+        c.d += t.d
+        c.n = np.concatenate((c.n, t.n))
+        c.r = np.concatenate((c.r[:-1], t.r))
+        c.core = np.concatenate((c.core, t.core))
+    
+    c.get_ps()
+    return c
                          
 
 def _hdm (a,b):
