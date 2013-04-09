@@ -11,6 +11,15 @@ python module maxvol ! in
             integer intent(in) :: nswp
             real(kind=8) intent(in) :: tol
         end subroutine dmaxvol
+        
+        subroutine zmaxvol(a,n,r,ind,nswp,tol) ! in :maxvol:maxvol.f90
+            complex(kind=8) dimension(n,r),intent(in) :: a
+            integer, optional,intent(in),check(shape(a,0)==n),depend(a) :: n=shape(a,0)
+            integer, optional,intent(in),check(shape(a,1)==r),depend(a) :: r=shape(a,1)
+            integer dimension(r),intent(out),depend(r) :: ind
+            integer intent(in) :: nswp
+            real(kind=8) intent(in) :: tol
+        end subroutine zmaxvol
     end interface 
 end python module maxvol
 

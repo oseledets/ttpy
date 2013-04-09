@@ -148,7 +148,6 @@ def multifuncrs(X, funs, eps=1E-6, \
             newy = reshape(newy, (ry[i], n[i] * ry[i + 1] * d2))
             newy = np.linalg.solve(Ry[i], newy) # y = R \ y
             newy = reshape(newy, (ry[i] * n[i] * ry[i + 1], d2))
-            uu, ss, vv = np.linalg.svd(Ry[i+1])
             newy = reshape(np.transpose(newy), (d2 * ry[i] * n[i], ry[i + 1]))
             newy = np.transpose(np.linalg.solve(np.transpose(Ry[i + 1]), np.transpose(newy))) # y=y/R
             newy = reshape(newy, (d2 * ry[i] * n[i] * ry[i + 1],))
@@ -169,7 +168,7 @@ def multifuncrs(X, funs, eps=1E-6, \
         
         if kickrank >= 0:
             u, s, v = np.linalg.svd(newy, full_matrices=False)
-            v = np.transpose(v)
+            v = np.conj(np.transpose(v))
             if trunctype == "fro" or last_sweep:
                 r = my_chop2(s, eps / math.sqrt(d) * np.linalg.norm(s))
             else:
@@ -192,7 +191,7 @@ def multifuncrs(X, funs, eps=1E-6, \
             else:
                 v, u = np.linalg.qr(np.transpose(newy))
                 v = np.conj(v)
-                u = np.conj(np.transpose(u))
+                u = np.transpose(u)
                 r = u.shape[1]
                 s = np.ones((r, ))
         
@@ -233,7 +232,7 @@ def multifuncrs(X, funs, eps=1E-6, \
                     uk = reshape(uk, (ry[i] * n[i], rkick * d2))
                     if pcatype == 'svd':
                         uk, sk, vk = np.linalg.svd(uk, full_matrices=False)
-                        vk = np.transpose(vk)
+                        vk = np.conj(np.transpose(vk))
                         uk = uk[:, :min(kickrank, uk.shape[1])]
                     else:
                         # uk = uchol(np.transpose(uk), kickrank + 1) # TODO
@@ -298,7 +297,7 @@ def multifuncrs(X, funs, eps=1E-6, \
                     uk = reshape(uk, (d2 * rkick, n[i] * ry[i + 1]))
                     if pcatype == 'svd':
                         vk, sk, uk = np.linalg.svd(uk, full_matrices=False)
-                        uk = np.transpose(uk)
+                        uk = np.conj(np.transpose(uk))
                         uk = uk[:, :min(kickrank, uk.shape[1])] # TODO: refactor
                     else:
                         # uk = uchol(uk, kickrank + 1) # TODO
