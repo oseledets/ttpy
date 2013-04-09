@@ -627,11 +627,12 @@ def mkron(a, *args):
     c.core = []
     
     for t in a:
-        c.d += t.d
-        c.n = np.concatenate((c.n, t.n))
-        c.r = np.concatenate((c.r[:-1], t.r))
-        c.core = np.concatenate((c.core, t.core))
-    
+        thetensor = t.tt if isinstance(t, matrix) else t
+        c.d += thetensor.d
+        c.n = np.concatenate((c.n, thetensor.n))
+        c.r = np.concatenate((c.r[:-1], thetensor.r))
+        c.core = np.concatenate((c.core, thetensor.core))
+            
     c.get_ps()
     return c
                          
@@ -647,7 +648,27 @@ def _hdm (a,b):
     tt_f90.tt_f90.tt_dealloc()
     return c
 
-
+def sum(a, axis=-1):    
+    """Sum TT-tensor over specified axes"""
+    d = a.d
+    crs = tensor.to_list(a.tt if isinstance(a, matrix) else a)
+    if axis < 0:
+        axis = range(a.d)
+    elif isinstance(axis, int):
+        axis = [axis]
+    axis = list(axis)[::-1]
+    for ax in axis:
+        crs[ax] = np.sum(crs[ax], axis=1)
+        rleft, rright = crs[ax].shape
+        if (rleft >= rright or rleft < rright and ax + 1 >= d) and ax > 0:
+            crs[ax-1] = np.tensordot(crs[ax-1], crs[ax], axes=(2,0))
+        elif ax + 1 < d:
+            crs[ax+1] = np.tensordot(crs[ax], crs[ax+1], axes=(1,0))
+        else:
+            return np.sum(crs[ax])
+        crs.pop(ax)
+        d -= 1
+    return tensor.from_list(crs)
 
 #Basic functions for the arrays creation
 
