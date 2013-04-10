@@ -781,10 +781,10 @@ def Toeplitz(x, d=None, D=None, kind='F'):
             else:
                 raise ValueError("Only similar matrix kinds (only F or only C, L and U) are accepted when d is not specified!")
     elif d is not None:
-        d = np.asarray(d, dtype=np.int32)
+        d = np.asarray(d, dtype=np.int32).flatten()
         if D is None:
-            D = len(d)
-        if D != len(d):
+            D = d.size
+        if D != d.size:
             raise ValueError("D must be equal to len(d)")
         check_kinds(D, kind)
         if np.sum([d + (1 if knd == 'F' else 0) for knd in kind]) != x.d:
