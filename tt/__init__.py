@@ -12,3 +12,4 @@ except:
     from core.tt import *
 
 from multifuncrs import multifuncrs
+from solvers import GMRES
