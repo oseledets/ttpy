@@ -302,13 +302,15 @@ class matrix:
             else:
                 n1 = np.array(n,dtype=int32)
                 m1 = np.array(m,dtype=int32)
-                self.n = n1
-                self.m = m1
-                self.tt = tensor()
-                self.tt.core = a.core.copy()
-                self.tt.ps = a.ps.copy()
-                self.tt.r = a.r.copy()
-                return
+            self.n = n1
+            self.m = m1
+            self.tt = tensor()
+            self.tt.core = a.core.copy()
+            self.tt.ps = a.ps.copy()
+            self.tt.r = a.r.copy()
+            self.tt.n = a.n.copy()
+            self.tt.d = self.tt.n.size
+            return
         try: 
             c = np.asarray(a,dtype=np.float64)
             d = c.ndim/2
