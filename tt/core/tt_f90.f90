@@ -330,6 +330,28 @@ contains
       call dealloc(tt)
  end subroutine dtt_hdm
 
+ subroutine ztt_hdm(n,d,r1,r2,ps1,ps2,core1,core2,rres,psres)
+      integer, intent(in)  :: d
+      integer, intent(in)  :: n(d)
+      integer, intent(in)  :: r1(d+1)
+      integer, intent(in)  :: r2(d+1)
+      integer, intent(in)  :: ps1(d+1)
+      integer, intent(in)  :: ps2(d+1)
+      integer, intent(out) :: rres(d+1)
+      integer, intent(out) :: psres(d+1)
+      complex(8),    intent(in) :: core1(:)
+      complex(8),    intent(in) :: core2(:)
+      type(ztt) :: tt1, tt2, tt
+      integer :: n1(d)
+      call arrays_to_sdv(n,r1,d,ps1,core1,tt1)
+      call arrays_to_sdv(n,r2,d,ps2,core2,tt2)
+      call ztt_ha1(tt1,tt2,tt)
+      call dealloc(tt1)
+      call dealloc(tt2)
+      call sdv_to_arrays(n1,rres,d,psres,zcore,tt)
+      call dealloc(tt)
+ end subroutine ztt_hdm
+
 ! Check, if we can call an external python function from Fortran
 
 

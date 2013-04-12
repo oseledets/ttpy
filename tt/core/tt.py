@@ -275,7 +275,7 @@ class tensor:
 	
     def rmean(self):
         """ Calculates the mean rank of a TT-tensor"""
-        if np.prod(self.n) == 0:
+        if not np.all(self.n):
             return 0
         # Solving quadratic equation ar^2 + br + c = 0;
         a = np.sum(self.n[1:-1])
@@ -543,6 +543,9 @@ class matrix:
         a = a.transpose(iprm).reshape(N,M,order='F')
         a = a.reshape(N,M)
         return a
+    
+    def rmean(self):
+        return self.tt.rmean()
 
 
 #Some binary operations (put aside to wrap something in future)
@@ -645,8 +648,12 @@ def _hdm (a,b):
     c.n = a.n
     c.r = np.zeros((a.d+1,1),dtype=np.int32)
     c.ps = np.zeros((a.d+1,1),dtype=np.int32)
-    c.r,c.ps = tt_f90.tt_f90.dtt_hdm(a.n,a.r,b.r,a.ps,b.ps,a.core,b.core)
-    c.core = tt_f90.tt_f90.core.copy()
+    if np.iscomplexobj(a.core) or np.iscomplexobj(b.core):
+        c.r,c.ps = tt_f90.tt_f90.ztt_hdm(a.n,a.r,b.r,a.ps,b.ps,a.core,b.core)
+        c.core = tt_f90.tt_f90.zcore.copy()
+    else:
+        c.r,c.ps = tt_f90.tt_f90.dtt_hdm(a.n,a.r,b.r,a.ps,b.ps,a.core,b.core)
+        c.core = tt_f90.tt_f90.core.copy()
     tt_f90.tt_f90.tt_dealloc()
     return c
 

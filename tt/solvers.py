@@ -5,13 +5,14 @@ import tt
 def GMRES(A, u_0, b, eps=1E-6, restart=20, verb=0):
     do_restart = True
     while do_restart:
-        r0 = b + (-1) * A(u_0)
+        r0 = b + A((-1) * u_0)
         r0 = r0.round(eps)
         beta = r0.norm()
         bnorm = b.norm()
         curr_beta = beta
         if verb:
-            print "/ Initial  residual  norm:", beta
+            print "/ Initial  residual  norm: %lf; mean rank:" %  beta, r0.rmean()
+        import pdb; pdb.set_trace()
         m = restart
         V = np.zeros(m + 1, dtype=object) # Krylov basis
         V[0] = r0 * (1.0 / beta)

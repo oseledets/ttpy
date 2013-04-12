@@ -6,7 +6,7 @@ except:
         ctypes.CDLL("libmkl_rt.so", ctypes.RTLD_GLOBAL)
     except:
         try:
-            ctypes.CDLL("liblapack.so.3", ctypes.RTLD_GLOBAL)
+            ctypes.CDLL("liblapack.so", ctypes.RTLD_GLOBAL)
         except:
             print "Did not find MKL or LAPACK library"
     from core.tt import *

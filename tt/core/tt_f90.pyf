@@ -154,6 +154,18 @@ python module tt_f90 ! in
                 integer dimension(d + 1),intent(out),depend(d) :: rres
                 integer dimension(d + 1),intent(out),depend(d) :: psres
             end subroutine dtt_hdm
+            subroutine ztt_hdm(n,d,r1,r2,ps1,ps2,core1,core2,rres,psres) ! in :tt_f90:tt_f90.f90:tt_f90
+                integer dimension(d),intent(in) :: n
+                integer, optional,intent(in),check(len(n)>=d),depend(n) :: d=len(n)
+                integer dimension(d + 1),intent(in),depend(d) :: r1
+                integer dimension(d + 1),intent(in),depend(d) :: r2
+                integer dimension(d + 1),intent(in),depend(d) :: ps1
+                integer dimension(d + 1),intent(in),depend(d) :: ps2
+                complex(kind=8) dimension(:),intent(in) :: core1
+                complex(kind=8) dimension(:),intent(in) :: core2
+                integer dimension(d + 1),intent(out),depend(d) :: rres
+                integer dimension(d + 1),intent(out),depend(d) :: psres
+            end subroutine ztt_hdm
         end module tt_f90
     end interface 
 end python module tt_f90
