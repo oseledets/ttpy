@@ -16,7 +16,42 @@ import core_f90
 #The main class for working with TT-tensors
 
 class tensor:
+    """Construct new TT-tensor.
+        
+    When called with no arguments, creates dummy object which can be filled from outside.
+    
+    When ``a`` is specified, computes approximate decomposition of ``a`` with accuracy ``eps``:
+    
+    :param a: A tensor to approximate.
+    :type a: ndarray
+    
+    >>> a = numpy.sin(numpy.arange(2 ** 10)).reshape([2] * 10, order='F')
+    >>> a = tt.tensor(a)
+    >>> a.r
+    array([1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1], dtype=int32)
+    >>> # now let's try different accuracy
+    >>> b = numpy.random.rand(2, 2, 2, 2, 2, 2, 2, 2, 2, 2)
+    >>> btt = tt.tensor(b, 1E-14)
+    >>> btt.r
+    array([ 1,  2,  4,  8, 16, 32, 16,  8,  4,  2,  1], dtype=int32)
+    >>> btt = tt.tensor(b, 1E-1)
+    >>> btt.r
+    array([ 1,  2,  4,  8, 14, 20, 14,  8,  4,  2,  1], dtype=int32)
+    
+    Attributes:
+    
+    d : int
+        Dimensionality of the tensor.
+    n : ndarray of shape (d,)
+        Mode sizes of the tensor: if :math:`n_i=\\texttt{n[i-1]}`, then the tensor has shape :math:`n_1\\times\ldots\\times n_d`.
+    r : ndarray of shape (d+1,)
+        TT-ranks of current TT decomposition of the tensor.
+    core : ndarray
+        Flatten (Fortran-ordered) TT cores stored sequentially in a one-dimensional array.
+        To get a list of three-dimensional cores, use ``tt.tensor.to_list(my_tensor)``.
+    """
     def __init__(self,a=None,eps=1e-14):
+        
         if a is None:
             self.core = 0
             self.d = 0
@@ -40,6 +75,12 @@ class tensor:
     
     @staticmethod
     def from_list(a,order='F'):
+        """Generate TT-tensor object from given TT cores.
+        
+        :param a: List of TT cores.
+        :type a: list
+        :returns: tensor -- TT-tensor constructed from the given cores.
+        """
         d = len(a) #Number of cores
         res = tensor()
         n = np.zeros(d,dtype=np.int32)
@@ -84,12 +125,21 @@ class tensor:
         return res
     
     def write(self,fname):
-        if ( np.iscomplex(self.core).any()):
-            pass
+        if np.iscomplexobj(self.core):
+            tt_f90.tt_f90.ztt_write_2(self.n,self.r,self.ps,self.core,fname)
         else:
             tt_f90.tt_f90.dtt_write_2(self.n,self.r,self.ps,np.real(self.core),fname)
 
     def full(self):
+        """Returns full array (uncompressed).
+        
+        .. warning::
+           TT compression allows to keep in memory tensors much larger than ones PC can handle in 
+           raw format. Therefore this function is quite unsafe; use it at your own risk.
+       
+       :returns: numpy.ndarray -- full tensor.
+       
+       """
         #Generate correct size vector
         sz = self.n.copy()
         if self.r[0] > 1:
@@ -131,6 +181,23 @@ class tensor:
 
     #@profile
     def round(self,eps):
+       """Applies TT rounding procedure to the TT-tensor and **returns rounded tensor**.
+       
+       :param eps: Rounding accuracy.
+       :type eps: float
+       :returns: tensor -- rounded TT-tensor.
+       
+       Usage example:
+       
+       >>> a = tt.ones(2, 10)
+       >>> b = a + a
+       >>> print b.r
+       array([1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1], dtype=int32)
+       >>> b = b.round(1E-14)
+       >>> print b.r
+       array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=int32)
+       
+       """
        c=tensor()
        c.n=self.n
        c.d=self.d
@@ -274,7 +341,7 @@ class tensor:
         return c
 	
     def rmean(self):
-        """ Calculates the mean rank of a TT-tensor"""
+        """ Calculates the mean rank of a TT-tensor."""
         if not np.all(self.n):
             return 0
         # Solving quadratic equation ar^2 + br + c = 0;
@@ -550,20 +617,68 @@ class matrix:
 
 #Some binary operations (put aside to wrap something in future)
 #TT-matrix by a TT-vector product
-def matvec(a,b):
+def matvec(a,b, compression=False):
     acrs = tensor.to_list(a.tt)
     bcrs = tensor.to_list(b)
     ccrs = []
     d = b.d
-    for i in xrange(d):
+    
+    def get_core(i):
         acr = np.reshape(acrs[i], (a.tt.r[i], a.n[i], a.m[i], a.tt.r[i + 1]), order='F')
         acr = acr.transpose([3, 0, 1, 2]) # a(R_{i+1}, R_i, n_i, m_i)
         bcr = bcrs[i].transpose([1, 0, 2]) # b(m_i, r_i, r_{i+1})
         ccr = np.tensordot(acr, bcr, axes=(3, 0)) # c(R_{i+1}, R_i, n_i, r_i, r_{i+1})
         ccr = ccr.transpose([1, 3, 2, 0, 4]).reshape((a.tt.r[i] * b.r[i], a.n[i], a.tt.r[i+1] * b.r[i+1]), order='F')
+        return ccr
+    
+    if compression: # the compression is laaaaazy and one-directioned
+        # calculate norm of resulting vector first
+        nrm = np.array([[1.0]]) # 1 x 1
+        v = np.array([[1.0]])
+        for i in xrange(d):
+            ccr = get_core(i)
+            #print(str(ccr.shape) + " -> "),
+            # minimal loss compression
+            ccr = np.tensordot(v, ccr, (1, 0))
+            rl, n, rr = ccr.shape
+            if i < d - 1:
+                u, s, v = np.linalg.svd(ccr.reshape((rl * n, rr), order='F'), full_matrices=False)
+                newr = min(rl * n, rr)
+                ccr = u[:, :newr].reshape((rl, n, newr), order='F')
+                v = np.dot(np.diag(s[:newr]), v[:newr, :])
+            #print ccr.shape
+            nrm = np.tensordot(nrm, ccr, (0, 0)) # r x r . r x n x R -> r x n x R
+            nrm = np.tensordot(nrm, np.conj(ccr), (0, 0)) # r x n x R . r x n x R -> n x R x n x R
+            nrm = nrm.diagonal(axis1=0, axis2=2) # n x R x n x R -> R x R x n
+            nrm = nrm.sum(axis=2) # R x R x n -> R x R
+        if nrm.size > 1:
+            raise Exception, 'too many numbers in norm'
+        #print "Norm calculated:", nrm
+        nrm = sqrt(np.linalg.norm(nrm))
+        #print "Norm predicted:", nrm
+        compression = compression * nrm / sqrt(d - 1)
+        v = np.array([[1.0]])
+    
+    for i in xrange(d):
+        ccr = get_core(i)
+        rl, n, rr = ccr.shape
+        if compression:
+            ccr = np.tensordot(v, ccr, (1, 0)) # c(s_i, n_i, r_i, r_{i+1})
+            if i < d - 1:
+                rl = v.shape[0]
+                u, s, v = np.linalg.svd(ccr.reshape((rl * n, rr), order='F'), full_matrices=False)
+                ss = np.cumsum(s[::-1])[::-1]
+                newr = max(min([r for r in range(ss.size) if ss[r] <= compression] + [min(rl * n, rr)]), 1)
+                #print "Rank % 4d replaced by % 4d" % (rr, newr)
+                ccr = u[:, :newr].reshape((rl, n, newr), order='F')
+                v = np.dot(np.diag(s[:newr]), v[:newr, :])
         ccrs.append(ccr)
-    return tensor.from_list(ccrs)
-        
+    result = tensor.from_list(ccrs)
+    if compression:
+        #print result
+        print "Norm actual:", result.norm(), " mean rank:", result.rmean()
+        #print "Norm very actual:", matvec(a,b).norm()
+    return result
 
 
 

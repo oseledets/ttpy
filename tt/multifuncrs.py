@@ -57,7 +57,12 @@ def multifuncrs(X, funs, eps=1E-6, \
         d2=1,                      \
         do_qr=False,               \
         verb=1):
+    """Cross approximation of a (vector-)function of several TT-tensors.
     
+    :param X: tuple of TT-tensors
+    :param funs: multivariate function
+    :param eps: accuracy
+    """
     y = y0
     wasrand = False
     

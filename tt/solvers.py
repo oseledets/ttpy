@@ -3,6 +3,10 @@ import tt
 
 # TT-GMRES
 def GMRES(A, u_0, b, eps=1E-6, restart=20, verb=0):
+    """GMRES linear systems solver based on TT techniques.
+    
+    A = A(x[, eps]) is a function that multiplies x by matrix.
+    """
     do_restart = True
     while do_restart:
         r0 = b + A((-1) * u_0)
@@ -12,7 +16,6 @@ def GMRES(A, u_0, b, eps=1E-6, restart=20, verb=0):
         curr_beta = beta
         if verb:
             print "/ Initial  residual  norm: %lf; mean rank:" %  beta, r0.rmean()
-        import pdb; pdb.set_trace()
         m = restart
         V = np.zeros(m + 1, dtype=object) # Krylov basis
         V[0] = r0 * (1.0 / beta)
@@ -21,8 +24,8 @@ def GMRES(A, u_0, b, eps=1E-6, restart=20, verb=0):
         while j < m and curr_beta / bnorm > eps:
             delta = eps / (curr_beta / beta)
             #print "Calculating new Krylov vector"
-            w = A(V[j])
-            w = w.round(delta)
+            w = A(V[j], delta)
+            #w = w.round(delta)
             for i in range(j + 1):
                 H[i, j] = tt.dot(w, V[i])
                 w = w + (-H[i, j]) * V[i]

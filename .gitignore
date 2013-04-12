@@ -5,3 +5,5 @@ tt/build/*
 .DS_STORE
 quadgauss/build/
 *module.c*
+tt/doc/_build
+*~

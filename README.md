@@ -74,10 +74,16 @@ They have the following functionality
 
 - **tt.ksl** :  Solution of the linear dynamic problems in the TT-format, using the KSL scheme. Looks like it is very effective. 
 
-Examples
-========
+Documentation and examples
+==========================
 
-Few examples are available right now under examples/ directory
+The package provides Sphinx-generated documentation. To build HTML version, just do
+```
+cd tt/doc
+make html
+```
+
+A few examples are available right now under examples/ directory
 
 
 
