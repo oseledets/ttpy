@@ -482,8 +482,8 @@ class matrix:
                 n1 = np.sqrt(a.n).astype(np.int32)
                 m1 = np.sqrt(a.n).astype(np.int32)
             else:
-                n1 = np.array(n,dtype=int32)
-                m1 = np.array(m,dtype=int32)
+                n1 = np.array(n,dtype=np.int32)
+                m1 = np.array(m,dtype=np.int32)
             self.n = n1
             self.m = m1
             self.tt = tensor()
