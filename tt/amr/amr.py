@@ -1,7 +1,7 @@
 #This module is about AMR-type algorithms for the TT
 import numpy as np
 import amr_f90
-from tt import tensor
+from tt import tensor, matrix
 #from tt_tensor2 import tt_tensor
 def mvk4(A,x,y0,eps,rmax=150,kickrank=5,nswp=20,verb=1):
     """ Approximate matrix-by-vector multiplication
@@ -31,8 +31,10 @@ def amen_solve(A,f,x0,eps,rmax=150,kickrank=5,nswp=20,verb=1,prec='n',nrestart=4
         :param eps: Accuracy.
         :type eps: float
     """
+    was_complex = False
     if A.is_complex or f.is_complex:
-        pass
+        A, f, x0 = A.c2r(), f.c2r(), x0.c2r()
+        was_complex = True
     elif x0.is_complex:
         x0 = x0.real()
     rx0 = x0.r.copy()
@@ -44,4 +46,6 @@ def amen_solve(A,f,x0,eps,rmax=150,kickrank=5,nswp=20,verb=1,prec='n',nrestart=4
     x.core = amr_f90.tt_adapt_als.result_core.copy()
     amr_f90.tt_adapt_als.deallocate_result()
     x.get_ps()
+    if was_complex:
+        x = x.r2c()
     return x

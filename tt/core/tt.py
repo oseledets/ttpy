@@ -123,6 +123,9 @@ class tensor:
     def is_complex(self):
         return np.iscomplexobj(self.core)
     
+    def _matrix__complex_op(self, op):
+        return self.__complex_op(op)
+    
     def __complex_op(self, op):
         crs = tensor.to_list(self)
         newcrs = []
@@ -142,13 +145,38 @@ class tensor:
             newcrs.append(newcr)
         cr = crs[-1]
         rl, n, rr = cr.shape
-        newcr = np.zeros((rl * 2, n, rr), dtype=np.float)
         if op in ['R', 'r', 'Re']:
+            # get real part
+            newcr = np.zeros((rl * 2, n, rr), dtype=np.float)
             newcr[:rl, :, :] =  np.real(cr)
             newcr[rl:, :, :] = -np.imag(cr)
         elif op in ['I', 'i', 'Im']:
+            # get imaginary part
+            newcr = np.zeros((rl * 2, n, rr), dtype=np.float)
             newcr[:rl, :, :] =  np.imag(cr)
             newcr[rl:, :, :] =  np.real(cr)
+        elif op in ['A', 'B', 'all', 'both']:
+            # get both parts (increase dimensionality)
+            newcr = np.zeros((rl * 2, n, 2 * rr), dtype=np.float)
+            newcr[:rl, :, :rr] =  np.real(cr)
+            newcr[rl:, :, :rr] = -np.imag(cr)
+            newcr[:rl, :, rr:] =  np.imag(cr)
+            newcr[rl:, :, rr:] =  np.real(cr)
+            newcrs.append(newcr)
+            newcr = np.zeros((rr * 2, 2, 1), dtype=np.float)
+            newcr[:rr, 0, :] = newcr[rr:, 1, :] = 1.0
+        elif op in ['M']:
+            # get matrix modificated for real-arithm. solver
+            newcr = np.zeros((rl * 2, n, 2 * rr), dtype=np.float)
+            newcr[:rl, :, :rr] =  np.real(cr)
+            newcr[rl:, :, :rr] = -np.imag(cr)
+            newcr[:rl, :, rr:] =  np.imag(cr)
+            newcr[rl:, :, rr:] =  np.real(cr)
+            newcrs.append(newcr)
+            newcr = np.zeros((rr * 2, 4, 1), dtype=np.float)
+            newcr[:rr, [0, 3], :] = 1.0
+            newcr[rr:, 1, :] = -1.0
+            newcr[rr:, 2, :] = 1.0
         else:
             raise ValueError("Unexpected parameter " + op + " at tt.tensor.__complex_op")
         newcrs.append(newcr)
@@ -156,12 +184,50 @@ class tensor:
     
     def real(self):
         """Get real part of a TT-tensor."""
-        return self.__complex_op('R')
+        return self.__complex_op('Re')
     
     def imag(self):
         """Get imaginary part of a TT-tensor."""
-        return self.__complex_op('I')
-
+        return self.__complex_op('Im')
+    
+    def c2r(self):
+        """Get real tensor from complex one suitable for solving complex linear system with real solver.
+        
+        For tensor :math:`X(i_1,\\ldots,i_d) = \\Re X + i\\Im X` returns (d+1)-dimensional tensor 
+        of form :math:`[\\Re X\\ \\Im X]`. This function is useful for solving complex linear system
+        :math:`\\mathcal{A}X = B` with real solver by transforming it into
+        
+        .. math::
+           \\begin{bmatrix}\\Re\\mathcal{A} & -\\Im\\mathcal{A} \\\\ 
+                           \\Im\\mathcal{A} &  \\Re\\mathcal{A}  \\end{bmatrix}
+           \\begin{bmatrix}\\Re X \\\\ \\Im X\\end{bmatrix} = 
+           \\begin{bmatrix}\\Re B \\\\ \\Im B\\end{bmatrix}.
+        
+        """
+        return self.__complex_op('both')
+    
+    def r2c(self):
+        """Get complex tensor from real one made by ``tensor.c2r()``.
+        
+        For tensor :math:`\\tilde{X}(i_1,\\ldots,i_d,i_{d+1})` returns complex tensor
+        
+        .. math::
+           X(i_1,\\ldots,i_d) = \\tilde{X}(i_1,\\ldots,i_d,0) + i\\tilde{X}(i_1,\\ldots,i_d,1).
+        
+        >>> a = tt.rand(2,10,5) + 1j * tt.rand(2,10,5)
+        >>> (a.c2r().r2c() - a).norm() / a.norm()
+        7.310562016615692e-16
+        
+        """
+        tmp = self.copy()
+        newcore = np.array(tmp.core, dtype=np.complex)
+        cr = newcore[tmp.ps[-2]-1:]
+        cr = cr.reshape((tmp.r[-2], tmp.n[-1], tmp.r[-1]), order='F')
+        cr[:, 1, :] *= 1j
+        newcore[tmp.ps[-2]-1:] = cr.flatten('F')
+        tmp.core = newcore
+        return sum(tmp, axis=tmp.d-1)
+    
     #Print statement
     def __repr__(self):
         res = "This is a %d-dimensional tensor \n" % self.d
@@ -515,6 +581,24 @@ class matrix:
         result.m = self.m
         result.tt = self.tt.imag()
         return result
+    
+    def c2r(self):
+        """Get real matrix from complex one suitable for solving complex linear system with real solver.
+        
+        For matrix :math:`M(i_1,j_1,\\ldots,i_d,j_d) = \\Re M + i\\Im M` returns (d+1)-dimensional matrix
+        :math:`\\tilde{M}(i_1,j_1,\\ldots,i_d,j_d,i_{d+1},j_{d+1})` of form 
+        :math:`\\begin{bmatrix}\\Re M & -\\Im M \\\\ \\Im M &  \\Re M  \\end{bmatrix}`. This function 
+        is useful for solving complex linear system :math:`\\mathcal{A}X = B` with real solver by 
+        transforming it into
+        
+        .. math::
+           \\begin{bmatrix}\\Re\\mathcal{A} & -\\Im\\mathcal{A} \\\\ 
+                           \\Im\\mathcal{A} &  \\Re\\mathcal{A}  \\end{bmatrix}
+           \\begin{bmatrix}\\Re X \\\\ \\Im X\\end{bmatrix} = 
+           \\begin{bmatrix}\\Re B \\\\ \\Im B\\end{bmatrix}.
+        
+        """
+        return matrix(a=self.tt.__complex_op('M'), n=self.n, m=self.m)
 
     def __getitem__(self, index):
         if len(index) == 2:
@@ -568,21 +652,22 @@ class matrix:
         return (-1)*self
 
     def __matmul__(self,other):
+        c = matrix()
+        c.n = self.n.copy()
+        c.m = other.m.copy()
+        tt = tensor()
+        tt.d = self.tt.d 
+        tt.n = c.n * c.m
         if self.is_complex or other.is_complex:
-            pass
+            tt.r = core_f90.core.zmat_mat(self.n,self.m,other.m,self.tt.core,other.tt.core,self.tt.r,other.tt.r)
+            tt.core = core_f90.core.zresult_core.copy()
         else:
-            c = matrix()
-            c.n = self.n.copy()
-            c.m = other.m.copy()
-            tt = tensor()
-            tt.d = self.tt.d 
-            tt.n = c.n * c.m
             tt.r = core_f90.core.dmat_mat(self.n,self.m,other.m,np.real(self.tt.core),np.real(other.tt.core),self.tt.r,other.tt.r)
             tt.core = core_f90.core.result_core.copy()
-            core_f90.core.dealloc()
-            tt.get_ps()
-            c.tt = tt
-            return c
+        core_f90.core.dealloc()
+        tt.get_ps()
+        c.tt = tt
+        return c
 
     def __rmul__(self,other):
         if hasattr(other,'__matmul__'):
@@ -683,6 +768,7 @@ class matrix:
 #Some binary operations (put aside to wrap something in future)
 #TT-matrix by a TT-vector product
 def matvec(a,b, compression=False):
+    """Matrix-vector product in TT format."""
     acrs = tensor.to_list(a.tt)
     bcrs = tensor.to_list(b)
     ccrs = []
@@ -783,7 +869,7 @@ def dot(a,b):
     if a is None:
         return b
     else:
-        raise ValueError('Dot is waiting for two TT-tensors or two TT-matrices')
+        raise ValueError('Dot is waiting for two TT-tensors or two TT-    matrices')
 
 
 def diag(a):
@@ -820,7 +906,26 @@ def mkron(a, *args):
             
     c.get_ps()
     return c
-                         
+
+def concatenate(*args):
+    """Concatenates given TT-tensors.
+    
+    For two tensors :math:`X(i_1,\\ldots,i_d),Y(i_1,\\ldots,i_d)` returns :math:`(d+1)`-dimensional
+    tensor :math:`Z(i_0,i_1,\\ldots,i_d)`, :math:`i_0=\\overline{0,1}`, such that
+    
+    .. math::
+       Z(0, i_1, \\ldots, i_d) = X(i_1, \\ldots, i_d),
+       
+       Z(1, i_1, \\ldots, i_d) = Y(i_1, \\ldots, i_d).
+    
+    """
+    tmp = [1] + [0] * (len(args) - 1)
+    result = kron(tensor(tmp), args[0])
+    for i in range(1, len(args)):
+        result += kron(tensor([0] * i + [1] + [0] * (len(args) - i - 1)), args[i])
+    return result
+    
+    
 
 def _hdm (a,b):
     c = tensor()

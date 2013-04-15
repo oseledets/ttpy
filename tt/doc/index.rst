@@ -8,13 +8,13 @@ TTPY Documentation
 
 .. |ttpy| replace:: **ttpy**
 
-|ttpy| is a powerful Python package designed for manipulating large multidimensional arrays also 
-called **tensors**. It is developed in the `Institute of Numerical Mathematics of Russian Academy of 
-Sciences <http://www.inm.ras.ru/inm_en_ver/index.htm>`_ and based on the so-called Tensor Train 
+|ttpy| is a powerful Python package designed for manipulating large highly multidimensional arrays 
+also called **tensors**. It is developed in the `Institute of Numerical Mathematics of Russian Academy 
+of Sciences <http://www.inm.ras.ru/inm_en_ver/index.htm>`_ and based on the so-called Tensor Train 
 decomposition techniques.
 
 The Tensor Train decomposition of a tensor :math:`A(i_1,\ldots,i_d)` of shape 
-:math:`n_1\times\ldots\times n_d` is basically any it's representation of form
+:math:`n_1\times\ldots\times n_d` is basically any it's representation in form
 
 .. math::
    

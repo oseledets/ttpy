@@ -29,8 +29,14 @@ Further details are descripted below.
 .. autoclass:: tt.tensor
    :members:
 
+TT algebraic operations
+-----------------------
+
+.. automodule:: tt.core.tt
+   :members: diag, kron, mkron, concatenate, sum, matvec
+
 TT-functions generation routines
-------------------------------
+--------------------------------
 
 .. automodule:: tt.core.tt
    :members: xfun, sin, cos, delta, stepfun, rand
