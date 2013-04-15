@@ -32,13 +32,13 @@ Further details are descripted below.
 TT algebraic operations
 -----------------------
 
-.. automodule:: tt.core.tt
+.. automodule:: tt
    :members: diag, kron, mkron, concatenate, sum, matvec
 
 TT-functions generation routines
 --------------------------------
 
-.. automodule:: tt.core.tt
+.. automodule:: tt
    :members: xfun, sin, cos, delta, stepfun, rand
 
 Matrix manipulation routines
@@ -58,6 +58,6 @@ which are just regular TT-decompositions of tensors :math:`A(i_1,j_1;i_2,j_2;\ld
 TT-matrices generation routines
 -------------------------------
 
-.. automodule:: tt.core.tt
+.. automodule:: tt
    :members: eye, qlaplace_dd, Toeplitz
 
