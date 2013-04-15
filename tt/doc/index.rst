@@ -4,7 +4,7 @@
    contain the root `toctree` directive.
 
 TTPY Documentation
-**************************
+******************
 
 .. |ttpy| replace:: **ttpy**
 
@@ -39,6 +39,5 @@ Documentation contents:
    ******************
 
    * :ref:`genindex`
-   * :ref:`modindex`
    * :ref:`search`
 

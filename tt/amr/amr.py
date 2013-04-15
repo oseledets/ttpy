@@ -20,8 +20,21 @@ def mvk4(A,x,y0,eps,rmax=150,kickrank=5,nswp=20,verb=1):
     return y
 def amen_solve(A,f,x0,eps,rmax=150,kickrank=5,nswp=20,verb=1,prec='n',nrestart=40,niters=2):
     """ Approximate linear system solution 
-            X = AMR_SOLVE(A,F,X0,EPS), using AMR/DMRG algorithm
+            X = AMR_SOLVE(A,F,X0,EPS), using AMR/DMRG algorithm.
+        
+        :param A: Coefficients matrix, QTT-decomposed.
+        :type A: matrix
+        :param f: Right-hand side, TT-decomposed.
+        :type f: tensor
+        :param x0: TT-tensor of initial guess.
+        :type x0: tensor
+        :param eps: Accuracy.
+        :type eps: float
     """
+    if A.is_complex or f.is_complex:
+        pass
+    elif x0.is_complex:
+        x0 = x0.real()
     rx0 = x0.r.copy()
     amr_f90.tt_adapt_als.tt_amen_solve(f.d,A.n,A.m,f.r,A.tt.r,A.tt.core,f.core,x0.core,rx0,eps,kickrank,nswp,verb,prec,nrestart,niters)
     x = tensor()

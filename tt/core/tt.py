@@ -1,6 +1,6 @@
-""" Basic subroutines for ttpy """  
-""" They still focus on the linear format for passing the data around, 
-    and still convert to list (and back for some simple tasks) """ 
+#""" Basic subroutines for ttpy """  
+#""" They still focus on the linear format for passing the data around, 
+#    and still convert to list (and back for some simple tasks) """ 
 import numpy as np
 from numpy import prod, reshape, nonzero, size, sqrt
 import math
@@ -20,7 +20,7 @@ class tensor:
         
     When called with no arguments, creates dummy object which can be filled from outside.
     
-    When ``a`` is specified, computes approximate decomposition of ``a`` with accuracy ``eps``:
+    When ``a`` is specified, computes approximate decomposition of array ``a`` with accuracy ``eps``:
     
     :param a: A tensor to approximate.
     :type a: ndarray
@@ -80,6 +80,7 @@ class tensor:
         :param a: List of TT cores.
         :type a: list
         :returns: tensor -- TT-tensor constructed from the given cores.
+        
         """
         d = len(a) #Number of cores
         res = tensor()
@@ -100,6 +101,12 @@ class tensor:
 
     @staticmethod
     def to_list(tt):
+        """Return list of TT cores a TT decomposition consists of.
+        
+        :param tt: TT-tensor.
+        :type a: tensor
+        :returns: list -- list of ``tt.d`` three-dimensional cores, ``i``-th core is an ndarray of shape ``(tt.r[i], tt.n[i], tt.r[i+1])``.
+        """
         d = tt.d
         r = tt.r
         n = tt.n
@@ -111,7 +118,49 @@ class tensor:
             cur_core = cur_core.reshape((r[i],n[i],r[i+1]),order='F')
             res.append(cur_core)
         return res
- 
+    
+    @property
+    def is_complex(self):
+        return np.iscomplexobj(self.core)
+    
+    def __complex_op(self, op):
+        crs = tensor.to_list(self)
+        newcrs = []
+        cr = crs[0]
+        rl, n, rr = cr.shape
+        newcr = np.zeros((rl, n, rr * 2), dtype=np.float)
+        newcr[:, :, :rr] = np.real(cr)
+        newcr[:, :, rr:] = np.imag(cr)
+        newcrs.append(newcr)
+        for i in xrange(1, self.d - 1):
+            cr = crs[i]
+            rl, n, rr = cr.shape
+            newcr = np.zeros((rl * 2, n, rr * 2), dtype=np.float)
+            newcr[:rl, :, :rr] = newcr[rl:, :, rr:] = np.real(cr)
+            newcr[:rl, :, rr:] =  np.imag(cr)
+            newcr[rl:, :, :rr] = -np.imag(cr)
+            newcrs.append(newcr)
+        cr = crs[-1]
+        rl, n, rr = cr.shape
+        newcr = np.zeros((rl * 2, n, rr), dtype=np.float)
+        if op in ['R', 'r', 'Re']:
+            newcr[:rl, :, :] =  np.real(cr)
+            newcr[rl:, :, :] = -np.imag(cr)
+        elif op in ['I', 'i', 'Im']:
+            newcr[:rl, :, :] =  np.imag(cr)
+            newcr[rl:, :, :] =  np.real(cr)
+        else:
+            raise ValueError("Unexpected parameter " + op + " at tt.tensor.__complex_op")
+        newcrs.append(newcr)
+        return tensor.from_list(newcrs)
+    
+    def real(self):
+        """Get real part of a TT-tensor."""
+        return self.__complex_op('R')
+    
+    def imag(self):
+        """Get imaginary part of a TT-tensor."""
+        return self.__complex_op('I')
 
     #Print statement
     def __repr__(self):
@@ -448,8 +497,24 @@ class matrix:
         return res
 
     @property
-    def is_complex(self):
-        return np.iscomplex(self.tt.core).any()
+    def is_complex(self):  
+        return self.tt.is_complex
+        
+    def real(self):
+        """Return real part of a matrix."""
+        result = tensor()
+        result.n = self.n
+        result.m = self.m
+        result.tt = self.tt.real()
+        return result
+    
+    def imag(self):
+        """Return imaginary part of a matrix."""
+        result = tensor()
+        result.n = self.n
+        result.m = self.m
+        result.tt = self.tt.imag()
+        return result
 
     def __getitem__(self, index):
         if len(index) == 2:
@@ -854,28 +919,28 @@ def eye(n,d=None):
 
 #Arbitrary multilevel Toeplitz matrix
 def Toeplitz(x, d=None, D=None, kind='F'):
-    """ Creates multilevel Toeplitz TT-matrix with D levels.
+    """ Creates multilevel Toeplitz TT-matrix with ``D`` levels.
         
         Possible matrix types:
-        'F' - full Toeplitz matrix,             size(x) = 2^{d+1}
-        'C' - circulant matrix,                 size(x) = 2^d
-        'L' - lower triangular Toeplitz matrix, size(x) = 2^d
-        'U' - upper triangular Toeplitz matrix, size(x) = 2^d
         
-        Sample call for one-level Toeplitz matrix:
-          T = tt.Toeplitz(x)
+        * 'F' - full Toeplitz matrix,             size(x) = 2^{d+1}
+        * 'C' - circulant matrix,                 size(x) = 2^d
+        * 'L' - lower triangular Toeplitz matrix, size(x) = 2^d
+        * 'U' - upper triangular Toeplitz matrix, size(x) = 2^d
         
-        Sample call for one-level circulant matrix:
-          T = tt.Toeplitz(x, kind='C')
+        Sample calls:
         
-        Sample call for three-level upper-triangular Toeplitz matrix:
-          T = tt.Toeplitz(x, D=3, kind='U')
-          
-        Sample call for two-level mixed-type Toeplitz matrix:
-          T = tt.Toeplitz(x, kind=['L', 'U'])
+        >>> # one-level Toeplitz matrix:
+        >>> T = tt.Toeplitz(x)
+        >>> # one-level circulant matrix:
+        >>> T = tt.Toeplitz(x, kind='C')
+        >>> # three-level upper-triangular Toeplitz matrix:
+        >>> T = tt.Toeplitz(x, D=3, kind='U')
+        >>> # two-level mixed-type Toeplitz matrix:
+        >>> T = tt.Toeplitz(x, kind=['L', 'U'])
+        >>> # two-level mixed-size Toeplitz matrix:
+        >>> T = tt.Toeplitz(x, [3, 4], kind='C')
         
-        Sample call for two-level mixed-size Toeplitz matrix:
-          T = tt.Toeplitz(x, [3, 4], kind='C')
     """
     
     # checking for arguments consistency
@@ -1108,7 +1173,7 @@ def xfun(n,d=None):
 
 
 def sin(d, alpha=1.0, phase=0.0):
-    """ Create TT-tensor for sin(alpha n + phi)"""
+    """ Create TT-tensor for :math:`\\sin(\\alpha n + \\varphi)`."""
     cr = []
     cur_core = np.zeros([1, 2, 2], dtype=np.float)
     cur_core[0, 0, :] = [math.cos(phase)        , math.sin(phase)        ]
@@ -1129,11 +1194,11 @@ def sin(d, alpha=1.0, phase=0.0):
 
 
 def cos(d, alpha=1.0, phase=0.0):
-    """ Create TT-tensor for cos(alpha n + phi)"""
+    """ Create TT-tensor for :math:`\\cos(\\alpha n + \\varphi)`."""
     return sin(d, alpha, phase + math.pi * 0.5)
 
 def delta(n, d=None, center=0):
-    """ Create TT-tensor for delta(x - x_0) """
+    """ Create TT-tensor for delta-function :math:`\\delta(x - x_0)`. """
     if isinstance(n, (int, long)):
         n = [n]
     if d is None:
@@ -1160,10 +1225,15 @@ def delta(n, d=None, center=0):
     return tensor.from_list(cr)
 
 def stepfun(n, d=None, center=1, direction=1):
-    """ Create TT-tensor for Heaviside step function H(x - x_0)
+    """ Create TT-tensor for Heaviside step function :math:`\chi(x - x_0)`.
     
-    H(x) = 1 when x >= 0 and = 0 when x < 0.
-    For negative direction H(x_0 - x) is approximated. """
+    Heaviside step function is defined as
+    
+    .. math::
+    
+        \chi(x) = \\left\{ \\begin{array}{l} 1 \mbox{ when } x \ge 0, \\\\ 0 \mbox{ when } x < 0. \\end{array} \\right.
+    
+    For negative value of ``direction`` :math:`\chi(x_0 - x)` is approximated. """
     if isinstance(n, (int, long)):
         n = [n]
     if d is None:
