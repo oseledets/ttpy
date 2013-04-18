@@ -1,5 +1,5 @@
 try: 
-    from core.tt import *
+    from core import *
 except:
     import ctypes
     try:
@@ -9,7 +9,7 @@ except:
             ctypes.CDLL("liblapack.so", ctypes.RTLD_GLOBAL)
         except:
             print "Did not find MKL or LAPACK library"
-    from core.tt import *
+    from core import *
 
 from multifuncrs import multifuncrs
 from solvers import GMRES
