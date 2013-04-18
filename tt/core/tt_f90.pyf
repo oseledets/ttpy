@@ -38,6 +38,16 @@ python module tt_f90 ! in
                 integer, optional,intent(in),check(len(cr)>=crsize),depend(cr) :: crsize=len(cr)
             end subroutine dtt_write_2
             
+            subroutine ztt_write_2(n,r,d,ps,cr,crsize,fnam)
+                integer dimension(d),intent(in) :: n
+                integer dimension(d + 1),intent(in),depend(d) :: r
+                integer, optional,intent(in),check(len(n)>=d),depend(n) :: d=len(n)
+                integer dimension(d + 1),intent(in),depend(d) :: ps
+                character(len=*),intent(in) :: fnam
+                complex(8) dimension(crsize),intent(in) :: cr
+                integer, optional,intent(in),check(len(cr)>=crsize),depend(cr) :: crsize=len(cr)
+            end subroutine ztt_write_2
+            
             subroutine dtt_to_full(n,r,d,ps,cr,crsize,a,asize) ! in :tt_f90:tt_f90.f90:tt_f90
                 integer dimension(d),intent(in) :: n
                 integer dimension(d + 1),intent(in),depend(d) :: r

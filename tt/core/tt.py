@@ -11,10 +11,13 @@ import core_f90
 
 
 
-
+####################################################################################################
+#############################################          #############################################
+############################################   tensor   ############################################
+#############################################          #############################################
+####################################################################################################
 
 #The main class for working with TT-tensors
-
 class tensor:
     """Construct new TT-tensor.
         
@@ -175,8 +178,8 @@ class tensor:
             newcrs.append(newcr)
             newcr = np.zeros((rr * 2, 4, 1), dtype=np.float)
             newcr[:rr, [0, 3], :] = 1.0
-            newcr[rr:, 1, :] = -1.0
-            newcr[rr:, 2, :] = 1.0
+            newcr[rr:, 1, :] =  1.0
+            newcr[rr:, 2, :] = -1.0
         else:
             raise ValueError("Unexpected parameter " + op + " at tt.tensor.__complex_op")
         newcrs.append(newcr)
@@ -221,10 +224,10 @@ class tensor:
         """
         tmp = self.copy()
         newcore = np.array(tmp.core, dtype=np.complex)
-        cr = newcore[tmp.ps[-2]-1:]
+        cr = newcore[tmp.ps[-2]-1:tmp.ps[-1]-1]
         cr = cr.reshape((tmp.r[-2], tmp.n[-1], tmp.r[-1]), order='F')
         cr[:, 1, :] *= 1j
-        newcore[tmp.ps[-2]-1:] = cr.flatten('F')
+        newcore[tmp.ps[-2]-1:tmp.ps[-1]-1] = cr.flatten('F')
         tmp.core = newcore
         return sum(tmp, axis=tmp.d-1)
     
@@ -468,7 +471,11 @@ class tensor:
         return r
 
 
-
+####################################################################################################
+#############################################          #############################################
+############################################   matrix   ############################################
+#############################################          #############################################
+####################################################################################################
 
 class matrix:
     def __init__(self,a=None,eps=1e-14, n=None, m=None):
@@ -568,19 +575,11 @@ class matrix:
         
     def real(self):
         """Return real part of a matrix."""
-        result = tensor()
-        result.n = self.n
-        result.m = self.m
-        result.tt = self.tt.real()
-        return result
+        return matrix(self.tt.real(), n=self.n, m=self.m)
     
     def imag(self):
         """Return imaginary part of a matrix."""
-        result = tensor()
-        result.n = self.n
-        result.m = self.m
-        result.tt = self.tt.imag()
-        return result
+        return matrix(self.tt.imag(), n=self.n, m=self.m)
     
     def c2r(self):
         """Get real matrix from complex one suitable for solving complex linear system with real solver.
@@ -598,7 +597,26 @@ class matrix:
            \\begin{bmatrix}\\Re B \\\\ \\Im B\\end{bmatrix}.
         
         """
-        return matrix(a=self.tt.__complex_op('M'), n=self.n, m=self.m)
+        return matrix(a=self.tt.__complex_op('M'), n=np.concatenate((self.n, [2])), m=np.concatenate((self.m, [2])))
+    
+    def r2c(self):
+        """Get complex matrix from real one made by ``matrix.c2r()``.
+        
+        For matrix :math:`\\tilde{M}(i_1,j_1,\\ldots,i_d,j_d,i_{d+1},j_{d+1})` returns complex matrix
+        
+        .. math::
+           M(i_1,j_1,\\ldots,i_d,j_d) = \\tilde{M}(i_1,j_1,\\ldots,i_d,j_d,0,0) + i\\tilde{M}(i_1,j_1,\\ldots,i_d,j_d,1,0).
+        
+        """
+        tmp = self.tt.copy()
+        newcore = np.array(tmp.core, dtype=np.complex)
+        cr = newcore[tmp.ps[-2]-1:tmp.ps[-1]-1]
+        cr = cr.reshape((tmp.r[-2], tmp.n[-1], tmp.r[-1]), order='F')
+        cr[:, 1, :] *= 1j
+        cr[:, 2:, :] = 0.0
+        newcore[tmp.ps[-2]-1:tmp.ps[-1]-1] = cr.flatten('F')
+        tmp.core = newcore
+        return matrix(sum(tmp, axis=tmp.d-1), n=self.n, m=self.m)
 
     def __getitem__(self, index):
         if len(index) == 2:
@@ -659,7 +677,7 @@ class matrix:
         tt.d = self.tt.d 
         tt.n = c.n * c.m
         if self.is_complex or other.is_complex:
-            tt.r = core_f90.core.zmat_mat(self.n,self.m,other.m,self.tt.core,other.tt.core,self.tt.r,other.tt.r)
+            tt.r = core_f90.core.zmat_mat(self.n,self.m,other.m,np.array(self.tt.core, dtype=np.complex),np.array(other.tt.core, dtype=np.complex),self.tt.r,other.tt.r)
             tt.core = core_f90.core.zresult_core.copy()
         else:
             tt.r = core_f90.core.dmat_mat(self.n,self.m,other.m,np.real(self.tt.core),np.real(other.tt.core),self.tt.r,other.tt.r)
@@ -873,7 +891,7 @@ def dot(a,b):
 
 
 def diag(a):
-    """ Diagonal of a TT-matrix OR diagonal matrix from a TT-tensor """
+    """ Diagonal of a TT-matrix OR diagonal matrix from a TT-tensor."""
     if hasattr(a,'__diag__'):
         return a.__diag__()
     else:
@@ -983,7 +1001,7 @@ def ones(n,d=None):
 
 
 def rand(n,d,r):
-	""" tt_rand(n,d,r) -- generate a random TT-tensor"""
+	"""Generate a random d-dimensional TT-tensor with ranks ``r``."""
 	n0 = np.asanyarray(n,dtype=np.int32)
 	r0 = np.asanyarray(r,dtype=np.int32)
 	if n0.size is 1:
