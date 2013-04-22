@@ -1,4 +1,5 @@
 import amen_f90
+import tt
 
 def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n', local_iters=2, local_restart=40, trunc_norm=1, max_full_size=50, verb=1):
     """ Approximate linear system solution 
@@ -32,7 +33,7 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n', local_iters=2
                                            f.r, f.ps, f.core,           \
                                            rx0, psx0, x0.core,           \
                                            eps, kickrank, nswp, local_iters, local_restart, trunc_norm, max_full_size, verb, local_prec)
-    x = tensor()
+    x = tt.tensor()
     x.d = f.d
     x.n = m.copy()
     x.r = rx0
@@ -40,7 +41,7 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n', local_iters=2
         x.core = amen_f90.amen_f90.zcore.copy()
     else:
         x.core = amen_f90.amen_f90.core.copy()
-    amen_f90.amen_f90.tt_dealloc()
+    amen_f90.amen_f90.deallocate_result()
     x.get_ps()
     return x
 
