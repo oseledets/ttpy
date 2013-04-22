@@ -32,7 +32,6 @@ def configuration(parent_package='',top_path=None):
     
     
     config.add_subpackage('core')
-    config.add_subpackage('amr')
     config.add_subpackage('amen')
     config.add_subpackage('ksl')
     config.add_subpackage('eigb')
