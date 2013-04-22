@@ -10,8 +10,8 @@ Main contributors
 ============
 - Ivan Oseledets (version 0.1, build system, **KSL** and **EIGB** modules)
 - Tigran Saluev (made the code usable; implemented **multifucrs** and **TT-GMRES** algorithms and many more; a lot of bugfixes; initial documentation)
-- Dmitry Savostyanov (**tt-fort** submodule code, **AMEN** module)
-- Sergey Dolgov (**AMEN** module)
+- Dmitry Savostyanov ( **tt-fort** submodule code, **AMEN** module)
+- Sergey Dolgov ( **AMEN** module)
 
 Installation
 ============
