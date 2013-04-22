@@ -1,7 +1,7 @@
 #This script will build the main subpackages  
 def configuration(parent_package='',top_path=None):
     from numpy.distutils.misc_util import Configuration, get_info
-    config = Configuration('ksl', parent_package, top_path)
+    config = Configuration('maxvol', parent_package, top_path)
     #import ipdb; ipdb.set_trace()
     #config.add_library()
     src = ['maxvol.f90','maxvol.pyf']

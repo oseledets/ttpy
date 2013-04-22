@@ -1,0 +1,62 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+python module amen_f90 ! in
+    interface  ! in :amen_f90
+        module amen_f90 ! in amen_f90.f90
+            use ttamen_lib
+            use python_conv_lib
+            real(kind=8), allocatable,dimension(:) :: core
+            complex(kind=8), allocatable,dimension(:) :: zcore
+            subroutine deallocate_result ! in amen_f90.f90:amen_f90
+            end subroutine deallocate_result
+            subroutine dtt_amen_wrapper(d,n,m,ra,psa,cra,ry,psy,cry,rx,psx,crx,tol,kickrank,nswp,local_iters,local_restart,trunc_norm,max_full_size,verb,local_prec) ! in amen_f90.f90:amen_f90
+                integer intent(in) :: d
+                integer dimension(d),intent(in),depend(d) :: n
+                integer dimension(d),intent(inout),depend(d) :: m
+                integer dimension(d + 1),intent(in),depend(d) :: ra
+                integer dimension(d + 1),intent(in),depend(d) :: psa
+                real(kind=8) dimension(:),intent(in) :: cra
+                integer dimension(d + 1),intent(in),depend(d) :: ry
+                integer dimension(d + 1),intent(in),depend(d) :: psy
+                real(kind=8) dimension(:),intent(in) :: cry
+                integer dimension(d + 1),intent(inout),depend(d) :: rx
+                integer dimension(d + 1),intent(inout),depend(d) :: psx
+                real(kind=8) dimension(:),intent(in) :: crx
+                double precision intent(in) :: tol
+                integer intent(in) :: kickrank
+                integer intent(in) :: nswp
+                integer intent(in) :: local_iters
+                integer intent(in) :: local_restart
+                integer intent(in) :: trunc_norm
+                integer intent(in) :: max_full_size
+                integer intent(in) :: verb
+                character intent(in) :: local_prec
+            end subroutine dtt_amen_wrapper
+            subroutine ztt_amen_wrapper(d,n,m,ra,psa,cra,ry,psy,cry,rx,psx,crx,tol,kickrank,nswp,local_iters,local_restart,trunc_norm,max_full_size,verb,local_prec) ! in amen_f90.f90:amen_f90
+                integer intent(in) :: d
+                integer dimension(d),intent(in),depend(d) :: n
+                integer dimension(d),intent(inout),depend(d) :: m
+                integer dimension(d + 1),intent(in),depend(d) :: ra
+                integer dimension(d + 1),intent(in),depend(d) :: psa
+                complex(kind=8) dimension(:),intent(in) :: cra
+                integer dimension(d + 1),intent(in),depend(d) :: ry
+                integer dimension(d + 1),intent(in),depend(d) :: psy
+                complex(kind=8) dimension(:),intent(in) :: cry
+                integer dimension(d + 1),intent(inout),depend(d) :: rx
+                integer dimension(d + 1),intent(inout),depend(d) :: psx
+                complex(kind=8) dimension(:),intent(in) :: crx
+                double precision intent(in) :: tol
+                integer intent(in) :: kickrank
+                integer intent(in) :: nswp
+                integer intent(in) :: local_iters
+                integer intent(in) :: local_restart
+                integer intent(in) :: trunc_norm
+                integer intent(in) :: max_full_size
+                integer intent(in) :: verb
+                character intent(in) :: local_prec
+            end subroutine ztt_amen_wrapper
+        end module amen_f90
+    end interface
+end python module amen_f90
+! This file was auto-generated with f2py (version:2).
+! See http://cens.ioc.ee/projects/f2py2e/

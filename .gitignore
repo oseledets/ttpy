@@ -7,3 +7,5 @@ quadgauss/build/
 *module.c*
 tt/doc/_build
 *~
+*.mod
+*.a
