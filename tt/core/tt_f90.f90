@@ -49,7 +49,7 @@ contains
   end if
   end subroutine tt_dealloc
   
-  subroutine dtt_write_2(n,r,d,ps,cr,crsize,fnam)
+  subroutine dtt_write_wrapper(n,r,d,ps,cr,crsize,fnam)
     use ttio_lib
     implicit none
     integer, intent(in) :: d
@@ -63,9 +63,9 @@ contains
     call arrays_to_sdv(n,r,d,ps,cr,tt)
     call write(tt,fnam)
     call dealloc(tt)
-  end subroutine dtt_write_2
+  end subroutine dtt_write_wrapper
   
-  subroutine ztt_write_2(n,r,d,ps,cr,crsize,fnam)
+  subroutine ztt_write_wrapper(n,r,d,ps,cr,crsize,fnam)
     use ttio_lib
     implicit none
     integer, intent(in) :: d
@@ -79,9 +79,9 @@ contains
     call arrays_to_sdv(n,r,d,ps,cr,tt)
     call write(tt,fnam)
     call dealloc(tt)
-  end subroutine ztt_write_2
+  end subroutine ztt_write_wrapper
   
-  subroutine dtt_read_2(n,r,d,d0,ps,fnam)
+  subroutine dtt_read_wrapper(n,r,d,d0,ps,fnam)
     use ttio_lib
     implicit none
     integer, intent(in) :: d0
@@ -95,9 +95,9 @@ contains
     call read(tt,fnam)
     call sdv_to_arrays(n1,r,d,ps,core,tt)
     call dealloc(tt)
-  end subroutine dtt_read_2
+  end subroutine dtt_read_wrapper
   
-  subroutine ztt_read_2(n,r,d,d0,ps,fnam)
+  subroutine ztt_read_wrapper(n,r,d,d0,ps,fnam)
     use ttio_lib
     implicit none
     integer, intent(in) :: d0
@@ -112,7 +112,7 @@ contains
     call read(tt,fnam)
     call sdv_to_arrays(n1,r,d,ps,zcore,tt)
     call dealloc(tt)
-  end subroutine ztt_read_2
+  end subroutine ztt_read_wrapper
   
   
   !a should be preallocated, and filled by zeros

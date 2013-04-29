@@ -244,9 +244,9 @@ class tensor:
     
     def write(self,fname):
         if np.iscomplexobj(self.core):
-            tt_f90.tt_f90.ztt_write_2(self.n,self.r,self.ps,self.core,fname)
+            tt_f90.tt_f90.ztt_write_wrapper(self.n,self.r,self.ps,self.core,fname)
         else:
-            tt_f90.tt_f90.dtt_write_2(self.n,self.r,self.ps,np.real(self.core),fname)
+            tt_f90.tt_f90.dtt_write_wrapper(self.n,self.r,self.ps,np.real(self.core),fname)
 
     def full(self):
         """Returns full array (uncompressed).
@@ -557,6 +557,9 @@ class matrix:
             cur_core = cur_core.reshape((r[i],n[i],m[i],r[i+1]),order='F')
             res.append(cur_core)
         return res
+    
+    def write(self, fname):
+        self.tt.write(fname)
 
     def __repr__(self):
         res = "This is a %d-dimensional matrix \n" % self.tt.d

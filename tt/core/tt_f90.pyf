@@ -28,7 +28,7 @@ python module tt_f90 ! in
             subroutine tt_dealloc ! in :tt_f90:tt_f90.f90:tt_f90
             end subroutine tt_dealloc
             
-            subroutine dtt_write_2(n,r,d,ps,cr,crsize,fnam)
+            subroutine dtt_write_wrapper(n,r,d,ps,cr,crsize,fnam)
                 integer dimension(d),intent(in) :: n
                 integer dimension(d + 1),intent(in),depend(d) :: r
                 integer, optional,intent(in),check(len(n)>=d),depend(n) :: d=len(n)
@@ -36,9 +36,9 @@ python module tt_f90 ! in
                 character(len=*),intent(in) :: fnam
                 double precision dimension(crsize),intent(in) :: cr
                 integer, optional,intent(in),check(len(cr)>=crsize),depend(cr) :: crsize=len(cr)
-            end subroutine dtt_write_2
+            end subroutine dtt_write_wrapper
             
-            subroutine ztt_write_2(n,r,d,ps,cr,crsize,fnam)
+            subroutine ztt_write_wrapper(n,r,d,ps,cr,crsize,fnam)
                 integer dimension(d),intent(in) :: n
                 integer dimension(d + 1),intent(in),depend(d) :: r
                 integer, optional,intent(in),check(len(n)>=d),depend(n) :: d=len(n)
@@ -46,7 +46,7 @@ python module tt_f90 ! in
                 character(len=*),intent(in) :: fnam
                 complex(8) dimension(crsize),intent(in) :: cr
                 integer, optional,intent(in),check(len(cr)>=crsize),depend(cr) :: crsize=len(cr)
-            end subroutine ztt_write_2
+            end subroutine ztt_write_wrapper
             
             subroutine dtt_to_full(n,r,d,ps,cr,crsize,a,asize) ! in :tt_f90:tt_f90.f90:tt_f90
                 integer dimension(d),intent(in) :: n
