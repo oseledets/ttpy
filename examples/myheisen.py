@@ -1,4 +1,5 @@
-
+import sys
+sys.path.append('../')
 import tt
 import numpy as np
 from tt.eigb import eigb
@@ -39,9 +40,9 @@ def gen_heisen(d):
 
 if __name__ == '__main__':
     
-    d = 20 #The dimension of the problem (number of spins)
-    B = 3  # Number of eigenvalues sought
-    eps = 1e-6 #Accuracy of the computations 
+    d = 60 #The dimension of the problem (number of spins)
+    B = 2 # Number of eigenvalues sought
+    eps = 1e-3 #Accuracy of the computations 
     
     A = gen_heisen(d)
     n = A.n
@@ -55,4 +56,4 @@ if __name__ == '__main__':
     y, lam = eigb(A, x0, eps)
     t2 = time.time()
     print 'Elapsed time: %3.1f' % (t2 - t1)
-    print 'Eigenvalues:', lam
+    print 'Eigenvalues: ', lam

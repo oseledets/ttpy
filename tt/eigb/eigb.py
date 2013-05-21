@@ -2,7 +2,7 @@
 import numpy as np
 import tt_eigb
 from tt import tensor
-def eigb(A,y0,eps,rmax=150,kickrank=5,nswp=20,verb=1):
+def eigb(A, y0, eps, rmax = 150, kickrank = 5, nswp = 20, verb = 1):
     """ Approximate matrix-by-vector multiplication
             Y = EIGB(A,X,Y0,EPS) Find several eigenvalues of the TT-matrix
     """
