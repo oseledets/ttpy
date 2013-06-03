@@ -41,19 +41,19 @@ def gen_heisen(d):
 if __name__ == '__main__':
     
     d = 60 #The dimension of the problem (number of spins)
-    B = 2 # Number of eigenvalues sought
-    eps = 1e-3 #Accuracy of the computations 
+    B = 5 # Number of eigenvalues sought
+    eps = 1e-5 #Accuracy of the computations 
     
     A = gen_heisen(d)
     n = A.n
     d = A.tt.d
-    r = [2]*(d+1)
+    r = [B]*(d+1)
     r[0] = 1
     r[d] = B
     x0 = tt.rand(n,d,r)
     t1 = time.time()
     print 'Matrices are done'
-    y, lam = eigb(A, x0, eps)
+    y, lam = eigb(A, x0, eps, max_full_size = 1000)
     t2 = time.time()
     print 'Elapsed time: %3.1f' % (t2 - t1)
     print 'Eigenvalues: ', lam

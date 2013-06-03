@@ -6,7 +6,7 @@ python module tt_eigb
         real(kind=8), allocatable,dimension(:) :: result_core
         subroutine deallocate_result ! in tt_eigb.f90:tt_block_eig
         end subroutine deallocate_result
-        subroutine tt_eigb(d,n,m,ra,cra,cry0,ry,eps,rmax,lambda, B, kickrank,nswp,verb) ! in tt_eigb.f90:tt_block_eig
+        subroutine tt_eigb(d,n,m,ra,cra,cry0,ry,eps,rmax,lambda, B, kickrank,nswp,max_full_size,verb) ! in tt_eigb.f90:tt_block_eig
             integer intent(in) :: d
             integer, intent(in) :: B
             integer dimension(*),intent(in) :: n
@@ -20,6 +20,7 @@ python module tt_eigb
             integer intent(in) :: rmax
             integer, optional,intent(in) :: kickrank
             integer, optional,intent(in) :: nswp
+            integer, optional, intent(in) :: max_full_size
             integer, optional,intent(in) :: verb
         end subroutine tt_eigb
     end module tt_block_eig
