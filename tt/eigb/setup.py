@@ -7,7 +7,8 @@ def configuration(parent_package='',top_path=None):
     primme_dir = '../tt-fort/primme/'
     src = ['ttals.f90', 'tt_eigb.f90']
     src = [ tt_fort + '/' + x for x in src]
-    config.add_library('primme',sources=[join(primme_dir,'*.c')] + [join(primme_dir,'*.f')])#,macros=['F77UNDERSCORE'])
+    config.add_library('primme',sources=[join(primme_dir,'*.c')] + [join(primme_dir,'*.f')], \
+            include_dirs = ['.'])#,macros=['F77UNDERSCORE'])
     src.append('tt_eigb.pyf')
     config.add_extension('tt_eigb',sources=src,depends=['primme','mytt','print_lib'],libraries=['primme','mytt','print_lib'])
     return config
