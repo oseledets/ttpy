@@ -70,8 +70,19 @@ def multifuncrs(X, funs, eps=1E-6, \
     d = X[0].d
     n = X[0].n
     rx = np.transpose(np.array([ttx.r for ttx in X]))
+    #crx = [tt.tensor.to_list(ttx) for x in X] 
+    #crx = zip(*crx)
     crx = np.transpose(np.array([tt.tensor.to_list(ttx) for ttx in X], dtype=np.object))
-    
+    crx = np.empty((nx, d), dtype = np.object)
+    i = 0
+    for ttx in X:
+        v = tt.tensor.to_list(ttx)
+        j = 0
+        for w in v:
+            crx[i, j] = w
+            j = j + 1
+        i = i + 1
+    crx = crx.T
     if y is None:
         ry = d2 * np.ones((d + 1,), dtype=np.int32)
         ry[0] = 1
@@ -113,6 +124,7 @@ def multifuncrs(X, funs, eps=1E-6, \
             curind = maxvol(Ry[i + 1])
         Ry[i + 1] = Ry[i + 1][curind, :]
         for j in range(0, nx):
+            #import ipdb; ipdb.set_trace()
             Rx[i + 1, j] = reshape(crx[i, j], (rx[i, j], n[i] * rx[i + 1, j]))
             Rx[i + 1, j] = np.dot(Rx[i, j], Rx[i + 1, j])
             Rx[i + 1, j] = reshape(Rx[i + 1, j], (ry[i] * n[i], rx[i + 1, j]))
@@ -142,7 +154,7 @@ def multifuncrs(X, funs, eps=1E-6, \
             # compute the X superblocks
             curbl = np.zeros((ry[i] * n[i] * ry[i + 1], nx))
             for j in range(0, nx):
-                cr = reshape(crx[i, j], (rx[i, j], n[i] * rx[i + 1, j]))
+                cr = reshape(crx[i,j], (rx[i, j], n[i] * rx[i + 1, j]))
                 cr = np.dot(Rx[i, j], cr)
                 cr = reshape(cr, (ry[i] * n[i], rx[i + 1, j]))
                 cr = np.dot(cr, Rx[i + 1, j])
@@ -222,10 +234,10 @@ def multifuncrs(X, funs, eps=1E-6, \
                     rkick = len(ind2)
                     curbl = np.zeros((ry[i] * n[i] * rkick, nx))
                     for j in range(nx):
-                        cr1 = reshape(crx[i, j], (rx[i, j], n[i] * rx[i + 1, j]))
+                        cr1 = reshape(crx[i,j], (rx[i, j], n[i] * rx[i + 1, j]))
                         cr1 = np.dot(Rx[i, j], cr1)
                         cr1 = reshape(cr1, (ry[i] * n[i], rx[i + 1, j]))
-                        cr2 = reshape(crx[i + 1, j], (rx[i + 1, j] * n[i + 1], rx[i + 2, j]))
+                        cr2 = reshape(crx[i + 1,j], (rx[i + 1, j] * n[i + 1], rx[i + 2, j]))
                         cr2 = np.dot(cr2, Rx[i + 2, j])
                         cr2 = reshape(cr2, (rx[i + 1, j], n[i + 1] * ry[i + 2]))
                         cr2 = cr2[:, ind2]
