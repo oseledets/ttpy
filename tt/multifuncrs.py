@@ -124,7 +124,6 @@ def multifuncrs(X, funs, eps=1E-6, \
             curind = maxvol(Ry[i + 1])
         Ry[i + 1] = Ry[i + 1][curind, :]
         for j in range(0, nx):
-            #import ipdb; ipdb.set_trace()
             Rx[i + 1, j] = reshape(crx[i, j], (rx[i, j], n[i] * rx[i + 1, j]))
             Rx[i + 1, j] = np.dot(Rx[i, j], Rx[i + 1, j])
             Rx[i + 1, j] = reshape(Rx[i + 1, j], (ry[i] * n[i], rx[i + 1, j]))
