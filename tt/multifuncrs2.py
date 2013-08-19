@@ -186,7 +186,14 @@ def multifuncrs2(X, funs, eps = 1e-6, \
             newy = reshape(newy, (d2 * ry[i], n[i] * ry[i + 1]))
 
         if kickrank >= 0:
-            u, s, v = np.linalg.svd(newy, full_matrices = False)
+            try:
+                u, s, v = np.linalg.svd(newy, full_matrices = False)
+            except:
+                tmp = np.random.randn(newy.shape[1], newy.shape[1])
+                tmp, ru_tmp = np.linalg.qr(tmp)
+                u, s, v = np.linalg.svd(np.dot(newy, tmp))
+                #u * s * v = A * tmp
+                v = np.dot(v, np.conj(tmp).T)
             v = np.conj(np.transpose(v))
             r = my_chop2(s, eps / math.sqrt(d) * np.linalg.norm(s))
         else:

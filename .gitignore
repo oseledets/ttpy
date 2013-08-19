@@ -9,3 +9,4 @@ tt/doc/_build
 *~
 *.mod
 *.a
+.ropeproject/
