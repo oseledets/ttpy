@@ -1099,10 +1099,12 @@ def Toeplitz(x, d=None, D=None, kind='F'):
         d = np.asarray(d, dtype=np.int32).flatten()
         if D is None:
             D = d.size
+        elif d.size == 1:
+            d = np.array([d[0]] * D, dtype=np.int32)
         if D != d.size:
             raise ValueError("D must be equal to len(d)")
         check_kinds(D, kind)
-        if np.sum([d + (1 if knd == 'F' else 0) for knd in kind]) != x.d:
+        if np.sum(d) + np.sum([(1 if knd == 'F' else 0) for knd in kind]) != x.d:
             raise ValueError("Dimensions inconsistency: x.d != d_1 + d_2 + ... + d_D")
     
     # predefined matrices and tensors:
