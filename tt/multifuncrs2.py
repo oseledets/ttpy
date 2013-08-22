@@ -160,7 +160,7 @@ def multifuncrs2(X, funs, eps = 1e-6, \
     while swp <= nswp or dirn > 0:
         oldy = reshape(cry[i], (d2 * ry[i] * n[i] * ry[i + 1], ))
         #Compute X superblocks
-        curbl = np.zeros((ry[i] * n[i] * ry[i + 1], nx))
+        curbl = np.zeros((ry[i] * n[i] * ry[i + 1], nx), dtype)
         for j in range(0, nx):
             cr = reshape(crx[i, j], (rx[i, j], n[i] * rx[i + 1, j]))
             cr = np.dot(Rx[i, j], cr)
