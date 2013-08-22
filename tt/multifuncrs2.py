@@ -31,6 +31,10 @@ def multifuncrs2(X, funs, eps = 1e-6, \
                 y0 = None, \
                 do_qr = False, \
                 restart_it = 0):
+    
+    dtype = np.float64
+    if len(filter(lambda x: x.is_complex, X)) > 0:
+        dtype = np.complex128
 
     if eps_exit is None:
         eps_exit = eps
@@ -65,13 +69,13 @@ def multifuncrs2(X, funs, eps = 1e-6, \
     cry = tt.tensor.to_list(y)
     
     #Interface matrices - for solution
-    one_arr = np.ones((1, 1))
+    one_arr = np.ones((1, 1), dtype=dtype)
     Ry = np.zeros((d + 1, ), dtype=np.object)
     Ry[0] = one_arr
     Ry[d] = one_arr
     Rx = np.zeros((d+1, nx), dtype=np.object)
-    Rx[0, :] = np.ones(nx)
-    Rx[d, :] = np.ones(nx)
+    Rx[0, :] = np.ones(nx, dtype=dtype)
+    Rx[d, :] = np.ones(nx, dtype=dtype)
     Ryz = np.zeros((d + 1, ), dtype = np.object)
     Ryz[0] = one_arr
     Ryz[d] = one_arr
@@ -79,8 +83,8 @@ def multifuncrs2(X, funs, eps = 1e-6, \
     Rz[0] = one_arr
     Rz[d] = one_arr
     Rxz = np.zeros((d + 1, nx), dtype = np.object)
-    Rxz[0, :] = np.ones(nx)
-    Rxz[d, :] = np.ones(nx)
+    Rxz[0, :] = np.ones(nx, dtype=dtype)
+    Rxz[d, :] = np.ones(nx, dtype=dtype)
     block_order = [+d, -d]
     # orth
     for i in range(0, d - 1):
@@ -189,7 +193,7 @@ def multifuncrs2(X, funs, eps = 1e-6, \
             try:
                 u, s, v = np.linalg.svd(newy, full_matrices = False)
             except:
-                tmp = np.random.randn(newy.shape[1], newy.shape[1])
+                tmp = np.array(np.random.randn(newy.shape[1], newy.shape[1]), dtype=dtype)
                 tmp, ru_tmp = np.linalg.qr(tmp)
                 u, s, v = np.linalg.svd(np.dot(newy, tmp))
                 #u * s * v = A * tmp
@@ -219,8 +223,8 @@ def multifuncrs2(X, funs, eps = 1e-6, \
             rv = 1                
             if kickrank > 0:
                 #Compute the function at residual indices
-                curbl_y = np.zeros((ry[i] * n[i] * rz[i + 1], nx))
-                curbl_z = np.zeros((rz[i] * n[i] * rz[i + 1], nx))
+                curbl_y = np.zeros((ry[i] * n[i] * rz[i + 1], nx), dtype=dtype)
+                curbl_z = np.zeros((rz[i] * n[i] * rz[i + 1], nx), dtype=dtype)
                 for j in xrange(nx):
                     #For kick
                     cr = reshape(crx[i, j], (rx[i, j], n[i] * rx[i + 1, j]))
@@ -275,7 +279,7 @@ def multifuncrs2(X, funs, eps = 1e-6, \
                 zz = np.hstack((zz, np.random.randn(rz[i] * n[i], kickrank2)))
                 u, rv = np.linalg.qr(np.hstack((u, zy)))
                 radd = zy.shape[1]
-            v = np.hstack((v, np.zeros((ry[i + 1] * d2, radd))))
+            v = np.hstack((v, np.zeros((ry[i + 1] * d2, radd), dtype=dtype)))
             v = np.dot(rv, v.T)
             r = u.shape[1]
             cr2 = cry[i + 1]
@@ -330,8 +334,8 @@ def multifuncrs2(X, funs, eps = 1e-6, \
             if kickrank > 0:
                 #AMEN kick
                 #Compute the function at residual indices
-                curbl_y = np.zeros((rz[i] * n[i] * ry[i + 1], nx))
-                curbl_z = np.zeros((rz[i] * n[i] * rz[i + 1], nx))
+                curbl_y = np.zeros((rz[i] * n[i] * ry[i + 1], nx), dtype=dtype)
+                curbl_z = np.zeros((rz[i] * n[i] * rz[i + 1], nx), dtype=dtype)
                 for j in xrange(nx):
                     cr = reshape(crx[i, j], (rx[i, j], n[i] * rx[i + 1, j]))
                     cr = np.dot(Rxz[i, j], cr)
@@ -386,7 +390,7 @@ def multifuncrs2(X, funs, eps = 1e-6, \
                 zz = np.hstack((zz, np.random.randn(n[i] * rz[i + 1], kickrank2)))
                 v, rv = np.linalg.qr(np.hstack((v, zy)))
                 radd = zy.shape[1]
-            u = np.hstack((u, np.zeros((d2 * ry[i], radd))))
+            u = np.hstack((u, np.zeros((d2 * ry[i], radd), dtype=dtype)))
             u = np.dot(u, rv.T)
             r = v.shape[1]
             cr2 = cry[i - 1]
