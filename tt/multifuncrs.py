@@ -63,6 +63,11 @@ def multifuncrs(X, funs, eps=1E-6, \
     :param funs: multivariate function
     :param eps: accuracy
     """
+    
+    dtype = np.float64
+    if len(filter(lambda x: x.is_complex, X)) > 0:
+        dtype = np.complex128
+
     y = y0
     wasrand = False
     
@@ -93,11 +98,11 @@ def multifuncrs(X, funs, eps=1E-6, \
     cry = tt.tensor.to_list(y)
     
     Ry = np.zeros((d + 1, ), dtype=np.object)
-    Ry[0] = [[1]]
-    Ry[d] = [[1]]
+    Ry[0] = np.array([[1.0]], dtype=dtype)
+    Ry[d] = np.array([[1.0]], dtype=dtype)
     Rx = np.zeros((d+1, nx), dtype=np.object)
-    Rx[0, :] = np.ones(nx)
-    Rx[d, :] = np.ones(nx)
+    Rx[0, :] = np.ones(nx, dtype=dtype)
+    Rx[d, :] = np.ones(nx, dtype=dtype)
     
     block_order = [+d, -d]
     
@@ -151,7 +156,7 @@ def multifuncrs(X, funs, eps=1E-6, \
         
         if not last_sweep:
             # compute the X superblocks
-            curbl = np.zeros((ry[i] * n[i] * ry[i + 1], nx))
+            curbl = np.zeros((ry[i] * n[i] * ry[i + 1], nx), dtype=dtype)
             for j in range(0, nx):
                 cr = reshape(crx[i,j], (rx[i, j], n[i] * rx[i + 1, j]))
                 cr = np.dot(Rx[i, j], cr)
@@ -231,7 +236,7 @@ def multifuncrs(X, funs, eps=1E-6, \
                     ind2 = np.unique(np.random.randint(0, ry[i + 2] * n[i + 1], ry[i + 1]))
                     #ind2 = np.unique(np.floor(np.random.rand(ry[i + 1]) * (ry[i + 2] * n[i + 1])))
                     rkick = len(ind2)
-                    curbl = np.zeros((ry[i] * n[i] * rkick, nx))
+                    curbl = np.zeros((ry[i] * n[i] * rkick, nx), dtype=dtype)
                     for j in range(nx):
                         cr1 = reshape(crx[i,j], (rx[i, j], n[i] * rx[i + 1, j]))
                         cr1 = np.dot(Rx[i, j], cr1)
@@ -257,7 +262,7 @@ def multifuncrs(X, funs, eps=1E-6, \
                     uk = np.random.rand(ry[i] * n[i], kickrank)
                 u, rv = np.linalg.qr(np.concatenate((u, uk), axis=1))
                 radd = uk.shape[1]
-            v = np.concatenate((v, np.zeros((ry[i + 1] * d2, radd))), axis=1)
+            v = np.concatenate((v, np.zeros((ry[i + 1] * d2, radd), dtype=dtype)), axis=1)
             v = np.dot(rv, np.conj(np.transpose(v)))
             r = u.shape[1]
             
@@ -295,7 +300,7 @@ def multifuncrs(X, funs, eps=1E-6, \
                     # compute the X superblocks
                     ind2 = np.unique(np.random.randint(0, ry[i - 1] * n[i - 1], ry[i]))
                     rkick = len(ind2)
-                    curbl = np.zeros((rkick * n[i] * ry[i + 1], nx))
+                    curbl = np.zeros((rkick * n[i] * ry[i + 1], nx), dtype=dtype)
                     for j in range(nx):
                         cr1 = reshape(crx[i, j], (rx[i, j] * n[i], rx[i + 1, j]))
                         cr1 = np.dot(cr1, Rx[i + 1, j])
@@ -322,7 +327,7 @@ def multifuncrs(X, funs, eps=1E-6, \
                     uk = np.random.rand(n[i] * ry[i + 1], kickrank)
                 v, rv = np.linalg.qr(np.concatenate((v, uk), axis=1))
                 radd = uk.shape[1]
-            u = np.concatenate((u, np.zeros((d2 * ry[i], radd))), axis=1)
+            u = np.concatenate((u, np.zeros((d2 * ry[i], radd), dtype=dtype)), axis=1)
             u = np.dot(u, np.transpose(rv))
             r = v.shape[1]
             cr2 = cry[i - 1]
