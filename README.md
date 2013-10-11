@@ -27,7 +27,7 @@ git submodule foreach git checkout master
 ```
 To update to a newer version, run
 ```
-git pull --recurse-submodules
+git submodule update --recursive --init
 ```
 This command will update the submodules as well.
 
