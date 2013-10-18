@@ -173,22 +173,6 @@ def concatenate(*args):
     return result
     
     
-
-def _hdm (a,b):
-    c = tensor()
-    c.d = a.d
-    c.n = a.n
-    c.r = np.zeros((a.d+1,1),dtype=np.int32)
-    c.ps = np.zeros((a.d+1,1),dtype=np.int32)
-    if np.iscomplexobj(a.core) or np.iscomplexobj(b.core):
-        c.r,c.ps = tt_f90.tt_f90.ztt_hdm(a.n,a.r,b.r,a.ps,b.ps,a.core,b.core)
-        c.core = tt_f90.tt_f90.zcore.copy()
-    else:
-        c.r,c.ps = tt_f90.tt_f90.dtt_hdm(a.n,a.r,b.r,a.ps,b.ps,a.core,b.core)
-        c.core = tt_f90.tt_f90.core.copy()
-    tt_f90.tt_f90.tt_dealloc()
-    return c
-
 def sum(a, axis=-1):    
     """Sum TT-tensor over specified axes"""
     d = a.d

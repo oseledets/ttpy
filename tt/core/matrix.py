@@ -256,7 +256,7 @@ class matrix:
         c = matrix()
         c.n = np.concatenate((a.n,b.n))
         c.m = np.concatenate((a.m,b.m))
-        c.tt = kron(a.tt,b.tt)
+        c.tt = a.tt.__kron__(b.tt)
         return c
 
     def norm(self):
