@@ -478,7 +478,7 @@ class tensor:
 ####################################################################################################
 
 class matrix:
-    def __init__(self,a=None,eps=1e-14, n=None, m=None):
+    def __init__(self, a=None, n=None, m=None, eps=1e-14):
         if a is None:
             self.n = 0 #Only two additional fields
             self.m = 0
@@ -673,17 +673,22 @@ class matrix:
         return (-1)*self
 
     def __matmul__(self,other):
+        
+        diff = len(self.n) - len(other.m)
+        L = self  if diff >= 0 else kron(self , matrix(ones(1, abs(diff))))
+        R = other if diff <= 0 else kron(other, matrix(ones(1, abs(diff))))
+        
         c = matrix()
-        c.n = self.n.copy()
-        c.m = other.m.copy()
+        c.n = L.n.copy()
+        c.m = R.m.copy()
         tt = tensor()
-        tt.d = self.tt.d 
+        tt.d = L.tt.d 
         tt.n = c.n * c.m
-        if self.is_complex or other.is_complex:
-            tt.r = core_f90.core.zmat_mat(self.n,self.m,other.m,np.array(self.tt.core, dtype=np.complex),np.array(other.tt.core, dtype=np.complex),self.tt.r,other.tt.r)
+        if L.is_complex or R.is_complex:
+            tt.r = core_f90.core.zmat_mat(L.n, L.m, R.m, np.array(L.tt.core, dtype=np.complex), np.array(R.tt.core, dtype=np.complex), L.tt.r, R.tt.r)
             tt.core = core_f90.core.zresult_core.copy()
         else:
-            tt.r = core_f90.core.dmat_mat(self.n,self.m,other.m,np.real(self.tt.core),np.real(other.tt.core),self.tt.r,other.tt.r)
+            tt.r = core_f90.core.dmat_mat(L.n, L.m, R.m,np.real(L.tt.core), np.real(R.tt.core), L.tt.r, R.tt.r)
             tt.core = core_f90.core.result_core.copy()
         core_f90.core.dealloc()
         tt.get_ps()
@@ -703,12 +708,29 @@ class matrix:
     def __mul__(self,other):
         if hasattr(other,'__matmul__'):
             return self.__matmul__(other)
-        else:
+        elif isinstance(other, (tensor, Number)):
             c = matrix()
             c.tt = self.tt * other
             c.n = self.n
             c.m = self.m
             return c
+        else:
+            x = np.asanyarray(other).flatten(order = 'F')
+            N = np.prod(self.m)
+            if N != x.size:
+                raise ValueError
+            x = np.reshape(x, np.concatenate(([1], self.m)), order = 'F')
+            cores = tensor.to_list(self.tt)
+            curr = x.copy()
+            for i in range(len(cores)):
+                core = cores[i]
+                core = np.reshape(core, [self.tt.r[i], self.n[i], self.m[i], self.tt.r[i + 1]], order = 'F')
+                #print curr.shape, core.shape
+                curr = np.tensordot(curr, core, axes = ([0, 1], [0, 2]))
+                curr = np.rollaxis(curr, -1)
+            curr = np.sum(curr, axis = 0)
+            return curr.flatten(order = 'F')
+            
     
     def __kron__(self,other):
         """ Kronecker product of two TT-matrices """
