@@ -695,7 +695,7 @@ class matrix:
         c.tt = tt
         return c
 
-    def __rmul__(self,other):
+    def __rmul__(self, other):
         if hasattr(other,'__matmul__'):
             return other.__matmul__(self)
         else:
@@ -705,7 +705,7 @@ class matrix:
             c.m = self.m
             return c
 
-    def __mul__(self,other):
+    def __mul__(self, other):
         if hasattr(other,'__matmul__'):
             return self.__matmul__(other)
         elif isinstance(other, (tensor, Number)):
