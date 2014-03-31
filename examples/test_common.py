@@ -1,3 +1,5 @@
+import sys
+sys.path.append('../')
 from tt import *
 import numpy as np
 

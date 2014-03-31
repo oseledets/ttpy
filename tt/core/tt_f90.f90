@@ -8,8 +8,9 @@ module tt_f90
 contains
   
 
-  subroutine dfull_to_tt(a,n,d,eps,r,ps)
+  subroutine dfull_to_tt(a,n,d,eps,rmax,r,ps)
     implicit none
+    integer, intent(in), optional :: rmax
     integer, intent(in) :: d
     real(8), intent(in) :: eps
     integer, intent(in) :: n(:)
@@ -19,13 +20,18 @@ contains
     type(dtt) :: tt
     integer :: i,M,lwork,info
     integer :: n1(d)
-    call svd(n,a,tt,eps)
+    if (present(rmax) ) then
+       call svd(n,a,tt,eps,rmax)
+    else
+       call svd(n, a, tt, eps)
+    end if
     call sdv_to_arrays(n1,r,d,ps,core,tt)
     call dealloc(tt)
   end subroutine dfull_to_tt
   
-  subroutine zfull_to_tt(a,n,d,eps,r,ps)
+  subroutine zfull_to_tt(a,n,d,eps,rmax,r,ps)
     implicit none
+    integer, intent(in), optional :: rmax
     integer, intent(in) :: d
     real(8), intent(in) :: eps
     integer, intent(in) :: n(:)
@@ -35,7 +41,7 @@ contains
     type(ztt) :: tt
     integer :: i,M,lwork,info
     integer :: n1(d)
-    call svd(n,a,tt,eps)
+    call svd(n,a,tt,eps,rmax)
     call sdv_to_arrays(n1,r,d,ps,zcore,tt)
     call dealloc(tt)
   end subroutine zfull_to_tt

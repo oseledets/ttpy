@@ -53,7 +53,7 @@ class tensor:
         Flatten (Fortran-ordered) TT cores stored sequentially in a one-dimensional array.
         To get a list of three-dimensional cores, use ``tt.tensor.to_list(my_tensor)``.
     """
-    def __init__(self,a=None,eps=1e-14):
+    def __init__(self, a=None, eps=1e-14, rmax=100000):
         
         if a is None:
             self.core = 0
@@ -68,10 +68,17 @@ class tensor:
         ps = np.zeros((self.d+1,),dtype=np.int32)
         
         if ( np.iscomplex(a).any() ):
-            self.r, self.ps = tt_f90.tt_f90.zfull_to_tt(a.flatten('F'),self.n,self.d,eps)
+            if rmax is not None:
+                self.r, self.ps = tt_f90.tt_f90.zfull_to_tt(a.flatten('F'), self.n, self.d, eps, rmax)
+            else:
+                self.r, self.ps = tt_f90.tt_f90.zfull_to_tt(a.flatten('F'), self.n, self.d, eps)
+
             self.core = tt_f90.tt_f90.zcore.copy()
         else:
-            self.r,self.ps = tt_f90.tt_f90.dfull_to_tt(np.real(a).flatten('F'),self.n,self.d,eps)
+            if rmax is not None:
+                self.r,self.ps = tt_f90.tt_f90.dfull_to_tt(np.real(a).flatten('F'),self.n,self.d,eps,rmax)
+            else:
+                self.r,self.ps = tt_f90.tt_f90.dfull_to_tt(np.real(a).flatten('F'),self.n,self.d,eps)
             self.core = tt_f90.tt_f90.core.copy()
 
         tt_f90.tt_f90.tt_dealloc()        

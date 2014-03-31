@@ -7,20 +7,22 @@ python module tt_f90 ! in
             real(kind=8), allocatable,dimension(:) :: core
             complex(kind=8), allocatable,dimension(:) :: zcore
 
-            subroutine dfull_to_tt(a,n,d,eps,r,ps) ! in :tt_f90:tt_f90.f90:tt_f90
+            subroutine dfull_to_tt(a,n,d,eps,rmax,r,ps) ! in :tt_f90:tt_f90.f90:tt_f90
                 real(kind=8) dimension(:),intent(in) :: a
                 integer dimension(:),intent(in) :: n
                 integer intent(in) :: d
                 real(kind=8) intent(in) :: eps
+                integer, optional, intent(in) :: rmax
                 integer dimension(d + 1),intent(out),depend(d) :: r
                 integer dimension(d + 1),intent(out),depend(d) :: ps
             end subroutine dfull_to_tt
 
-            subroutine zfull_to_tt(a,n,d,eps,r,ps) ! in :tt_f90:tt_f90.f90:tt_f90
+            subroutine zfull_to_tt(a,n,d,eps,rmax,r,ps) ! in :tt_f90:tt_f90.f90:tt_f90
                 complex(kind=8) dimension(:),intent(in) :: a
                 integer dimension(:),intent(in) :: n
                 integer intent(in) :: d
                 real(kind=8) intent(in) :: eps
+                integer, optional, intent(in) :: rmax
                 integer dimension(d + 1),intent(out),depend(d) :: r
                 integer dimension(d + 1),intent(out),depend(d) :: ps
             end subroutine zfull_to_tt
