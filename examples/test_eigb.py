@@ -8,7 +8,7 @@ import time
 """ This code computes many eigenvalus of the Laplacian operator """
 
 d = 8
-f = 2
+f = 8
 A = tt.qlaplace_dd([d]*f)
 #A = (-1)*A
 #A = tt.eye(2,d)
