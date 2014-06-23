@@ -211,7 +211,7 @@ contains
   end subroutine ztt_add
 
 
-  subroutine dtt_compr2(n,d,r,ps,cr,eps)
+  subroutine dtt_compr2(n,d,r,ps,cr,eps,rmax)
     implicit none
     integer, intent(in) :: d
     integer, intent(in) :: n(d)
@@ -219,14 +219,15 @@ contains
     integer, intent(inout) :: ps(d+1)
     real(8), intent(in) :: cr(:)
     real(8), intent(in) :: eps
+    integer, intent(in) :: rmax
     type(dtt) :: tt
     integer :: n1(d)
     call arrays_to_sdv(n,r,d,ps,cr,tt)
-    call svd(tt,eps)
+    call svd(tt,eps,rmax)
     call sdv_to_arrays(n1,r,d,ps,core,tt)
   end subroutine dtt_compr2
   
-  subroutine ztt_compr2(n,d,r,ps,cr,eps)
+  subroutine ztt_compr2(n,d,r,ps,cr,eps,rmax)
     implicit none
     integer, intent(in) :: d
     integer, intent(in) :: n(d)
@@ -234,10 +235,11 @@ contains
     integer, intent(inout) :: ps(d+1)
     complex(8), intent(in) :: cr(:)
     real(8), intent(in) :: eps
+    integer, intent(in) :: rmax
     type(ztt) :: tt
     integer :: n1(d)
     call arrays_to_sdv(n,r,d,ps,cr,tt)
-    call svd(tt,eps)
+    call svd(tt,eps,rmax)
     call sdv_to_arrays(n1,r,d,ps,zcore,tt)
   end subroutine ztt_compr2
 

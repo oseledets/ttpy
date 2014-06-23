@@ -310,11 +310,13 @@ class tensor:
 
 
     #@profile
-    def round(self,eps):
+    def round(self, eps, rmax = 1000000):
        """Applies TT rounding procedure to the TT-tensor and **returns rounded tensor**.
        
        :param eps: Rounding accuracy.
        :type eps: float
+       :param rmax: Maximal rank
+       :type rmax: int
        :returns: tensor -- rounded TT-tensor.
        
        Usage example:
@@ -334,10 +336,10 @@ class tensor:
        c.r=self.r.copy()
        c.ps=self.ps.copy()
        if ( np.iscomplex(self.core).any() ):
-           tt_f90.tt_f90.ztt_compr2(c.n,c.r,c.ps,self.core,eps)
+           tt_f90.tt_f90.ztt_compr2(c.n,c.r,c.ps,self.core,eps,rmax)
            c.core = tt_f90.tt_f90.zcore.copy()
        else:
-           tt_f90.tt_f90.dtt_compr2(c.n,c.r,c.ps,self.core,eps)
+           tt_f90.tt_f90.dtt_compr2(c.n,c.r,c.ps,self.core,eps,rmax)
            c.core=tt_f90.tt_f90.core.copy()
        tt_f90.tt_f90.tt_dealloc()
        return c
@@ -759,12 +761,12 @@ class matrix:
     def norm(self):
         return self.tt.norm()
 
-    def round(self,eps):
+    def round(self, eps, rmax=100000):
         """ Computes an approximation to a 
 	    TT-matrix in with accuracy EPS 
 	"""
         c = matrix()
-        c.tt = self.tt.round(eps)
+        c.tt = self.tt.round(eps, rmax)
         c.n = self.n.copy()
         c.m = self.m.copy()
         return c
