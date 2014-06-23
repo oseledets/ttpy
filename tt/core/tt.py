@@ -28,6 +28,11 @@ class tensor:
     :param a: A tensor to approximate.
     :type a: ndarray
     
+    :param eps: Approximation accuracy
+    :type a: float
+
+    :param rmax: Maximal rank
+    :type rmax: int
     >>> a = numpy.sin(numpy.arange(2 ** 10)).reshape([2] * 10, order='F')
     >>> a = tt.tensor(a)
     >>> a.r
@@ -485,7 +490,7 @@ class tensor:
 ####################################################################################################
 
 class matrix:
-    def __init__(self, a=None, n=None, m=None, eps=1e-14):
+    def __init__(self, a=None, n=None, m=None, eps=1e-14, rmax = 100000):
         if a is None:
             self.n = 0 #Only two additional fields
             self.m = 0
@@ -519,7 +524,7 @@ class matrix:
             prm = prm.flatten('F')
             sz = self.n * self.m
             b = c.transpose(prm).reshape(sz,order='F')
-            self.tt=tensor(b,eps)
+            self.tt=tensor(b,eps,rmax)
             return
         except ValueError:
             pass
