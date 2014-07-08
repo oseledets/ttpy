@@ -530,7 +530,6 @@ class matrix:
             self.m = a.m.copy()
             self.tt = a.tt.copy()
             return
-        print 'Error in TT-matrix constructor'
 
     @staticmethod
     def from_list(a):
