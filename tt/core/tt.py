@@ -1,6 +1,3 @@
-#""" Basic subroutines for ttpy """  
-#""" They still focus on the linear format for passing the data around, 
-#    and still convert to list (and back for some simple tasks) """ 
 import numpy as np
 from numpy import prod, reshape, nonzero, size, sqrt
 import math
@@ -493,12 +490,12 @@ class tensor:
 
 class matrix:
     def __init__(self, a=None, n=None, m=None, eps=1e-14, rmax = 100000):
-        if a is None:
-            self.n = 0 #Only two additional fields
-            self.m = 0
-            self.tt = tensor()
-            return
-        if isinstance(a,tensor): #Convert from a tt-tensor
+       
+        self.n = 0
+        self.m = 0
+        self.tt = tensor()
+        
+        if isinstance(a, tensor): #Convert from a tt-tensor
             if ( n is None or m is None):
                 n1 = np.sqrt(a.n).astype(np.int32)
                 m1 = np.sqrt(a.n).astype(np.int32)
@@ -507,17 +504,16 @@ class matrix:
                 m1 = np.array(m,dtype=np.int32)
             self.n = n1
             self.m = m1
-            self.tt = tensor()
             self.tt.core = a.core.copy()
             self.tt.ps = a.ps.copy()
             self.tt.r = a.r.copy()
             self.tt.n = a.n.copy()
             self.tt.d = self.tt.n.size
             return
-        try: 
-            c = np.asarray(a,dtype=np.float64)
-            d = c.ndim/2
-            p = c.shape
+
+        if isinstance(a, np.ndarray): 
+            d = a.ndim/2
+            p = a.shape
             self.n = np.array(p[0:d],dtype=np.int32)
             self.m = np.array(p[d:2*d],dtype=np.int32)
             prm = np.arange(2*d)
@@ -525,12 +521,17 @@ class matrix:
             prm = prm.transpose()
             prm = prm.flatten('F')
             sz = self.n * self.m
-            b = c.transpose(prm).reshape(sz,order='F')
-            self.tt=tensor(b,eps,rmax)
+            b = a.transpose(prm).reshape(sz,order='F')
+            self.tt = tensor(b, eps, rmax)
             return
-        except ValueError:
-            pass
-                
+        
+        if isinstance(a, matrix):
+            self.n = a.n.copy()
+            self.m = a.m.copy()
+            self.tt = a.tt.copy()
+            return
+        print 'Error in TT-matrix constructor'
+
     @staticmethod
     def from_list(a):
         d = len(a) #Number of cores
