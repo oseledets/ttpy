@@ -131,6 +131,28 @@ class tensor:
             res.append(cur_core)
         return res
     
+    @property 
+    def erank(self):
+        """ Effective rank of the TT-tensor """
+        r = self.r
+        n = self.n
+        d = self.d
+        if d <= 1:
+            er = 0e0
+        else:
+            sz = np.dot(n * r[0:d], r[1:])
+            if sz == 0:
+                er = 0e0
+            else:
+                b = r[0] * n[0] + n[d-1] * r[d]
+                if d is 2:
+                    er = sz * 1.0/b
+                else:
+                    a = np.sum(n[1:d-1])
+                    er = (np.sqrt(b * b + 4 * a * sz) - b)/(2*a)
+        return er
+    
+    
     @property
     def is_complex(self):
         return np.iscomplexobj(self.core)
@@ -587,9 +609,13 @@ class matrix:
         return res
 
     @property
+    def erank(self):
+        return self.tt.erank
+     
+    @property
     def is_complex(self):  
         return self.tt.is_complex
-        
+
     def real(self):
         """Return real part of a matrix."""
         return matrix(self.tt.real(), n=self.n, m=self.m)
