@@ -15,6 +15,7 @@ import core_f90
 ####################################################################################################
 
 #The main class for working with TT-tensors
+
 class tensor:
     """Construct new TT-tensor.
         
@@ -30,6 +31,7 @@ class tensor:
 
     :param rmax: Maximal rank
     :type rmax: int
+    
     >>> a = numpy.sin(numpy.arange(2 ** 10)).reshape([2] * 10, order='F')
     >>> a = tt.tensor(a)
     >>> a.r

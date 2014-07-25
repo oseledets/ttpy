@@ -29,22 +29,23 @@ Further details are descripted below.
 .. autoclass:: tt.tensor
    :members:
 
-TT algebraic operations
------------------------
+
+Basic operations in TT-format
+-----------------------------
 
 .. automodule:: tt
    :members: diag, kron, mkron, concatenate, sum, matvec
 
-TT-functions generation routines
---------------------------------
+Generation of standard TT-tensors
+-----------------------------------
 
 .. automodule:: tt
-   :members: xfun, sin, cos, delta, stepfun, rand
+   :members: ones, xfun, sin, cos, delta, stepfun, rand
 
 Matrix manipulation routines
 ============================
 
-``tt.matrix`` is a special class for manipulating QTT-decomposed matrices, i. e. decompositions of form
+``tt.matrix`` is a special class for manipulating TT-decomposed matrices, i. e. decompositions of the form
 
 .. math::
    
@@ -55,8 +56,8 @@ which are just regular TT-decompositions of tensors :math:`A(i_1,j_1;i_2,j_2;\ld
 .. autoclass:: tt.matrix
    :members: 
 
-TT-matrices generation routines
--------------------------------
+Generation of standard TT-matrices
+----------------------------------
 
 .. automodule:: tt
    :members: eye, qlaplace_dd, Toeplitz
