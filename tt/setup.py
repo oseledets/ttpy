@@ -36,6 +36,7 @@ def configuration(parent_package='',top_path=None):
     config.add_subpackage('ksl')
     config.add_subpackage('eigb')
     config.add_subpackage('maxvol')
+    config.add_subpackage('cross')
     return config
     
 
