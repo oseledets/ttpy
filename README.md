@@ -30,8 +30,8 @@ git submodule update --init --recursive *
 ```
 This command will update the submodules as well.
 
-## Prerequisites
-**It is highly recommended ** that you use either
+##Prerequisites
+**It is highly recommended** that you use either
 
 - [Anaconda Python distribution](https://store.continuum.io/cshop/anaconda/) 
   which has MKL in built in for the [academics](https://store.continuum.io/cshop/academicanaconda)
