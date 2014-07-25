@@ -2,12 +2,12 @@ import amen_f90
 import tt
 
 def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n', local_iters=2, local_restart=40, trunc_norm=1, max_full_size=50, verb=1):
-    """ Approximate linear system solution 
-            X = amen_solve(A,F,X0,EPS), using AMR/DMRG algorithm.
+    """ Approximate linear system solution in the tensor-train (TT) format
+            X = amen_solve(A,F,X0,EPS), using alternating minimal energy (AMEN)  algorithm.
         
-        :param A: Coefficients matrix, QTT-decomposed.
+        :param A: Matrix in the TT-format
         :type A: matrix
-        :param f: Right-hand side, TT-decomposed.
+        :param f: Right-hand side in the TT-format
         :type f: tensor
         :param x0: TT-tensor of initial guess.
         :type x0: tensor
