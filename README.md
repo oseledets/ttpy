@@ -26,7 +26,9 @@ git clone --recursive git://github.com/oseledets/ttpy.git
 ```
 To update to the latest version, run
 ```
+git pull
 git submodule update --init --recursive *
+python setup.py install
 ```
 This command will update the submodules as well.
 
