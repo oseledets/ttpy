@@ -4,4 +4,4 @@
     url = git://github.com/oseledets/tt-fort.git
 [submodule "tt/cross/rectcross"]
 	path = tt/cross/rectcross
-	url = git://bitbucket.org/oseledets/rectcross
+	url = https://bitbucket.org/oseledets/rectcross
