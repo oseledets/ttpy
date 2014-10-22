@@ -1,7 +1,7 @@
 [submodule "tt/tt-fort"]
 	path = tt/tt-fort
     #url = git@github.com:oseledets/tt-fort
-    url = https://github.com/oseledets/tt-fort.git
+    url = git://github.com/oseledets/tt-fort.git
 [submodule "tt/cross/rectcross"]
 	path = tt/cross/rectcross
-	url = https://bitbucket.org/oseledets/rectcross
+	url = git://bitbucket.org/oseledets/rectcross
