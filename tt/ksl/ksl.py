@@ -3,7 +3,7 @@ import numpy as np
 import dyn_tt
 from tt import tensor
 
-def ksl(A, y0, tau, verb=1, scheme='symm', space=8):
+def ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000):
     """ Dynamical tensor-train approximation based on projector splitting
         This function performs one step of dynamical tensor-train approximation  
         for the equation 
