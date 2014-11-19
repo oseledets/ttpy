@@ -154,6 +154,21 @@ class tensor:
                     er = (np.sqrt(b * b + 4 * a * sz) - b)/(2*a)
         return er
     
+    def __getitem__(self, index):
+        """Get element of the TT-tensor.
+
+        :param index: array_like.
+        :returns: number -- an element of the tensor."""
+        if len(index) != self.d:
+            print("Incorrect index length.")
+            return
+        prefix = 1
+        for i in xrange(self.d):
+            cur_core = self.core[self.ps[i]-1:self.ps[i+1]-1]
+            cur_core = cur_core.reshape((self.r[i], self.n[i], self.r[i+1]), order='F')
+            cur_core = cur_core[:, index[i], :]
+            prefix = np.dot(prefix, cur_core)
+        return prefix[0][0]
     
     @property
     def is_complex(self):
