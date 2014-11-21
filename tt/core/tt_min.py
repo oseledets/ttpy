@@ -135,7 +135,7 @@ def tt_min(fun, bounds_min, bounds_max, d=None, rmax=10, n0=64, nswp=10, verb=Tr
 
 
 def tt_min_tens(tens, rmax=10, nswp=10, verb=True, smooth_fun=None):
-    """Find (approximate) minima\l element in a TT-tensor."""
+    """Find (approximate) minimal element in a TT-tensor."""
     if smooth_fun is None:
        smooth_fun = lambda p, lam: (math.pi/2 - np.arctan(p - lam))
     d = tens.d
