@@ -19,7 +19,7 @@ def mysvd(a, full_matrices=False):
     except:
         return np.linalg.svd(a + np.max(np.abs(a).flatten()) * 1e-14 * np.random.randn(a.shape[0], a.shape[1]), full_matrices)
   
-def tt_min(fun, bounds_min, bounds_max, d = None, rmax = 10, tol = 1e-3, n0 = 64, nswp = 10, verb=True, smooth_fun=None):
+def tt_min(fun, bounds_min, bounds_max, d=None, rmax=10, n0=64, nswp=10, verb=True, smooth_fun=None):
     if d is None:
         d = len(bounds_min)
         a = np.asanyarray(bounds_min).copy()
@@ -134,7 +134,7 @@ def tt_min(fun, bounds_min, bounds_max, d = None, rmax = 10, tol = 1e-3, n0 = 64
     
 
 
-def tt_min_tens(tens, rmax = 10, tol = 1e-3, nswp = 10, verb=True, smooth_fun=None):
+def tt_min_tens(tens, rmax=10, nswp=10, verb=True, smooth_fun=None):
     """Find (approximate) minima\l element in a TT-tensor."""
     if smooth_fun is None:
        smooth_fun = lambda p, lam: (math.pi/2 - np.arctan(p - lam))
