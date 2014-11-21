@@ -134,5 +134,118 @@ def tt_min(fun, bounds_min, bounds_max, d = None, rmax = 10, tol = 1e-3, n0 = 64
     
 
 
+def tt_min_tens(tens, rmax = 10, tol = 1e-3, nswp = 10, verb=True, smooth_fun=None):
+    """Find (approximate) minima\l element in a TT-tensor."""
+    if smooth_fun is None:
+       smooth_fun = lambda p, lam: (math.pi/2 - np.arctan(p - lam))
+    d = tens.d
+    Rx = [[]] * (d + 1) #Python list for the interfaces
+    Rx[0] = np.ones((1, 1))
+    Rx[d] = np.ones((1, 1))
+    Jy = [np.empty(0)] * (d + 1)
+    ry = rmax * np.ones(d + 1, dtype=np.int)
+    ry[0] = 1
+    ry[d] = 1
+    n = tens.n
+    fun_evals = 0
+    phi_left = [np.empty(0)] * (d + 1)
+    phi_left[0] = np.array([1])
+    phi_right = [np.empty(0)] * (d + 1)
+    phi_right[d] = np.array([1])
+    cores = tt.tensor.to_list(tens)
+    
+    grid = [np.reshape(range(n[i]), (n[i], 1)) for i in xrange(d)]
+    for i in xrange(d - 1):
+        ry[i + 1] = min(ry[i + 1], n[i] * ry[i])
+        ind = sorted(np.random.permutation(ry[i] * n[i])[0:ry[i + 1]])
+        w1 = mkron(np.ones((n[i], 1)), Jy[i])
+        w2 = mkron(grid[i], np.ones((ry[i], 1)))
+        Jy[i + 1] = np.hstack((w1, w2))
+        Jy[i + 1] = reshape(Jy[i + 1], (ry[i] * n[i], -1))
+        Jy[i + 1] = Jy[i + 1][ind, :]
+        phi_left[i + 1] = np.tensordot(phi_left[i], cores[i], 1)
+        phi_left[i + 1] = reshape(phi_left[i + 1], (ry[i] * n[i], -1))
+        phi_left[i + 1] = phi_left[i + 1][ind, :]
+    swp = 0
+    dirn = -1
+    i = d - 1
+    lm = 999999999999
+    while swp < nswp:
+        #Right-to-left sweep
+        #The idea: compute the current core; compute the function of it;
+        #Shift locally or globally? Local shift would be the first try
+        #Compute the current core
+
+        if np.size(Jy[i]) == 0:
+            w1 = np.zeros((ry[i] * n[i] * ry[i + 1], 0))
+        else:
+            w1 = mkron(np.ones((n[i] * ry[i + 1], 1)), Jy[i])
+        w2 = mkron(mkron(np.ones((ry[i + 1], 1)), grid[i]), np.ones((ry[i], 1)))      
+        if np.size(Jy[i + 1]) == 0:
+            w3 = np.zeros((ry[i] * n[i] * ry[i + 1], 0))
+        else:
+            w3 = mkron(Jy[i + 1], np.ones((ry[i] * n[i], 1)))
         
+        phi_right[i] = np.tensordot(cores[i], phi_right[i + 1], 1)
+        phi_right[i] = reshape(phi_right[i], (-1, n[i] * ry[i + 1]))
+
+
+        J = np.hstack((w1, w2, w3))
+        #Just add some random indices to J, which is rnr x d, need to make rn (r + r0) x add,
+        #i.e., just generate random r, random n and random multiindex
+            
+        cry = np.tensordot(phi_left[i], np.tensordot(cores[i], phi_right[i + 1], 1), 1)
+        fun_evals += cry.size
+        cry = reshape(cry, (ry[i], n[i], ry[i + 1]))
+        min_cur = np.min(cry.flatten("F"))
+        ind_cur = np.argmin(cry.flatten("F"))
+        if lm > min_cur:
+            lm = min_cur
+            x_full = J[ind_cur, :]
+            val = tens[x_full]
+            if verb:
+                print 'New record:', val, 'Point:', x_full, 'fevals:', fun_evals
+        cry = smooth_fun(cry, lm)
+        if dirn < 0 and i > 0:
+            cry = reshape(cry, (ry[i], n[i] * ry[i + 1]))
+            cry = cry.T
+            #q, r = np.linalg.qr(cry)
+            u, s, v = mysvd(cry, full_matrices=False)
+            ry[i] = min(ry[i], rmax)
+            q = u[:, :ry[i]]
+            ind = rect_maxvol(q)[0]#maxvol(q)
+            ry[i] = ind.size
+            w1 = mkron(np.ones((ry[i + 1], 1)), grid[i])
+            if np.size(Jy[i + 1]) == 0:
+                w2 = np.zeros((n[i] * ry[i + 1], 0))
+            else:
+                w2 = mkron(Jy[i + 1], np.ones((n[i], 1)))
+            Jy[i] = np.hstack((w1, w2))
+            Jy[i] = reshape(Jy[i], (n[i] * ry[i + 1], -1))
+            Jy[i] = Jy[i][ind, :]
+            phi_right[i] = np.tensordot(cores[i], phi_right[i + 1], 1)
+            phi_right[i] = reshape(phi_right[i], (-1, n[i] * ry[i + 1]))
+            phi_right[i] = phi_right[i][:, ind]
+
+        if dirn > 0 and i < d - 1:
+            cry = reshape(cry, (ry[i] * n[i], ry[i + 1]))
+            q, r = np.linalg.qr(cry)
+            #ind = maxvol(q)
+            ind = rect_maxvol(q)[0]
+            ry[i + 1] = ind.size
+            phi_left[i + 1] = np.tensordot(phi_left[i], cores[i], 1)
+            phi_left[i + 1] = reshape(phi_left[i + 1], (ry[i] * n[i], -1))
+            phi_left[i + 1] = phi_left[i + 1][ind, :]
+            w1 = mkron(np.ones((n[i], 1)), Jy[i])
+            w2 = mkron(grid[i], np.ones((ry[i], 1)))
+            Jy[i + 1] = np.hstack((w1, w2))
+            Jy[i + 1] = reshape(Jy[i + 1], (ry[i] * n[i], -1))
+            Jy[i + 1] = Jy[i + 1][ind, :]
         
+            
+        i += dirn
+        if i == d or i == -1:
+            dirn = -dirn
+            i += dirn
+            swp = swp + 1
+    return val, x_full
