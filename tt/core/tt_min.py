@@ -131,7 +131,7 @@ def tt_min(fun, bounds_min, bounds_max, d=None, rmax=10, n0=64, nswp=10, verb=Tr
             i += dirn
             swp = swp + 1
     return val, x_full
-    
+
 
 
 def tt_min_tens(tens, rmax=10, nswp=10, verb=True, smooth_fun=None):
@@ -139,7 +139,7 @@ def tt_min_tens(tens, rmax=10, nswp=10, verb=True, smooth_fun=None):
     if smooth_fun is None:
        smooth_fun = lambda p, lam: (math.pi/2 - np.arctan(p - lam))
     d = tens.d
-    Rx = [[]] * (d + 1) #Python list for the interfaces
+    Rx = [[]] * (d + 1) # Python list for the interfaces
     Rx[0] = np.ones((1, 1))
     Rx[d] = np.ones((1, 1))
     Jy = [np.empty(0)] * (d + 1)
@@ -153,7 +153,8 @@ def tt_min_tens(tens, rmax=10, nswp=10, verb=True, smooth_fun=None):
     phi_right = [np.empty(0)] * (d + 1)
     phi_right[d] = np.array([1])
     cores = tt.tensor.to_list(tens)
-    
+
+    # Fill initial multiindex J randomly.
     grid = [np.reshape(range(n[i]), (n[i], 1)) for i in xrange(d)]
     for i in xrange(d - 1):
         ry[i + 1] = min(ry[i + 1], n[i] * ry[i])
@@ -185,15 +186,11 @@ def tt_min_tens(tens, rmax=10, nswp=10, verb=True, smooth_fun=None):
             w3 = np.zeros((ry[i] * n[i] * ry[i + 1], 0))
         else:
             w3 = mkron(Jy[i + 1], np.ones((ry[i] * n[i], 1)))
-        
+        J = np.hstack((w1, w2, w3))
+
         phi_right[i] = np.tensordot(cores[i], phi_right[i + 1], 1)
         phi_right[i] = reshape(phi_right[i], (-1, n[i] * ry[i + 1]))
 
-
-        J = np.hstack((w1, w2, w3))
-        #Just add some random indices to J, which is rnr x d, need to make rn (r + r0) x add,
-        #i.e., just generate random r, random n and random multiindex
-            
         cry = np.tensordot(phi_left[i], np.tensordot(cores[i], phi_right[i + 1], 1), 1)
         fun_evals += cry.size
         cry = reshape(cry, (ry[i], n[i], ry[i + 1]))
@@ -241,8 +238,8 @@ def tt_min_tens(tens, rmax=10, nswp=10, verb=True, smooth_fun=None):
             Jy[i + 1] = np.hstack((w1, w2))
             Jy[i + 1] = reshape(Jy[i + 1], (ry[i] * n[i], -1))
             Jy[i + 1] = Jy[i + 1][ind, :]
-        
-            
+
+
         i += dirn
         if i == d or i == -1:
             dirn = -dirn
