@@ -1,3 +1,1 @@
-"""TT module for optimization
-"""
-
+"""TT module for optimization."""
