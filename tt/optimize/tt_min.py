@@ -148,7 +148,7 @@ def min_tens(tens, rmax=10, nswp=10, verb=True, smooth_fun=None):
     ry[0] = 1
     ry[d] = 1
     n = tens.n
-    fun_evals = 0
+    elements_seen = 0
     phi_left = [np.empty(0)] * (d + 1)
     phi_left[0] = np.array([1])
     phi_right = [np.empty(0)] * (d + 1)
@@ -193,7 +193,7 @@ def min_tens(tens, rmax=10, nswp=10, verb=True, smooth_fun=None):
         phi_right[i] = reshape(phi_right[i], (-1, n[i] * ry[i + 1]))
 
         cry = np.tensordot(phi_left[i], np.tensordot(cores[i], phi_right[i + 1], 1), 1)
-        fun_evals += cry.size
+        elements_seen += cry.size
         cry = reshape(cry, (ry[i], n[i], ry[i + 1]))
         min_cur = np.min(cry.flatten("F"))
         ind_cur = np.argmin(cry.flatten("F"))
@@ -202,7 +202,7 @@ def min_tens(tens, rmax=10, nswp=10, verb=True, smooth_fun=None):
             x_full = J[ind_cur, :]
             val = tens[x_full]
             if verb:
-                print 'New record:', val, 'Point:', x_full, 'fevals:', fun_evals
+                print 'New record:', val, 'Point:', x_full, 'elements seen:', elements_seen
         cry = smooth_fun(cry, lm)
         if dirn < 0 and i > 0:
             cry = reshape(cry, (ry[i], n[i] * ry[i + 1]))
