@@ -38,6 +38,7 @@ def configuration(parent_package='',top_path=None):
     config.add_subpackage('maxvol')
     config.add_subpackage('cross')
     config.add_subpackage('optimize')
+    config.add_subpackage('utils')
     return config
     
 

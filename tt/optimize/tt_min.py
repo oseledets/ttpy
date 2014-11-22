@@ -4,8 +4,8 @@ TT-cross-based minimization procedure
 import numpy as np
 import math
 import sys
-from maxvol import maxvol
-from rect_maxvol import rect_maxvol
+from ..maxvol import maxvol
+from ..utils.rect_maxvol import rect_maxvol
 
 def reshape(a, sz):
     return np.reshape(a, sz, order = 'F')
