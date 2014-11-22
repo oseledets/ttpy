@@ -3,7 +3,7 @@ TT-cross-based minimization procedure
 """
 import numpy as np
 import math
-import sys
+import tt
 from ..maxvol import maxvol
 from ..utils.rect_maxvol import rect_maxvol
 
