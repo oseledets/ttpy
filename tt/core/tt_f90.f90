@@ -21,10 +21,11 @@ contains
     integer :: i,M,lwork,info
     integer :: n1(d)
     if (present(rmax) ) then
-       call svd(n,a,tt,eps,rmax)
+       call svd(n, a, tt, eps, rmax)
     else
        call svd(n, a, tt, eps)
     end if
+    print *, tt%r(0:5)
     call sdv_to_arrays(n1,r,d,ps,core,tt)
     call dealloc(tt)
   end subroutine dfull_to_tt
