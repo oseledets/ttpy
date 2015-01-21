@@ -1019,10 +1019,10 @@ def concatenate(*args):
        Z(1, i_1, \\ldots, i_d) = Y(i_1, \\ldots, i_d).
     
     """
-    tmp = [1] + [0] * (len(args) - 1)
+    tmp = np.array([[1] + [0] * (len(args) - 1)])
     result = kron(tensor(tmp), args[0])
     for i in range(1, len(args)):
-        result += kron(tensor([0] * i + [1] + [0] * (len(args) - i - 1)), args[i])
+        result += kron(tensor(np.array([[0] * i + [1] + [0] * (len(args) - i - 1)])), args[i])
     return result
     
     
