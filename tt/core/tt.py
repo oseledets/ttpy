@@ -528,7 +528,7 @@ class tensor:
 ####################################################################################################
 
 class matrix:
-    def __init__(self, a=None, n=None, m=None, eps=1e-14, rmax = 100000):
+    def __init__(self, a=None, eps=1e-14, n=None, m=None, rmax = 100000):
        
         self.n = 0
         self.m = 0
@@ -539,8 +539,8 @@ class matrix:
                 n1 = np.sqrt(a.n).astype(np.int32)
                 m1 = np.sqrt(a.n).astype(np.int32)
             else:
-                n1 = np.array([n],dtype=np.int32)
-                m1 = np.array([m],dtype=np.int32)
+                n1 = np.array([n], dtype = np.int32)
+                m1 = np.array([m], dtype = np.int32)
             self.n = n1
             self.m = m1
             self.tt.core = a.core.copy()
@@ -553,14 +553,14 @@ class matrix:
         if isinstance(a, np.ndarray): 
             d = a.ndim/2
             p = a.shape
-            self.n = np.array(p[0:d],dtype=np.int32)
-            self.m = np.array(p[d:2*d],dtype=np.int32)
+            self.n = np.array(p[:d], dtype = np.int32)
+            self.m = np.array(p[d:], dtype = np.int32)
             prm = np.arange(2*d)
-            prm = prm.reshape((d,2),order='F')
-            prm = prm.transpose()
+            prm = prm.reshape((d, 2), order='F')
+            prm = prm.T
             prm = prm.flatten('F')
             sz = self.n * self.m
-            b = a.transpose(prm).reshape(sz,order='F')
+            b = a.transpose(prm).reshape(sz, order='F')
             self.tt = tensor(b, eps, rmax)
             return
         
