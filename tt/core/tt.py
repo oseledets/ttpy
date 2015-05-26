@@ -632,6 +632,15 @@ class matrix:
     @property
     def is_complex(self):  
         return self.tt.is_complex
+        
+    @property
+    def T(self):
+        """Transposed TT-matrix"""
+        mycrs = matrix.to_list(self)
+        trans_crs = []
+        for cr in mycrs:
+            trans_crs.append(np.transpose(cr, [0, 2, 1, 3]))
+        return matrix.from_list(trans_crs)
 
     def real(self):
         """Return real part of a matrix."""
@@ -867,7 +876,7 @@ class matrix:
 
 #Some binary operations (put aside to wrap something in future)
 #TT-matrix by a TT-vector product
-def matvec(a,b, compression=False):
+def matvec(a, b, compression=False):
     """Matrix-vector product in TT format."""
     acrs = tensor.to_list(a.tt)
     bcrs = tensor.to_list(b)
@@ -1082,16 +1091,18 @@ def ones(n,d=None):
 	return c
 
 
-def rand(n,d,r):
+def rand(n, d=None, r=2):
 	"""Generate a random d-dimensional TT-tensor with ranks ``r``."""
-	n0 = np.asanyarray(n,dtype=np.int32)
-	r0 = np.asanyarray(r,dtype=np.int32)
-	if n0.size is 1:
-		n0 = np.ones((d,),dtype=np.int32)*n0
+	n0 = np.asanyarray(n, dtype=np.int32)
+	r0 = np.asanyarray(r, dtype=np.int32)
+        if d is None:
+            d = n.size
+        if n0.size is 1:
+	    n0 = np.ones((d,),dtype=np.int32)*n0
 	if r0.size is 1:
-		r0 = np.ones((d+1,),dtype=np.int32)*r0
-		r0[0] = 1
-		r0[d] = 1
+	    r0 = np.ones((d+1,),dtype=np.int32)*r0
+	    r0[0] = 1
+	    r0[d] = 1
 	c = tensor()
 	c.d = d
 	c.n = n0
@@ -1346,6 +1357,10 @@ def qlaplace_dd(d):
     return matrix.from_list(cr)
 
 
+
+
+
+
 def xfun(n,d=None):
     """ Create a QTT-representation of 0:prod(n) vector"""
     # call examples:
@@ -1521,3 +1536,10 @@ def stepfun(n, d=None, center=1, direction=1):
         crs.append(cr)
     return tensor.from_list(crs[::-1])        
 
+
+def qshift(d):
+    x = []
+    x.append(np.array([0.0, 1.0]))
+    for _ in xrange(1, d):
+        x.append(np.array([1.0, 0.0])) 
+    return Toeplitz(tensor.from_list(x), kind='L')
