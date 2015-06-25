@@ -1,41 +1,44 @@
+# References:
+# [1] C. Lubich, I. Oseledets and B. Vandereycken, Time integration of
+# tensor trains.
+
 import tt
 import numpy as np
-from copy import deepcopy
 from math import ceil
-import random
-import pickle
-from scipy.optimize import minimize_scalar, fmin_ncg
-import pylab as pl
-from autodiff import gradient
 
 
 def reshape(a, sz):
     return np.reshape(a, sz, order="F")
 
 
-def left(Y, i):
+# Three functions below are here for debugging. They help to implement
+# the algorithms in a straightforward and inefficient manner.
+def left(X, i):
+    """Compute the orthogonal matrix Q_{\leq i} as defined in [1]."""
     if i < 0:
         return np.ones([1, 1])
     answ = np.ones([1, 1])
-    cores = tt.tensor.to_list(Y)
+    cores = tt.tensor.to_list(X)
     for dim in range(i+1):
         answ = np.tensordot(answ, cores[dim], 1)
-    answ = reshape(answ, (-1, Y.r[i+1]))
+    answ = reshape(answ, (-1, X.r[i+1]))
     return answ
 
 
-def right(Y, i):
-    if i > Y.d-1:
+def right(X, i):
+    """Compute the orthogonal matrix Q_{\geq i} as defined in [1]."""
+    if i > X.d-1:
         return np.ones([1, 1])
     answ = np.ones([1, 1])
-    cores = tt.tensor.to_list(Y)
-    for dim in range(Y.d-1, i-1, -1):
+    cores = tt.tensor.to_list(X)
+    for dim in range(X.d-1, i-1, -1):
         answ = np.tensordot(cores[dim], answ, 1)
-    answ = reshape(answ, (Y.r[i], -1))
+    answ = reshape(answ, (X.r[i], -1))
     return answ.T
 
 
 def unfolding(tens, i):
+    """Compute the i-th unfolding of a tensor."""
     return reshape(tens.full(), (np.prod(tens.n[0:(i+1)]), -1))
 
 
@@ -47,10 +50,10 @@ def project(X, Z, clusterSize=30, debug=False):
     the function computes projection of the sum off all tensors in the list:
         project(X, Z) = P_X(\sum_i Z_i)
     ).
+    This function implements an algorithm from the paper [1], theorem 3.1.
 
     Returns a tensor in the TT format with the TT-ranks equal 2 * rank(Z).
     """
-
     zArr = None
     if isinstance(Z, tt.tensor):
         zArr = [Z]
@@ -197,21 +200,21 @@ def project(X, Z, clusterSize=30, debug=False):
     return tt.tensor.from_list(coresP)
 
 
-def projector_splitting_add(Y, grad, debug=False):
-    # Compute Y + grad via projector splitting scheme. The result ranks are the
-    # same as of Y.
-    # In comments I refer to formulie from
-    # Lubich C., Oseledets I., Vandereycken B. Time integration of tensor trains
-    # //arXiv preprint arXiv:1407.2042. - 2014.
+def projector_splitting_add(Y, delta, debug=False):
+    """Compute Y + delta via projector splitting scheme.
+
+    This function implements the projector splitting scheme (section 4.2 of [1]).
+
+    The result is a TT-tensor with the TT-ranks equal to the TT-ranks of Y."""
     # Get rid of redundant ranks (they cause technical difficulties).
-    grad = grad.round(eps=0)
-    numDims = grad.d
+    delta = delta.round(eps=0)
+    numDims = delta.d
     assert(numDims == Y.d)
-    modeSize = grad.n
+    modeSize = delta.n
     assert(modeSize == Y.n).all()
-    coresGrad = tt.tensor.to_list(grad)
+    coresDelta = tt.tensor.to_list(delta)
     coresY = tt.tensor.to_list(Y)
-    # rhs[dim] is an (grad.rank_dim * Y.rank_dim) x 1 vector
+    # rhs[dim] is an (delta.rank_dim * Y.rank_dim) x 1 vector
     rhs = [None] * (numDims+1)
     rhs[numDims] = np.ones([1, 1])
     # Right to left orthogonalization of Y and preparation of the rhs vectors.
@@ -229,29 +232,29 @@ def projector_splitting_add(Y, grad, debug=False):
             coresY[dim-1] = np.tensordot(coresY[dim-1], rr.T, 1)
 
         # rhs computation.
-        coreProd = np.tensordot(coresGrad[dim], coresY[dim], axes=(1, 1))
+        coreProd = np.tensordot(coresDelta[dim], coresY[dim], axes=(1, 1))
         coreProd = np.transpose(coreProd, (0, 2, 1, 3))
-        coreProd = reshape(coreProd, (grad.r[dim]*r1, grad.r[dim+1]*r2))
+        coreProd = reshape(coreProd, (delta.r[dim]*r1, delta.r[dim+1]*r2))
         rhs[dim] = np.dot(coreProd, rhs[dim+1])
     if debug:
         assert(np.allclose(Y.full(), tt.tensor.from_list(coresY).full()))
 
-    # lsh is an Y.rank_dim x grad.rank_dim matrix.
+    # lsh is an Y.rank_dim x delta.rank_dim matrix.
     lhs = np.ones([1, 1])
     # s is an Y.rank_dim x Y.rank_dim matrix.
     s = np.ones([1, 1])
     # Left to right projector splitting sweep.
     for dim in range(numDims):
         # Y^+ (formula 4.10)
-        cc = coresGrad[dim].copy()
+        cc = coresDelta[dim].copy()
         r1, n, r2 = coresY[dim].shape
         cc = np.tensordot(lhs, cc, 1)
-        rhs[dim+1] = reshape(rhs[dim+1], (grad.r[dim+1], r2))
-        cc = reshape(cc, (-1, grad.r[dim+1]))
+        rhs[dim+1] = reshape(rhs[dim+1], (delta.r[dim+1], r2))
+        cc = reshape(cc, (-1, delta.r[dim+1]))
         cc = np.dot(cc, rhs[dim+1])
         if debug:
             first = np.kron(np.eye(modeSize[dim]), left(tt.tensor.from_list(coresY), dim-1).T)
-            second = np.dot(first, unfolding(grad, dim))
+            second = np.dot(first, unfolding(delta, dim))
             explicit = np.dot(second, right(tt.tensor.from_list(coresY), dim+1))
             assert(np.allclose(explicit, cc))
         cc += reshape(np.tensordot(s, coresY[dim], 1), (-1, Y.r[dim+1]))
@@ -262,19 +265,19 @@ def projector_splitting_add(Y, grad, debug=False):
         coresY[dim] = cc.copy()
 
         if dim < numDims-1:
-            coreProd = np.tensordot(coresY[dim], coresGrad[dim], axes=(1, 1))
+            coreProd = np.tensordot(coresY[dim], coresDelta[dim], axes=(1, 1))
             coreProd = np.transpose(coreProd, (0, 2, 1, 3))
-            coreProd = reshape(coreProd, (r1*grad.r[dim], r2*grad.r[dim+1]))
+            coreProd = reshape(coreProd, (r1*delta.r[dim], r2*delta.r[dim+1]))
             lhs = reshape(lhs, (1, -1))
             lhs = np.dot(lhs, coreProd)
-            lhs = reshape(lhs, (r2, grad.r[dim+1]))
+            lhs = reshape(lhs, (r2, delta.r[dim+1]))
 
         if dim < numDims-1:
             # Y^- (fomula 4.7)
             s = rr - np.dot(lhs, rhs[dim+1])
             if debug:
                 first = left(tt.tensor.from_list(coresY), dim).T
-                second = np.dot(first, unfolding(grad, dim))
+                second = np.dot(first, unfolding(delta, dim))
                 explicit = np.dot(second, right(tt.tensor.from_list(coresY), dim+1))
                 assert(np.allclose(explicit, np.dot(lhs, rhs[dim+1])))
 
