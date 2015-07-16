@@ -14,12 +14,12 @@ To build the ttpy module
    ```
 7. Try to install it locally:
    ```
-   conda install --use-local conda-recipe
+   conda install --use-local conda-recipe  
    conda list
    ```
 8. Upload the module to the binstar:
    ```
-   binstar login
-   binstar upload /home/alex/anaconda/conda-bld/linux-64/ttpy-1.0-np19py27_0.tar.bz2
+   binstar login  
+   binstar upload /home/alex/anaconda/conda-bld/linux-64/ttpy-1.0-np19py27_0.tar.bz2  
    binstar logout
    ```
