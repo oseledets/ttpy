@@ -16,6 +16,13 @@ Main contributors
 Installation
 ============
 
+##From a binstar repository
+If you use 64 bit linux, you can install the module from the binstar repository:
+```
+sudo apt-get install libgfortran3
+conda install -c https://conda.binstar.org/bihaqo ttpy
+```
+
 ##Downloading the code
 This installation works with git submodules, so you should be sure, that you got them all right.
 The best way is to work with this repository is to use git with a version >= 1.6.5.
