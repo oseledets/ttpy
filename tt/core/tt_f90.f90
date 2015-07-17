@@ -226,6 +226,7 @@ contains
     call arrays_to_sdv(n,r,d,ps,cr,tt)
     call svd(tt,eps,rmax)
     call sdv_to_arrays(n1,r,d,ps,core,tt)
+    call dealloc(tt)
   end subroutine dtt_compr2
   
   subroutine ztt_compr2(n,d,r,ps,cr,eps,rmax)
@@ -242,6 +243,7 @@ contains
     call arrays_to_sdv(n,r,d,ps,cr,tt)
     call svd(tt,eps,rmax)
     call sdv_to_arrays(n1,r,d,ps,zcore,tt)
+    call dealloc(tt)
   end subroutine ztt_compr2
 
   subroutine dtt_nrm(n,d,r,ps,cr,nrm)
