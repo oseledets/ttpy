@@ -91,6 +91,7 @@ def _update_lhs(lhs, xCore, zCore, new_lhs):
 @jit(nopython=True)
 def _update_rhs(curr_rhs, xCore, zCore, new_rhs):
     """ Function to be called from the project()"""
+    # TODO: Use intermediate variable to use 5 nested loops instead of 6.
     r_x, n, r_old_x = xCore.shape
     num_obj, r_z, n, r_old_z = zCore.shape
     for idx in xrange(num_obj):
@@ -134,14 +135,27 @@ def project(X, Z, use_jit=True, debug=False):
         coresZ[idx] = tt.tensor.to_list(zArr[idx])
 
     if use_jit:
+        for dim in xrange(numDims):
+            r1, n, r2 = coresZ[0][dim].shape
+            for idx in xrange(len(zArr)):
+                if (r1, n, r2) != coresZ[idx][dim].shape:
+                    print('Warning: cannot use the jit version when not all '
+                          'the ranks in the Z array are equal each other. '
+                          'Switching to the non-jit version.')
+                    use_jit = False
+
+    if use_jit:
         zCoresDim = [None] * numDims
         for dim in xrange(numDims):
             r1, n, r2 = coresZ[0][dim].shape
             zCoresDim[dim] = np.zeros([len(zArr), r1, n, r2])
             for idx in xrange(len(zArr)):
-                assert((r1, n, r2) == coresZ[idx][dim].shape)
+                if (r1, n, r2) != coresZ[idx][dim].shape:
+                    print('Warning: cannot use the jit version when not all '
+                          'the ranks in the Z array are equal each other. '
+                          'Switching to the non-jit version.')
+                    use_jit = False
                 zCoresDim[dim][idx, :, :, :] = coresZ[idx][dim]
-
         # Initialize the cores of the projection_X(sum z[i]).
         coresP = []
         for dim in xrange(numDims):
@@ -245,8 +259,8 @@ def project(X, Z, use_jit=True, debug=False):
         if debug:
             assert(np.allclose(X.full(), tt.tensor.from_list(coresX).full()))
         return tt.tensor.from_list(coresP)
-
     else:
+        # Non-jit version of the code.
         # Initialize the cores of the projection_X(sum z[i]).
         coresP = []
         for dim in xrange(numDims):
