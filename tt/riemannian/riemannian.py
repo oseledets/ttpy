@@ -73,6 +73,7 @@ def unfolding(tens, i):
 @jit(nopython=True)
 def _update_lhs(lhs, xCore, zCore, new_lhs):
     """ Function to be called from the project()"""
+    # TODO: Use intermediate variable to use 5 nested loops instead of 6.
     r_old_x, n, r_x = xCore.shape
     num_obj, r_old_z, n, r_z = zCore.shape
     for idx in xrange(num_obj):
@@ -104,7 +105,7 @@ def _update_rhs(curr_rhs, xCore, zCore, new_rhs):
                             new_rhs[idx, alpha_z, alpha_x] += curr_value
 
 
-def project(X, Z, clusterSize=30, use_jit=True, debug=False):
+def project(X, Z, use_jit=True, debug=False):
     """ Project tensor Z on the tangent space of tensor X.
 
     X is a tensor in the TT format.
@@ -120,20 +121,7 @@ def project(X, Z, clusterSize=30, use_jit=True, debug=False):
     if isinstance(Z, tt.tensor):
         zArr = [Z]
     else:
-        if use_jit:
-            zArr = Z
-        else:
-            # Join small clusters of tensors to speed things up.
-            # TODO: instead of just summing clusterSize tensors, sum until
-            # the running sum ranks exceed a threshold.
-            numClusters = int(ceil(float(len(Z)) / clusterSize))
-            zArr = [0] * numClusters
-            for clusterIdx in xrange(numClusters):
-                zArr[clusterIdx] = Z[clusterIdx * clusterSize]
-                start = clusterIdx * clusterSize + 1
-                end = min((clusterIdx + 1) * clusterSize, len(Z))
-                for idx in xrange(start, end):
-                    zArr[clusterIdx] += Z[idx]
+        zArr = Z
 
     # Get rid of redundant ranks (they cause technical difficulties).
     X = X.round(eps=0)
