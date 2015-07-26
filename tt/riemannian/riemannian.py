@@ -220,11 +220,9 @@ def project(X, Z, use_jit=True, debug=False):
                     currPCore = np.dot(currPCore, rhs[dim+1][idx, :, :])
                     currPCore = reshape(currPCore, (r1, modeSize[dim], r2))
                     if dim == 0:
-                        for value in xrange(modeSize[dim]):
-                            coresP[dim][0:r1, value, 0:r2] += currPCore[:, value, :]
+                        coresP[dim][0:r1, :, 0:r2] += currPCore
                     else:
-                        for value in xrange(modeSize[dim]):
-                            coresP[dim][r1:, value, 0:r2] += currPCore[:, value, :]
+                        coresP[dim][r1:, :, 0:r2] += currPCore
 
                     if debug:
                         leftQm1 = left(tt.tensor.from_list(coresX), dim-1)
@@ -243,18 +241,16 @@ def project(X, Z, use_jit=True, debug=False):
                 lhs = new_lhs
 
                 if dim == 0:
-                    for value in xrange(modeSize[dim]):
-                        coresP[dim][0:r1, value, r2:] = coresX[dim][:, value, :]
+                    coresP[dim][0:r1, :, r2:] = coresX[dim]
                 else:
-                    for value in xrange(modeSize[dim]):
-                        coresP[dim][r1:, value, r2:] = coresX[dim][:, value, :]
+                    coresP[dim][r1:, :, r2:] = coresX[dim]
 
             if dim == numDims-1:
                 for idx in xrange(len(zArr)):
                     currZCore = reshape(coresZ[idx][dim], (zArr[idx].r[dim], -1))
                     currPCore = np.dot(lhs[idx, :, :], currZCore)
-                    for value in range(modeSize[dim]):
-                        coresP[dim][r1:, value, 0:r2] += reshape(currPCore[:, value], (r1, 1))
+                    currPCore = reshape(currPCore, (r1, n, r2))
+                    coresP[dim][r1:, :, 0:r2] += currPCore
 
         if debug:
             assert(np.allclose(X.full(), tt.tensor.from_list(coresX).full()))
@@ -282,8 +278,7 @@ def project(X, Z, use_jit=True, debug=False):
             r1, n, r2 = coresX[dim].shape
 
             # Fill the right orthogonal part of the projection.
-            for value in xrange(modeSize[dim]):
-                coresP[dim][0:r1, value, 0:r2] = coresX[dim][:, value, :]
+            coresP[dim][0:r1, :, 0:r2] = coresX[dim]
             # Compute rhs.
             for idx in xrange(len(zArr)):
                 coreProd = np.tensordot(coresZ[idx][dim], coresX[dim], axes=(1, 1))
@@ -322,11 +317,9 @@ def project(X, Z, use_jit=True, debug=False):
                 currPCore = np.dot(currPCore, rhs[idx][dim+1])
                 currPCore = reshape(currPCore, (r1, modeSize[dim], r2))
                 if dim == 0:
-                    for value in xrange(modeSize[dim]):
-                        coresP[dim][0:r1, value, 0:r2] += currPCore[:, value, :]
+                    coresP[dim][0:r1, :, 0:r2] += currPCore
                 else:
-                    for value in xrange(modeSize[dim]):
-                        coresP[dim][r1:, value, 0:r2] += currPCore[:, value, :]
+                    coresP[dim][r1:, :, 0:r2] += currPCore
 
                 if debug:
                     leftQm1 = left(tt.tensor.from_list(coresX), dim-1)
@@ -344,18 +337,16 @@ def project(X, Z, use_jit=True, debug=False):
                     assert(np.allclose(explicit, currPCore))
 
             if dim == 0:
-                for value in xrange(modeSize[dim]):
-                    coresP[dim][0:r1, value, r2:] = coresX[dim][:, value, :]
+                coresP[dim][0:r1, :, r2:] = coresX[dim]
             else:
-                for value in xrange(modeSize[dim]):
-                    coresP[dim][r1:, value, r2:] = coresX[dim][:, value, :]
+                coresP[dim][r1:, :, r2:] = coresX[dim]
 
         for idx in xrange(len(zArr)):
             r1, n, r2 = coresX[numDims-1].shape
             currZCore = reshape(coresZ[idx][numDims-1], (zArr[idx].r[numDims-1], -1))
             currPCore = np.dot(lhs[idx], currZCore)
-            for value in xrange(modeSize[numDims-1]):
-                coresP[numDims-1][r1:, value, 0:r2] += reshape(currPCore[:, value], (r1, 1))
+            currPCore = reshape(currPCore, (r1, n, r2))
+            coresP[numDims-1][r1:, :, 0:r2] += currPCore
 
         if debug:
             assert(np.allclose(X.full(), tt.tensor.from_list(coresX).full()))
