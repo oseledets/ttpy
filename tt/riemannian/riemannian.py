@@ -106,7 +106,7 @@ def _update_rhs(curr_rhs, xCore, zCore, new_rhs):
                             new_rhs[idx, alpha_z, alpha_x] += curr_value
 
 
-def project(X, Z, use_jit=True, debug=False):
+def project(X, Z, use_jit=False, debug=False):
     """ Project tensor Z on the tangent space of tensor X.
 
     X is a tensor in the TT format.
@@ -115,6 +115,8 @@ def project(X, Z, use_jit=True, debug=False):
         project(X, Z) = P_X(\sum_i Z_i)
     ).
     This function implements an algorithm from the paper [1], theorem 3.1.
+    The jit version of the code is much faster when projecting a lot of tensors
+    simultaneously (in other words Z is a list with many tensors).
 
     Returns a tensor in the TT format with the TT-ranks equal 2 * rank(Z).
     """
@@ -134,6 +136,9 @@ def project(X, Z, use_jit=True, debug=False):
         assert(modeSize == zArr[idx].n).all()
         coresZ[idx] = tt.tensor.to_list(zArr[idx])
 
+    if not use_jit and len(Z) > 10:
+        print('Consider using use_jit=True option to speed up the projection '
+              'process.')
     if use_jit:
         for dim in xrange(numDims):
             r1, n, r2 = coresZ[0][dim].shape
@@ -211,20 +216,21 @@ def project(X, Z, use_jit=True, debug=False):
                 new_lhs = np.zeros([len(zArr), r2, zArr[idx].r[dim+1]])
                 _update_lhs(lhs, coresX[dim], zCoresDim[dim], new_lhs)
 
-                for idx in xrange(len(zArr)):
-                    currZCore = reshape(coresZ[idx][dim], (zArr[idx].r[dim], -1))
-                    currPCore = np.dot(lhs[idx, :, :], currZCore)
-
-                    currPCore = reshape(currPCore, (-1, zArr[idx].r[dim+1]))
-                    currPCore -= np.dot(cc, new_lhs[idx, :, :])
-                    currPCore = np.dot(currPCore, rhs[dim+1][idx, :, :])
-                    currPCore = reshape(currPCore, (r1, modeSize[dim], r2))
-                    if dim == 0:
-                        coresP[dim][0:r1, :, 0:r2] += currPCore
-                    else:
-                        coresP[dim][r1:, :, 0:r2] += currPCore
-
-                    if debug:
+                # See the correspondic section in the non-jit version of this
+                # code for a less confusing implementation of
+                # the transformation below.
+                currPCore = np.einsum('ijk,iklm->ijlm', lhs, zCoresDim[dim])
+                currPCore = reshape(currPCore, (len(zArr), r1*n, -1))
+                currPCore -= np.einsum('ij,kjl->kil', cc, new_lhs)
+                currPCore = np.einsum('ijk,ikl', currPCore, rhs[dim+1])
+                currPCore = reshape(currPCore, (r1, modeSize[dim], r2))
+                if dim == 0:
+                    coresP[dim][0:r1, :, 0:r2] += currPCore
+                else:
+                    coresP[dim][r1:, :, 0:r2] += currPCore
+                if debug:
+                    explicit_sum = np.zeros((r1, modeSize[dim], r2))
+                    for idx in xrange(len(zArr)):
                         leftQm1 = left(tt.tensor.from_list(coresX), dim-1)
                         leftQ = left(tt.tensor.from_list(coresX), dim)
 
@@ -236,8 +242,8 @@ def project(X, Z, use_jit=True, debug=False):
                             explicit -= orth_cc.dot(leftQ.T.dot(unfolding(zArr[idx], dim)).dot(rightQ))
                         else:
                             explicit = second
-                        explicit = reshape(explicit, currPCore.shape)
-                        assert(np.allclose(explicit, currPCore))
+                        explicit_sum += reshape(explicit, currPCore.shape)
+                    assert(np.allclose(explicit_sum, currPCore))
                 lhs = new_lhs
 
                 if dim == 0:
@@ -246,11 +252,7 @@ def project(X, Z, use_jit=True, debug=False):
                     coresP[dim][r1:, :, r2:] = coresX[dim]
 
             if dim == numDims-1:
-                for idx in xrange(len(zArr)):
-                    currZCore = reshape(coresZ[idx][dim], (zArr[idx].r[dim], -1))
-                    currPCore = np.dot(lhs[idx, :, :], currZCore)
-                    currPCore = reshape(currPCore, (r1, n, r2))
-                    coresP[dim][r1:, :, 0:r2] += currPCore
+                coresP[dim][r1:, :, 0:r2] += np.einsum('ijk,iklm->jlm', lhs, zCoresDim[dim])
 
         if debug:
             assert(np.allclose(X.full(), tt.tensor.from_list(coresX).full()))
