@@ -36,8 +36,8 @@ def cores_orthogonalization_step(coresX, dim, left_to_right=True):
     return coresX
 
 
-# Three functions below are here for debugging. They help to implement
-# the algorithms in a straightforward and inefficient manner.
+# The three functions below are here for debugging. They help to implement
+# the algorithms in a straightforward and inefficient manner to compare with.
 def left(X, i):
     """Compute the orthogonal matrix Q_{\leq i} as defined in [1]."""
     if i < 0:
@@ -67,9 +67,9 @@ def unfolding(tens, i):
     return reshape(tens.full(), (np.prod(tens.n[0:(i+1)]), -1))
 
 
-# Two functions below are for updating the rhs and lhs matrices fast.
-# Do not put them inside the project function or jit will compile them on each
-# call making everything slow.
+# The two functions below are for updating the rhs and lhs matrices fast in
+# the projection process. Do not put them inside the project function because
+# if you do, jit will compile them on each call making everything slow.
 @jit(nopython=True)
 def _update_lhs(lhs, xCore, zCore, new_lhs):
     """ Function to be called from the project()"""
@@ -356,7 +356,7 @@ def project(X, Z, use_jit=False, debug=False):
 
 
 def projector_splitting_add(Y, delta, debug=False):
-    """Compute Y + delta via projector splitting scheme.
+    """Compute Y + delta via the projector splitting scheme.
 
     This function implements the projector splitting scheme (section 4.2 of [1]).
 
