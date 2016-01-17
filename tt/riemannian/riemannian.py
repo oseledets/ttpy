@@ -136,7 +136,7 @@ def project(X, Z, use_jit=False, debug=False):
         assert(modeSize == zArr[idx].n).all()
         coresZ[idx] = tt.tensor.to_list(zArr[idx])
 
-    if not use_jit and len(Z) > 10:
+    if not use_jit and len(zArr) > 10:
         print('Consider using use_jit=True option to speed up the projection '
               'process.')
     if use_jit:
