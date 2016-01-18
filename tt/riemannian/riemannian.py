@@ -76,12 +76,12 @@ def _update_lhs(lhs, xCore, zCore, new_lhs):
     # TODO: Use intermediate variable to use 5 nested loops instead of 6.
     r_old_x, n, r_x = xCore.shape
     num_obj, r_old_z, n, r_z = zCore.shape
-    for idx in xrange(num_obj):
-        for val in xrange(n):
-            for alpha_old_z in xrange(r_old_z):
-                for alpha_z in xrange(r_z):
-                    for alpha_old_x in xrange(r_old_x):
-                        for alpha_x in xrange(r_x):
+    for idx in range(num_obj):
+        for val in range(n):
+            for alpha_old_z in range(r_old_z):
+                for alpha_z in range(r_z):
+                    for alpha_old_x in range(r_old_x):
+                        for alpha_x in range(r_x):
                             curr_value = lhs[idx, alpha_old_x, alpha_old_z]
                             curr_value *= xCore[alpha_old_x, val, alpha_x]
                             curr_value *= zCore[idx, alpha_old_z, val, alpha_z]
@@ -94,12 +94,12 @@ def _update_rhs(curr_rhs, xCore, zCore, new_rhs):
     # TODO: Use intermediate variable to use 5 nested loops instead of 6.
     r_x, n, r_old_x = xCore.shape
     num_obj, r_z, n, r_old_z = zCore.shape
-    for idx in xrange(num_obj):
-        for val in xrange(n):
-            for alpha_old_z in xrange(r_old_z):
-                for alpha_z in xrange(r_z):
-                    for alpha_old_x in xrange(r_old_x):
-                        for alpha_x in xrange(r_x):
+    for idx in range(num_obj):
+        for val in range(n):
+            for alpha_old_z in range(r_old_z):
+                for alpha_z in range(r_z):
+                    for alpha_old_x in range(r_old_x):
+                        for alpha_x in range(r_x):
                             curr_value = curr_rhs[idx, alpha_old_z, alpha_old_x]
                             curr_value *= xCore[alpha_x, val, alpha_old_x]
                             curr_value *= zCore[idx, alpha_z, val, alpha_old_z]
@@ -136,7 +136,7 @@ def project(X, Z, use_jit=False, debug=False):
         assert(modeSize == zArr[idx].n).all()
         coresZ[idx] = tt.tensor.to_list(zArr[idx])
 
-    if not use_jit and len(Z) > 10:
+    if not use_jit and len(zArr) > 10:
         print('Consider using use_jit=True option to speed up the projection '
               'process.')
     if use_jit:
