@@ -31,7 +31,7 @@ def multifuncrs2(X, funs, eps = 1e-6, \
                 y0 = None, \
                 do_qr = False, \
                 restart_it = 0):
-    
+
     dtype = np.float64
     if len(filter(lambda x: x.is_complex, X)) > 0:
         dtype = np.complex128
@@ -64,7 +64,7 @@ def multifuncrs2(X, funs, eps = 1e-6, \
     #Error vector
     z = tt.rand(n, d, kickrank)
     rz = z.r
-    z = tt.tensor.to_list(z) 
+    z = tt.tensor.to_list(z)
     ry = y.r
     cry = tt.tensor.to_list(y)
     #Interface matrices - for solution
@@ -167,7 +167,7 @@ def multifuncrs2(X, funs, eps = 1e-6, \
         newy = reshape(np.transpose(newy), (d2 * ry[i] * n[i], ry[i+1]))
         newy = np.transpose(np.linalg.solve(np.transpose(Ry[i+1]), np.transpose(newy))) # y=y/R
         newy = reshape(newy, (d2 * ry[i] * n[i] * ry[i+1],))
-        try: 
+        try:
             dy = np.linalg.norm(newy - oldy) / np.linalg.norm(newy)
         except ZeroDivisionError:
             print 'Bad initial indices, the solution is exactly zero. Restarting'
@@ -190,6 +190,7 @@ def multifuncrs2(X, funs, eps = 1e-6, \
                 v = np.dot(v, np.conj(tmp).T)
             v = np.conj(np.transpose(v))
             r = my_chop2(s, eps / math.sqrt(d) * np.linalg.norm(s))
+            r = min(r, rmax, len(s)) 
         else:
             if dirn > 0:
                 u, v = np.linalg.qr(newy)
@@ -210,7 +211,7 @@ def multifuncrs2(X, funs, eps = 1e-6, \
             v = np.dot(v[:, :r], np.diag(s[:r]))
             # kick
             radd = 0
-            rv = 1                
+            rv = 1
             if kickrank > 0:
                 #Compute the function at residual indices
                 curbl_y = np.zeros((ry[i] * n[i] * rz[i+1], nx), dtype=dtype)
@@ -260,12 +261,12 @@ def multifuncrs2(X, funs, eps = 1e-6, \
                 zz = np.linalg.solve(Rz[i], zz)
                 zz = reshape(zz, (rz[i] * n[i] * rz[i+1], d2))
                 zz = reshape(zz.T, (d2 * rz[i] * n[i], rz[i+1]))
-                zz = np.linalg.solve(Rz[i+1].T, zz.T).T 
+                zz = np.linalg.solve(Rz[i+1].T, zz.T).T
                 zz = reshape(zz, (d2, rz[i] * n[i] * rz[i+1]))
                 zz = reshape(zz.T, (rz[i] * n[i], rz[i+1] * d2))
                 zz, sz, vz = np.linalg.svd(zz, full_matrices = False)
                 zz = zz[:, :min(kickrank, zz.shape[1])]
-                #Second random kick rank 
+                #Second random kick rank
                 zz = np.hstack((zz, np.random.randn(rz[i] * n[i], kickrank2)))
                 u, rv = np.linalg.qr(np.hstack((u, zy)))
                 radd = zy.shape[1]
@@ -446,8 +447,8 @@ def multifuncrs2(X, funs, eps = 1e-6, \
             order_index = order_index + 1
             if verb > 0:
                 print '=multifuncrs= sweep %d{%d}, max_dy: %3.3e, erank: %g' % (swp, order_index, max_dy, \
-                    math.sqrt(np.dot(ry[:d], n * ry[1:]) / np.sum(n)))        
-            if max_dy < eps_exit and dirn > 0: 
+                    math.sqrt(np.dot(ry[:d], n * ry[1:]) / np.sum(n)))
+            if max_dy < eps_exit and dirn > 0:
                 break
             if order_index >= len(cur_order): #New global sweep
                 cur_order = copy.copy(block_order)
@@ -459,4 +460,3 @@ def multifuncrs2(X, funs, eps = 1e-6, \
     cry[d-1] = np.transpose(cry[d-1][:, :, :, 0], [1, 2, 0])
     y = tt.tensor.from_list(cry)
     return y
-
