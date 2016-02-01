@@ -113,31 +113,32 @@ def multifuncrs2(X, funs, eps = 1e-6, \
             Rx[i+1, j] = reshape(Rx[i+1, j], (ry[i] * n[i], rx[i+1, j]))
             Rx[i+1, j] = Rx[i+1, j][curind, :]
         #Error for kick
-        crz = z[i]
-        crz = reshape(crz, (rz[i] * n[i], rz[i+1]))
-        crz, rv = np.linalg.qr(crz)
-        cr2 = z[i+1]
-        cr2 = reshape(cr2, (rz[i+1], n[i+1] * rz[i+2]))
-        cr2 = np.dot(rv, cr2)
-        rz[i+1] = crz.shape[1]
-        crz = reshape(crz, (rz[i], n[i], rz[i+1]))
-        z[i+1] = reshape(cr2, (rz[i+1], n[i+1], rz[i+2]))
-        z[i] = crz
-        #Interfaces for error
-        Rz[i+1] = np.dot(Rz[i], reshape(crz, [rz[i], n[i] * rz[i+1]]))
-        Rz[i+1] = reshape(Rz[i+1], [rz[i] * n[i], rz[i+1]])
-        Ryz[i+1] = np.dot(Ryz[i], reshape(cr, [ry[i], n[i] * ry[i+1]]))
-        Ryz[i+1] = reshape(Ryz[i+1], [rz[i] * n[i], ry[i+1]])
-        #Pick random initial indices
-        curind = np.random.permutation(n[i] * rz[i])[:rz[i+1]]
-        Ryz[i+1] = Ryz[i+1][curind, :]
-        Rz[i+1] = Rz[i+1][curind, :]
-        #Interface matrices for X
-        for j in range(0, nx):
-            Rxz[i+1, j] = reshape(crx[i, j], (rx[i, j], n[i] * rx[i+1, j]))
-            Rxz[i+1, j] = np.dot(Rxz[i, j], Rxz[i+1, j])
-            Rxz[i+1, j] = reshape(Rxz[i+1, j], (rz[i] * n[i], rx[i+1, j]))
-            Rxz[i+1, j] = Rxz[i+1, j][curind, :]
+        if kickrank > 0:
+            crz = z[i]
+            crz = reshape(crz, (rz[i] * n[i], rz[i+1]))
+            crz, rv = np.linalg.qr(crz)
+            cr2 = z[i+1]
+            cr2 = reshape(cr2, (rz[i+1], n[i+1] * rz[i+2]))
+            cr2 = np.dot(rv, cr2)
+            rz[i+1] = crz.shape[1]
+            crz = reshape(crz, (rz[i], n[i], rz[i+1]))
+            z[i+1] = reshape(cr2, (rz[i+1], n[i+1], rz[i+2]))
+            z[i] = crz
+            #Interfaces for error
+            Rz[i+1] = np.dot(Rz[i], reshape(crz, [rz[i], n[i] * rz[i+1]]))
+            Rz[i+1] = reshape(Rz[i+1], [rz[i] * n[i], rz[i+1]])
+            Ryz[i+1] = np.dot(Ryz[i], reshape(cr, [ry[i], n[i] * ry[i+1]]))
+            Ryz[i+1] = reshape(Ryz[i+1], [rz[i] * n[i], ry[i+1]])
+            #Pick random initial indices
+            curind = np.random.permutation(n[i] * rz[i])[:rz[i+1]]
+            Ryz[i+1] = Ryz[i+1][curind, :]
+            Rz[i+1] = Rz[i+1][curind, :]
+            #Interface matrices for X
+            for j in range(0, nx):
+                Rxz[i+1, j] = reshape(crx[i, j], (rx[i, j], n[i] * rx[i+1, j]))
+                Rxz[i+1, j] = np.dot(Rxz[i, j], Rxz[i+1, j])
+                Rxz[i+1, j] = reshape(Rxz[i+1, j], (rz[i] * n[i], rx[i+1, j]))
+                Rxz[i+1, j] = Rxz[i+1, j][curind, :]
     d2 = ry[d]
     ry[d] = 1
     cry[d-1] = np.transpose(cry[d-1], [2, 0, 1]) # permute
@@ -283,9 +284,10 @@ def multifuncrs2(X, funs, eps = 1e-6, \
             cry[i] = u
             cry[i+1] = v
             # Update kick
-            zz, rv = np.linalg.qr(zz)
-            rz[i+1] = zz.shape[1]
-            z[i] = reshape(zz, (rz[i], n[i], rz[i+1]))
+            if kickrank > 0:
+                zz, rv = np.linalg.qr(zz)
+                rz[i+1] = zz.shape[1]
+                z[i] = reshape(zz, (rz[i], n[i], rz[i+1]))
             #z[i+1] is recomputed from scratch we do not need it now
             #Compute left interface matrices
             #Interface matrix for Y
@@ -300,19 +302,20 @@ def multifuncrs2(X, funs, eps = 1e-6, \
                 Rx[i+1, j] = reshape(Rx[i+1, j], (ry[i] * n[i], rx[i+1, j]))
                 Rx[i+1, j] = Rx[i+1, j][curind, :]
             #for kick
-            Ryz[i+1] = np.dot(Ryz[i], reshape(u, (ry[i], n[i] * ry[i+1])))
-            Ryz[i+1] = reshape(Ryz[i+1], (rz[i] * n[i], ry[i+1]))
-            Rz[i+1] = np.dot(Rz[i], reshape(zz, (rz[i], n[i] * rz[i+1])))
-            Rz[i+1] = reshape(Rz[i+1], (rz[i] * n[i], rz[i+1]))
-            curind = maxvol(Rz[i+1])
-            Ryz[i+1] = Ryz[i+1][curind, :]
-            Rz[i+1] = Rz[i+1][curind, :]
-            #Interface matrices for X
-            for j in xrange(nx):
-                Rxz[i+1, j] = reshape(crx[i, j], (rx[i, j], n[i] * rx[i+1, j]))
-                Rxz[i+1, j] = np.dot(Rxz[i, j], Rxz[i+1, j])
-                Rxz[i+1, j] = reshape(Rxz[i+1, j], (rz[i] * n[i], rx[i+1, j]))
-                Rxz[i+1, j] = Rxz[i+1, j][curind, :]
+            if kickrank > 0:
+                Ryz[i+1] = np.dot(Ryz[i], reshape(u, (ry[i], n[i] * ry[i+1])))
+                Ryz[i+1] = reshape(Ryz[i+1], (rz[i] * n[i], ry[i+1]))
+                Rz[i+1] = np.dot(Rz[i], reshape(zz, (rz[i], n[i] * rz[i+1])))
+                Rz[i+1] = reshape(Rz[i+1], (rz[i] * n[i], rz[i+1]))
+                curind = maxvol(Rz[i+1])
+                Ryz[i+1] = Ryz[i+1][curind, :]
+                Rz[i+1] = Rz[i+1][curind, :]
+                #Interface matrices for X
+                for j in xrange(nx):
+                    Rxz[i+1, j] = reshape(crx[i, j], (rx[i, j], n[i] * rx[i+1, j]))
+                    Rxz[i+1, j] = np.dot(Rxz[i, j], Rxz[i+1, j])
+                    Rxz[i+1, j] = reshape(Rxz[i+1, j], (rz[i] * n[i], rx[i+1, j]))
+                    Rxz[i+1, j] = Rxz[i+1, j][curind, :]
         elif dirn < 0 and i > 0: # Right to left
             u = np.dot(u[:, :r], np.diag(s[:r]))
             v = np.conj(v[:, :r])
@@ -377,8 +380,8 @@ def multifuncrs2(X, funs, eps = 1e-6, \
                 zz = np.hstack((zz, np.random.randn(n[i] * rz[i+1], kickrank2)))
                 v, rv = np.linalg.qr(np.hstack((v, zy)))
                 radd = zy.shape[1]
-            u = np.hstack((u, np.zeros((d2 * ry[i], radd), dtype=dtype)))
-            u = np.dot(u, rv.T)
+                u = np.hstack((u, np.zeros((d2 * ry[i], radd), dtype=dtype)))
+                u = np.dot(u, rv.T)
             r = v.shape[1]
             cr2 = cry[i-1].copy()
             cr2 = reshape(cr2, (ry[i-1] * n[i-1], ry[i]))
@@ -393,10 +396,11 @@ def multifuncrs2(X, funs, eps = 1e-6, \
             cry[i-1] = u
             cry[i] = v
             #kick
-            zz, rv = np.linalg.qr(zz)
-            rz[i] = zz.shape[1]
-            zz = reshape(zz.T, (rz[i], n[i], rz[i+1]))
-            z[i] = zz
+            if kickrank > 0:
+                zz, rv = np.linalg.qr(zz)
+                rz[i] = zz.shape[1]
+                zz = reshape(zz.T, (rz[i], n[i], rz[i+1]))
+                z[i] = zz
             #z[i-1] is recomputed from scratch we do not need it
             # Recompute left interface matrices
             # Interface matrix for Y
@@ -411,19 +415,20 @@ def multifuncrs2(X, funs, eps = 1e-6, \
                 Rx[i, j] = reshape(Rx[i, j], (rx[i, j], n[i] * ry[i+1]))
                 Rx[i, j] = Rx[i, j][:, curind]
             # for kick
-            Rz[i] = np.dot(reshape(zz, (rz[i] * n[i], rz[i+1])), Rz[i+1])
-            Rz[i] = reshape(Rz[i], (rz[i], n[i] * rz[i+1]))
-            Ryz[i] = np.dot(reshape(v, (ry[i] * n[i], ry[i+1])), Ryz[i+1])
-            Ryz[i] = reshape(Ryz[i], (ry[i], n[i] * rz[i+1]))
-            curind = maxvol(Rz[i].T)
-            Ryz[i] = Ryz[i][:, curind]
-            Rz[i] = Rz[i][:, curind]
-            # Interface matrices for X
-            for j in xrange(nx):
-                Rxz[i, j] = reshape(crx[i, j], (rx[i, j] * n[i], rx[i+1, j]))
-                Rxz[i, j] = np.dot(Rxz[i, j], Rxz[i+1, j])
-                Rxz[i, j] = reshape(Rxz[i, j], (rx[i, j], n[i] * rz[i+1]))
-                Rxz[i, j] = Rxz[i, j][:, curind]
+            if kickrank > 0:
+                Rz[i] = np.dot(reshape(zz, (rz[i] * n[i], rz[i+1])), Rz[i+1])
+                Rz[i] = reshape(Rz[i], (rz[i], n[i] * rz[i+1]))
+                Ryz[i] = np.dot(reshape(v, (ry[i] * n[i], ry[i+1])), Ryz[i+1])
+                Ryz[i] = reshape(Ryz[i], (ry[i], n[i] * rz[i+1]))
+                curind = maxvol(Rz[i].T)
+                Ryz[i] = Ryz[i][:, curind]
+                Rz[i] = Rz[i][:, curind]
+                # Interface matrices for X
+                for j in xrange(nx):
+                    Rxz[i, j] = reshape(crx[i, j], (rx[i, j] * n[i], rx[i+1, j]))
+                    Rxz[i, j] = np.dot(Rxz[i, j], Rxz[i+1, j])
+                    Rxz[i, j] = reshape(Rxz[i, j], (rx[i, j], n[i] * rz[i+1]))
+                    Rxz[i, j] = Rxz[i, j][:, curind]
         elif dirn > 0 and i == d-1:
             #Just stuff back the last core
             newy = np.dot(u[:, :r], np.dot(np.diag(s[:r]), np.conj(v[:, :r].T)))
