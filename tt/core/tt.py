@@ -2,6 +2,7 @@ import numpy as np
 #from numpy import prod, reshape, nonzero, size, sqrt # no use
 import math
 import copy as cp
+import fractions
 #from math import sqrt # reconsidered to np.sqrt
 from numbers import Number
 import tt_f90
