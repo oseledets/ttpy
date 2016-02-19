@@ -1,7 +1,7 @@
 import numpy as np
-from numpy import prod, reshape, nonzero, size, sqrt
+#from numpy import prod, reshape, nonzero, size, sqrt # no use
 import math
-from math import sqrt
+#from math import sqrt # reconsidered to np.sqrt
 from numbers import Number
 import tt_f90
 import core_f90
@@ -517,7 +517,7 @@ class tensor:
         b = self.n[0] + self.n[-1]
         c = - np.sum(self.n * self.r[1:] * self.r[:-1])
         D = b ** 2 - 4 * a * c
-        r = 0.5 * (-b + sqrt(D)) / a
+        r = 0.5 * (-b + np.sqrt(D)) / a
         return r
 
 
@@ -873,6 +873,11 @@ class matrix:
     def rmean(self):
         return self.tt.rmean()
 
+####################################################################################################
+#############################################          #############################################
+############################################   Tools    ############################################
+#############################################          #############################################
+####################################################################################################
 
 #Some binary operations (put aside to wrap something in future)
 #TT-matrix by a TT-vector product
@@ -914,9 +919,9 @@ def matvec(a, b, compression=False):
         if nrm.size > 1:
             raise Exception, 'too many numbers in norm'
         #print "Norm calculated:", nrm
-        nrm = sqrt(np.linalg.norm(nrm))
+        nrm = np.sqrt(np.linalg.norm(nrm))
         #print "Norm predicted:", nrm
-        compression = compression * nrm / sqrt(d - 1)
+        compression = compression * nrm / np.sqrt(d - 1)
         v = np.array([[1.0]])
     
     for i in xrange(d):
@@ -939,7 +944,6 @@ def matvec(a, b, compression=False):
         print "Norm actual:", result.norm(), " mean rank:", result.rmean()
         #print "Norm very actual:", matvec(a,b).norm()
     return result
-
 
 
 #TT-by-a-full matrix product (wrapped in Fortran 90, inspired by
@@ -1543,3 +1547,81 @@ def qshift(d):
     for _ in xrange(1, d):
         x.append(np.array([1.0, 0.0])) 
     return Toeplitz(tensor.from_list(x), kind='L')
+
+####### Recent update #######
+def ind2sub(siz, idx):
+    '''
+    Translates full-format index into tt.vector one's.
+    ----------
+    Parameters:
+        siz - tt.vector modes
+        idx - full-vector index
+    Note: not vectorized.
+    '''
+    n = len(siz)
+    subs = np.empty((n))
+    k = np.cumprod(siz[:-1])
+    k = np.concatenate((np.ones(1), k))
+    for i in xrange(n-1, -1, -1):
+        subs[i] = np.floor(idx / k[i])
+        idx = idx % k[i]
+    return subs
+
+def tt_unit(n, d = None, j = None, tt_instance = True):
+    ''' Generates e_j vector in tt.vector format
+    ---------
+    Parameters:
+        n - modes (either integer or array)
+        d - dimensionality (integer)
+        j - position of 1 in full-format e_j (integer)
+        tt_instance - if True, returns tt.vector;
+                      if False, returns tt cores as a list
+    '''
+    if isinstance(n, int):
+        if d is None:
+            d = 1
+        n = n * np.ones(d)
+    else:
+        d = len(n)
+    if j is None:
+        j = 0
+    rv = []
+    
+    j = ind2sub(n, j)
+    
+    for k in xrange(d):
+        rv.append(np.zeros((1, n[k], 1)))
+        rv[-1][0, j[k], 0] = 1
+    if tt_instance:
+        rv = tt.tensor.from_list(rv)
+    return rv
+
+def IpaS(d, a, tt_instance = True):
+    '''A special bidiagonal matrix in the QTT-format
+    M = IPAS(D, A)
+    Generates I+a*S_{-1} matrix in the QTT-format:
+    1 0 0 0
+    a 1 0 0
+    0 a 1 0
+    0 0 a 1
+    Convenient for Crank-Nicolson and time gradient matrices
+    '''
+
+    if d == 1:
+        M = np.array([[1, 0], [a, 1]]).reshape((1, 2, 2, 1), order = 'F')
+    else:
+        M = [None]*d
+        M[0] = np.zeros((1, 2, 2, 2))
+        M[0][0, :, :, 0] = np.array([[1, 0], [a, 1]])
+        M[0][0, :, :, 1] = np.array([[0, a], [0, 0]])
+        for i in xrange(1, d-1):
+            M[i] = np.zeros((2,2,2,2))
+            M[i][:, :, 0, 0] = np.eye(2)
+            M[i][:, :, 1, 0] = np.array([[0, 0], [1, 0]])
+            M[i][:, :, 1, 1] = np.array([[0, 1], [0, 0]])
+        M[d-1] = np.zeros((2,2,2,1))
+        M[d-1][:, :, 0, 0] = np.eye(2)
+        M[d-1][:, :, 1, 0] = np.array([[0, 0], [1, 0]])
+    if tt_instance:
+        M = tt.matrix.from_list(M)
+    return M
