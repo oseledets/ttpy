@@ -1567,7 +1567,7 @@ def ind2sub(siz, idx):
         idx = idx % k[i]
     return subs
 
-def tt_unit(n, d = None, j = None, tt_instance = True):
+def unit(n, d = None, j = None, tt_instance = True):
     ''' Generates e_j vector in tt.vector format
     ---------
     Parameters:
