@@ -174,6 +174,7 @@ class tensor:
             cur_core = cur_core[:, index[i], :].reshape((self.r[i], -1), order='F')
             if running_fact is None:
                 new_r0 = self.r[i]
+                cur_core = cur_core.copy()
             else:
                 new_r0 = running_fact.shape[0]
                 cur_core = _np.dot(running_fact, cur_core)
