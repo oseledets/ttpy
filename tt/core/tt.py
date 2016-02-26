@@ -163,6 +163,9 @@ class tensor:
         a[1, 2, 3] returns the element with index (1, 2, 3)
         a[1, :, 1:3] returns a 2-dimensional tt-tensor of size 5 x 2
         """
+        if len(index) != self.d:
+            print("Incorrect index length.")
+            return
         # TODO: add tests.
         # TODO: in case of requesting one element this implementation is slower than the old one.
         running_fact = None
