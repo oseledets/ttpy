@@ -1,5 +1,6 @@
 import amen_f90
 import tt
+from amen_mv import amen_mv
 
 def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n', local_iters=2, local_restart=40, trunc_norm=1, max_full_size=50, verb=1):
     """ Approximate linear system solution in the tensor-train (TT) format
