@@ -151,22 +151,44 @@ class tensor:
                     a = _np.sum(n[1:d-1])
                     er = (_np.sqrt(b * b + 4 * a * sz) - b)/(2*a)
         return er
-    
+
     def __getitem__(self, index):
         """Get element of the TT-tensor.
 
-        :param index: array_like.
-        :returns: number -- an element of the tensor."""
-        if len(index) != self.d:
-            print("Incorrect index length.")
-            return
-        prefix = 1
+        :param index: array_like (it supports slicing).
+        :returns: number -- an element of the tensor or a new tensor.
+
+        Examples:
+        Suppose that a is a 3-dimensional tt-tensor of size 4 x 5 x 6
+        a[1, 2, 3] returns the element with index (1, 2, 3)
+        a[1, :, 1:3] returns a 2-dimensional tt-tensor of size 5 x 2
+        """
+        # TODO: add tests.
+        # TODO: in case of requesting one element this implementation is slower than the old one.
+        running_fact = None
+        answ_cores = []
         for i in xrange(self.d):
+            # r0, n, r1 = cores[i].shape
             cur_core = self.core[self.ps[i]-1:self.ps[i+1]-1]
             cur_core = cur_core.reshape((self.r[i], self.n[i], self.r[i+1]), order='F')
-            cur_core = cur_core[:, index[i], :]
-            prefix = _np.dot(prefix, cur_core)
-        return prefix[0][0]
+            cur_core = cur_core[:, index[i], :].reshape((self.r[i], -1), order='F')
+            if running_fact is None:
+                new_r0 = self.r[i]
+                cur_core = cur_core.copy()
+            else:
+                new_r0 = running_fact.shape[0]
+                cur_core = _np.dot(running_fact, cur_core)
+            cur_core = cur_core.reshape((new_r0, -1, self.r[i+1]), order='F')
+            if cur_core.shape[1] == 1:
+                running_fact = cur_core.reshape((new_r0, -1), order='F')
+            else:
+                answ_cores.append(cur_core)
+                running_fact = None
+        if len(answ_cores) == 0:
+            return running_fact[0, 0]
+        if running_fact is not None:
+            answ_cores[-1] = _np.dot(answ_cores[-1], running_fact)
+        return self.from_list(answ_cores)
     
     @property
     def is_complex(self):
