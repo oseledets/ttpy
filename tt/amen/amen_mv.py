@@ -387,12 +387,12 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4,
                 phizy[i] = _compute_next_Phi(phizy[i+1], z[i], y[i], 'rl', return_norm = False)
         
         if (verb > 1):
-            print 'amen-mv: swp=[%d,%d], dx=%3.3e, r=%d, |y|=%3.3e, |z|=%3.3e' % (swp, i, dx, r, _np.linalg.norm(cry), nrmz)
+            print 'amen-mv: swp=[%d,%d], dx=%.3e, r=%d, |y|=%.3e, |z|=%.3e' % (swp, i, dx, r, _np.linalg.norm(cry), nrmz)
         
         # Stopping or reversing
         if ((direct > 0) and (i == d-1)) or ((direct < 0) and (i == 0)):
             if (verb > 0):
-                print 'amen-mv: swp=%d{%d}, max_dx=%3.3f, max_r=%d' % (swp, (1-direct)/2, max_dx, max(ry))
+                print 'amen-mv: swp=%d{%d}, max_dx=%.3e, max_r=%d' % (swp, (1-direct)/2, max_dx, max(ry))
             if ((max_dx < tol) or (swp == nswp)) and (direct > 0):
                 break
             else:
@@ -419,7 +419,10 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4,
 
     if (vectype==1):
         y = _tt.tensor.from_list(y)
-        z = _tt.tensor.from_list(z)
+        if kickrank == 0:
+            z = None
+        else:
+            z = _tt.tensor.from_list(z)
 
     return y, z
 
@@ -627,19 +630,3 @@ if __name__ == '__main__':
     d = _tt.matvec(A, b).round(eps)
     
     print (c[0]-d).norm() / d.norm()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
