@@ -4,7 +4,6 @@ from numpy.distutils.misc_util import Configuration, get_info
 import sys
 
 def configuration(parent_package='',top_path=None):
-    sys.argv.extend ( ['config_fc', '--fcompiler=gnu95'])
     config = Configuration('tt', parent_package, top_path)
     config.set_options(ignore_setup_xxx_py=True,
                        assume_default_configuration=True,
