@@ -562,8 +562,8 @@ class matrix:
                 n1 = _np.sqrt(a.n).astype(_np.int32)
                 m1 = _np.sqrt(a.n).astype(_np.int32)
             else:
-                n1 = _np.array([n], dtype = _np.int32)
-                m1 = _np.array([m], dtype = _np.int32)
+                n1 = _np.array(n, dtype = _np.int32)
+                m1 = _np.array(m, dtype = _np.int32)
             self.n = n1
             self.m = m1
             self.tt.core = a.core.copy()
