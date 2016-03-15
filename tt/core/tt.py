@@ -14,8 +14,8 @@ import core_f90 as _core_f90
 
 #The main class for working with TT-tensors
 
-class tensor(object):
-    """Construct new TT-tensor.
+class vector(object):
+    """Construct new TT-vector.
         
     When called with no arguments, creates dummy object which can be filled from outside.
     
@@ -31,15 +31,15 @@ class tensor(object):
     :type rmax: int
     
     >>> a = numpy.sin(numpy.arange(2 ** 10)).reshape([2] * 10, order='F')
-    >>> a = tt.tensor(a)
+    >>> a = tt.vector(a)
     >>> a.r
     array([1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1], dtype=int32)
     >>> # now let's try different accuracy
     >>> b = numpy.random.rand(2, 2, 2, 2, 2, 2, 2, 2, 2, 2)
-    >>> btt = tt.tensor(b, 1E-14)
+    >>> btt = tt.vector(b, 1E-14)
     >>> btt.r
     array([ 1,  2,  4,  8, 16, 32, 16,  8,  4,  2,  1], dtype=int32)
-    >>> btt = tt.tensor(b, 1E-1)
+    >>> btt = tt.vector(b, 1E-1)
     >>> btt.r
     array([ 1,  2,  4,  8, 14, 20, 14,  8,  4,  2,  1], dtype=int32)
     
@@ -53,28 +53,25 @@ class tensor(object):
         TT-ranks of current TT decomposition of the tensor.
     core : ndarray
         Flatten (Fortran-ordered) TT cores stored sequentially in a one-dimensional array.
-        To get a list of three-dimensional cores, use ``tt.tensor.to_list(my_tensor)``.
+        To get a list of three-dimensional cores, use ``tt.vector.to_list(my_tensor)``.
     """
     def __init__(self, a=None, eps=1e-14, rmax=100000):
-        
         if a is None:
-            self.core = 0
+            self.core = _np.array([0.0])
             self.d = 0
-            self.n = 0
-            self.r = 0
-            self.ps = 0
+            self.n = _np.array([0])
+            self.r = _np.array([1], dtype=_np.int)
+            self.ps = _np.array([0], dtype=_np.int)
             return
         self.d = a.ndim
         self.n = _np.array(a.shape,dtype=_np.int32)
         r = _np.zeros((self.d+1,),dtype=_np.int32)
         ps = _np.zeros((self.d+1,),dtype=_np.int32)
-        
         if ( _np.iscomplex(a).any() ):
             if rmax is not None:
                 self.r, self.ps = _tt_f90.tt_f90.zfull_to_tt(a.flatten('F'), self.n, self.d, eps, rmax)
             else:
                 self.r, self.ps = _tt_f90.tt_f90.zfull_to_tt(a.flatten('F'), self.n, self.d, eps)
-
             self.core = _tt_f90.tt_f90.zcore.copy()
         else:
             if rmax is not None:
@@ -82,7 +79,6 @@ class tensor(object):
             else:
                 self.r,self.ps = _tt_f90.tt_f90.dfull_to_tt(_np.real(a).flatten('F'),self.n,self.d,eps)
             self.core = _tt_f90.tt_f90.core.copy()
-
         _tt_f90.tt_f90.tt_dealloc()        
     
     @staticmethod
@@ -95,7 +91,7 @@ class tensor(object):
         
         """
         d = len(a) #Number of cores
-        res = tensor()
+        res = vector()
         n = _np.zeros(d,dtype=_np.int32)
         r = _np.zeros(d+1,dtype=_np.int32)
         cr = _np.array([])
@@ -159,9 +155,9 @@ class tensor(object):
         :returns: number -- an element of the tensor or a new tensor.
 
         Examples:
-        Suppose that a is a 3-dimensional tt-tensor of size 4 x 5 x 6
+        Suppose that a is a 3-dimensional tt.vector of size 4 x 5 x 6
         a[1, 2, 3] returns the element with index (1, 2, 3)
-        a[1, :, 1:3] returns a 2-dimensional tt-tensor of size 5 x 2
+        a[1, :, 1:3] returns a 2-dimensional tt.vector of size 5 x 2
         """
         if len(index) != self.d:
             print("Incorrect index length.")
@@ -252,9 +248,9 @@ class tensor(object):
             newcr[rr:, 1, :] =  1.0
             newcr[rr:, 2, :] = -1.0
         else:
-            raise ValueError("Unexpected parameter " + op + " at tt.tensor.__complex_op")
+            raise ValueError("Unexpected parameter " + op + " at tt.vector.__complex_op")
         newcrs.append(newcr)
-        return tensor.from_list(newcrs)
+        return vector.from_list(newcrs)
     
     def real(self):
         """Get real part of a TT-tensor."""
@@ -265,7 +261,7 @@ class tensor(object):
         return self.__complex_op('Im')
     
     def c2r(self):
-        """Get real tensor from complex one suitable for solving complex linear system with real solver.
+        """Get real vector.from complex one suitable for solving complex linear system with real solver.
         
         For tensor :math:`X(i_1,\\ldots,i_d) = \\Re X + i\\Im X` returns (d+1)-dimensional tensor 
         of form :math:`[\\Re X\\ \\Im X]`. This function is useful for solving complex linear system
@@ -281,7 +277,7 @@ class tensor(object):
         return self.__complex_op('both')
     
     def r2c(self):
-        """Get complex tensor from real one made by ``tensor.c2r()``.
+        """Get complex vector.from real one made by ``tensor.c2r()``.
         
         For tensor :math:`\\tilde{X}(i_1,\\ldots,i_d,i_{d+1})` returns complex tensor
         
@@ -304,6 +300,8 @@ class tensor(object):
     
     #Print statement
     def __repr__(self):
+        if self.d == 0:
+            return "Empty tensor"
         res = "This is a %d-dimensional tensor \n" % self.d
         r = self.r
         d = self.d
@@ -347,7 +345,7 @@ class tensor(object):
     def __add__(self,other):
         if other is None:
             return self
-        c = tensor()
+        c = vector()
         c.r = _np.zeros((self.d+1,),dtype=_np.int32)
         c.ps = _np.zeros((self.d+1,),dtype=_np.int32)
         c.n = self.n
@@ -389,46 +387,45 @@ class tensor(object):
        array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], dtype=int32)
        
        """
-       c=tensor()
-       c.n=self.n
-       c.d=self.d
-       c.r=self.r.copy()
-       c.ps=self.ps.copy()
-       if ( _np.iscomplex(self.core).any() ):
-           _tt_f90.tt_f90.ztt_compr2(c.n,c.r,c.ps,self.core,eps,rmax)
+       c = vector()
+       c.n = _np.copy(self.n)
+       c.d = self.d
+       c.r = _np.copy(self.r)
+       c.ps = _np.copy(self.ps)
+       if (_np.iscomplex(self.core).any() ):
+           _tt_f90.tt_f90.ztt_compr2(c.n, c.r, c.ps, self.core, eps, rmax)
            c.core = _tt_f90.tt_f90.zcore.copy()
        else:
-           _tt_f90.tt_f90.dtt_compr2(c.n,c.r,c.ps,self.core,eps,rmax)
-           c.core=_tt_f90.tt_f90.core.copy()
+           _tt_f90.tt_f90.dtt_compr2(c.n, c.r, c.ps, self.core, eps, rmax)
+           c.core = _tt_f90.tt_f90.core.copy()
        _tt_f90.tt_f90.tt_dealloc()
        return c
 
-    #@profile
     def norm(self):
-        if ( _np.iscomplex(self.core).any() ):
+        if (_np.iscomplex(self.core).any()):
             nrm = _tt_f90.tt_f90.ztt_nrm(self.n,self.r,self.ps,self.core)
         else:
-            nrm=_tt_f90.tt_f90.dtt_nrm(self.n,self.r,self.ps,_np.real(self.core))
+            nrm =_tt_f90.tt_f90.dtt_nrm(self.n, self.r, self.ps, _np.real(self.core))
         return nrm
 	
-    def __rmul__(self,other):
-       c = tensor()
+    def __rmul__(self, other):
+       c = vector()
        c.d = self.d
        c.n = self.n
-       if isinstance(other,_Number):
+       if isinstance(other, _Number):
             c.r = self.r.copy()
             c.ps = self.ps.copy()
             c.core = self.core.copy()
             new_core = c.core[c.ps[0]-1:c.ps[1]-1]
             new_core = new_core * other
-            c.core = _np.array(c.core,dtype=new_core.dtype)
+            c.core = _np.array(c.core, dtype=new_core.dtype)
             c.core[c.ps[0]-1:c.ps[1]-1] = new_core
        else:
-           c =_hdm(self,other)
+           c =_hdm(self, other)
        return c
 	
     def __mul__(self,other):
-        c = tensor()
+        c = vector()
         c.d = self.d
         c.n = self.n
         if isinstance(other,_Number):
@@ -452,7 +449,7 @@ class tensor(object):
             return self
         a = self
         b = other
-        c = tensor()
+        c = vector()
         c.d = a.d + b.d
         c.n = _np.concatenate((a.n,b.n))
         c.r = _np.concatenate((a.r[0:a.d],b.r[0:b.d+1]))
@@ -475,7 +472,7 @@ class tensor(object):
         return dt
 
     def __col__(self,k):
-        c = tensor()
+        c = vector()
         d = self.d
         r = self.r.copy()
         n = self.n.copy()
@@ -523,7 +520,7 @@ class tensor(object):
         self.core = _np.zeros((self.ps[self.d]-1,),dtype=_np.float)
 
     def copy(self):
-        c = tensor()
+        c = vector()
         c.core = self.core.copy()
         c.d = self.d
         c.n = self.n.copy()
@@ -555,9 +552,9 @@ class matrix(object):
        
         self.n = 0
         self.m = 0
-        self.tt = tensor()
+        self.tt = vector()
         
-        if isinstance(a, tensor): #Convert from a tt-tensor
+        if isinstance(a, vector): #Convert from a tt.vector
             if ( n is None or m is None):
                 n1 = _np.sqrt(a.n).astype(_np.int32)
                 m1 = _np.sqrt(a.n).astype(_np.int32)
@@ -584,7 +581,7 @@ class matrix(object):
             prm = prm.flatten('F')
             sz = self.n * self.m
             b = a.transpose(prm).reshape(sz, order='F')
-            self.tt = tensor(b, eps, rmax)
+            self.tt = vector(b, eps, rmax)
             return
         
         if isinstance(a, matrix):
@@ -609,8 +606,8 @@ class matrix(object):
             m[i] = a[i].shape[2]
         res.n = n
         res.m = m
-        tt = tensor()
-        tt.n = n * m 
+        tt = vector()
+        tt.n = n*m 
         tt.core = cr
         tt.r = r
         tt.d = d
@@ -720,7 +717,7 @@ class matrix(object):
                 for i in xrange(self.tt.d):
                     crs.append(mycrs[i][:, row % self.n[i], :, :].copy())
                     row /= self.n[i]
-                return tensor.from_list(crs)
+                return vector.from_list(crs)
             elif isinstance(index[1], int) and index[0] == slice(None):
                 # col requested
                 col = index[1]
@@ -729,7 +726,7 @@ class matrix(object):
                 for i in xrange(self.tt.d):
                     crs.append(mycrs[i][:, :, col % self.m[i], :].copy())
                     col /= self.m[i]
-                return tensor.from_list(crs)
+                return vector.from_list(crs)
             elif isinstance(index[0], int) and isinstance(index[1], int):
                 # element requested
                 pass
@@ -761,27 +758,28 @@ class matrix(object):
     def __neg__(self):
         return (-1)*self
 
-    def __matmul__(self,other):
-        
+    def __matmul__(self, other):
+        """
+        Multiplication of two TT-matrices
+        """
         diff = len(self.n) - len(other.m)
         L = self  if diff >= 0 else kron(self , matrix(ones(1, abs(diff))))
         R = other if diff <= 0 else kron(other, matrix(ones(1, abs(diff))))
-        
         c = matrix()
         c.n = L.n.copy()
         c.m = R.m.copy()
-        tt = tensor()
-        tt.d = L.tt.d 
-        tt.n = c.n * c.m
+        res = vector()
+        res.d = L.tt.d 
+        res.n = c.n * c.m
         if L.is_complex or R.is_complex:
-            tt.r = _core_f90.core.zmat_mat(L.n, L.m, R.m, _np.array(L.tt.core, dtype=_np.complex), _np.array(R.tt.core, dtype=_np.complex), L.tt.r, R.tt.r)
-            tt.core = _core_f90.core.zresult_core.copy()
+            res.r = _core_f90.core.zmat_mat(L.n, L.m, R.m, _np.array(L.tt.core, dtype=_np.complex), _np.array(R.tt.core, dtype=_np.complex), L.tt.r, R.tt.r)
+            res.core = _core_f90.core.zresult_core.copy()
         else:
-            tt.r = _core_f90.core.dmat_mat(L.n, L.m, R.m,_np.real(L.tt.core), _np.real(R.tt.core), L.tt.r, R.tt.r)
-            tt.core = _core_f90.core.result_core.copy()
+            res.r = _core_f90.core.dmat_mat(L.n, L.m, R.m,_np.real(L.tt.core), _np.real(R.tt.core), L.tt.r, R.tt.r)
+            res.core = _core_f90.core.result_core.copy()
         _core_f90.core.dealloc()
-        tt.get_ps()
-        c.tt = tt
+        res.get_ps()
+        c.tt = res
         return c
 
     def __rmul__(self, other):
@@ -797,7 +795,7 @@ class matrix(object):
     def __mul__(self, other):
         if hasattr(other,'__matmul__'):
             return self.__matmul__(other)
-        elif isinstance(other, (tensor, _Number)):
+        elif isinstance(other, (vector, _Number)):
             c = matrix()
             c.tt = self.tt * other
             c.n = self.n
@@ -809,7 +807,7 @@ class matrix(object):
             if N != x.size:
                 raise ValueError
             x = _np.reshape(x, _np.concatenate(([1], self.m)), order = 'F')
-            cores = tensor.to_list(self.tt)
+            cores = vector.to_list(self.tt)
             curr = x.copy()
             for i in range(len(cores)):
                 core = cores[i]
@@ -856,7 +854,7 @@ class matrix(object):
 
     def __diag__(self):
         """ Computes the diagonal of the TT-matrix"""
-        c = tensor()
+        c = vector()
         c.n = self.n.copy()
         c.r = self.tt.r.copy()
         c.d = self.tt.d #Number are NOT referenced
@@ -906,8 +904,8 @@ class matrix(object):
 #TT-matrix by a TT-vector product
 def matvec(a, b, compression=False):
     """Matrix-vector product in TT format."""
-    acrs = tensor.to_list(a.tt)
-    bcrs = tensor.to_list(b)
+    acrs = vector.to_list(a.tt)
+    bcrs = vector.to_list(b)
     ccrs = []
     d = b.d
     
@@ -961,7 +959,7 @@ def matvec(a, b, compression=False):
                 ccr = u[:, :newr].reshape((rl, n, newr), order='F')
                 v = _np.dot(_np.diag(s[:newr]), v[:newr, :])
         ccrs.append(ccr)
-    result = tensor.from_list(ccrs)
+    result = vector.from_list(ccrs)
     if compression:
         #print result
         print "Norm actual:", result.norm(), " mean rank:", result.rmean()
@@ -1027,7 +1025,7 @@ def mkron(a, *args):
         else:
             a.append(i)
     
-    c = tensor()
+    c = vector()
     c.d = 0
     c.n = _np.array([], dtype=_np.int32)
     c.r = _np.array([], dtype=_np.int32)
@@ -1044,7 +1042,7 @@ def mkron(a, *args):
     return c
 
 def concatenate(*args):
-    """Concatenates given TT-tensors.
+    """Concatenates given TT-vectors.
     
     For two tensors :math:`X(i_1,\\ldots,i_d),Y(i_1,\\ldots,i_d)` returns :math:`(d+1)`-dimensional
     tensor :math:`Z(i_0,i_1,\\ldots,i_d)`, :math:`i_0=\\overline{0,1}`, such that
@@ -1056,15 +1054,15 @@ def concatenate(*args):
     
     """
     tmp = _np.array([[1] + [0] * (len(args) - 1)])
-    result = kron(tensor(tmp), args[0])
+    result = kron(vector(tmp), args[0])
     for i in range(1, len(args)):
-        result += kron(tensor(_np.array([[0] * i + [1] + [0] * (len(args) - i - 1)])), args[i])
+        result += kron(vector(_np.array([[0] * i + [1] + [0] * (len(args) - i - 1)])), args[i])
     return result
     
     
 
 def _hdm (a,b):
-    c = tensor()
+    c = vector()
     c.d = a.d
     c.n = a.n
     c.r = _np.zeros((a.d+1,1),dtype=_np.int32)
@@ -1081,7 +1079,7 @@ def _hdm (a,b):
 def sum(a, axis=-1):    
     """Sum TT-tensor over specified axes"""
     d = a.d
-    crs = tensor.to_list(a.tt if isinstance(a, matrix) else a)
+    crs = vector.to_list(a.tt if isinstance(a, matrix) else a)
     if axis < 0:
         axis = range(a.d)
     elif isinstance(axis, int):
@@ -1098,14 +1096,14 @@ def sum(a, axis=-1):
             return _np.sum(crs[ax])
         crs.pop(ax)
         d -= 1
-    return tensor.from_list(crs)
+    return vector.from_list(crs)
 
 #Basic functions for the arrays creation
 
 
 def ones(n,d=None):
 	""" Creates a TT-tensor of all ones"""
-	c = tensor()
+	c = vector()
 	if d is None:
             c.n = _np.array(n,dtype=_np.int32)
             c.d = c.n.size
@@ -1130,7 +1128,7 @@ def rand(n, d=None, r=2):
 	    r0 = _np.ones((d+1,),dtype=_np.int32)*r0
 	    r0[0] = 1
 	    r0[d] = 1
-	c = tensor()
+	c = vector()
 	c.d = d
 	c.n = n0
 	c.r = r0
@@ -1143,7 +1141,7 @@ def rand(n, d=None, r=2):
 def eye(n,d=None):
 	""" Creates an identity TT-matrix"""
 	c = matrix()
-	c.tt = tensor()
+	c.tt = vector()
 	if d is None:
 		n0=_np.asanyarray(n,dtype=_np.int32)
 		c.tt.d=n0.size
@@ -1402,7 +1400,7 @@ def xfun(n,d=None):
         n0 = _np.array(n * d, dtype=_np.int32)
     d = n0.size
     if d == 1:
-        return tensor.from_list([_np.reshape(_np.arange(n0[0]), (1, n0[0], 1))])
+        return vector.from_list([_np.reshape(_np.arange(n0[0]), (1, n0[0], 1))])
     cr=[]
     cur_core = _np.ones((1,n0[0],2))
     cur_core[0,:,0] = _np.arange(n0[0])
@@ -1418,7 +1416,7 @@ def xfun(n,d=None):
     cur_core = _np.ones((2, n0[d - 1], 1))
     cur_core[1,:,0] = ni*_np.arange(n0[d - 1])
     cr.append(cur_core)
-    return tensor.from_list(cr)
+    return vector.from_list(cr)
 
 
 def sin(d, alpha=1.0, phase=0.0):
@@ -1439,7 +1437,7 @@ def sin(d, alpha=1.0, phase=0.0):
     cur_core[0, :, 0] = [0.0, _math.sin(alpha * 2 ** (d-1))]
     cur_core[1, :, 0] = [1.0, _math.cos(alpha * 2 ** (d-1))]
     cr.append(cur_core)
-    return tensor.from_list(cr)
+    return vector.from_list(cr)
 
 
 def cos(d, alpha=1.0, phase=0.0):
@@ -1471,7 +1469,7 @@ def delta(n, d=None, center=0):
         cur_core = _np.zeros((1, n0[i], 1))
         cur_core[0, cind[i], 0] = 1
         cr.append(cur_core)
-    return tensor.from_list(cr)
+    return vector.from_list(cr)
 
 def stepfun(n, d=None, center=1, direction=1):
     """ Create TT-tensor for Heaviside step function :math:`\chi(x - x_0)`.
@@ -1561,7 +1559,7 @@ def stepfun(n, d=None, center=1, direction=1):
                     cr[0, :, 0] = tempx
         prevrank = nextrank
         crs.append(cr)
-    return tensor.from_list(crs[::-1])        
+    return vector.from_list(crs[::-1])        
 
 
 def qshift(d):
@@ -1569,7 +1567,7 @@ def qshift(d):
     x.append(_np.array([0.0, 1.0]))
     for _ in xrange(1, d):
         x.append(_np.array([1.0, 0.0])) 
-    return Toeplitz(tensor.from_list(x), kind='L')
+    return Toeplitz(vector.from_list(x), kind='L')
 
 ####### Recent update #######
 def ind2sub(siz, idx):
@@ -1616,7 +1614,7 @@ def unit(n, d = None, j = None, tt_instance = True):
         rv.append(_np.zeros((1, n[k], 1)))
         rv[-1][0, j[k], 0] = 1
     if tt_instance:
-        rv = tensor.from_list(rv)
+        rv = vector.from_list(rv)
     return rv
 
 def IpaS(d, a, tt_instance = True):
@@ -1901,3 +1899,7 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
         return ttt
     else:
         return tt2
+
+class tensor(vector): #For combatibility issues
+    def __init__(self, *args, **kwargs):
+        super(tensor, self).__init__(*args, **kwargs)
