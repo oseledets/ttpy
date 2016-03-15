@@ -1,11 +1,9 @@
 ttpy
 ====
-
-Python implementation of the TT-Toolbox. It contains several
-important packages for working with the Tensor Train (TT) format
-in Python. It is able to do interpolation, solve linear systems, eigenproblems, solve dynamical problems. 
+Python implementation of the Tensor Train (TT) -Toolbox. It contains several
+important packages for working with the TT-format
+in Python. It is able to do TT-interpolation, solve linear systems, eigenproblems, solve dynamical problems. 
 Several computational routines are done in Fortran (which can be used separatedly), and are wrapped with the f2py tool.
-
 Installation
 ============
 
@@ -15,7 +13,6 @@ If you use 64 bit linux, you can install the module from the binstar repository:
 sudo apt-get install libgfortran3
 conda install -c https://conda.binstar.org/bihaqo ttpy
 ```
-
 ##Downloading the code
 This installation works with git submodules, so you should be sure, that you got them all right.
 The best way is to work with this repository is to use git with a version >= 1.6.5.
@@ -31,8 +28,8 @@ git submodule update --init --recursive *
 python setup.py install
 ```
 This command will update the submodules as well.
-
 ##Prerequisites
+
 **It is highly recommended** that you use either
 
 - [Anaconda Python distribution](https://store.continuum.io/cshop/anaconda/) 
