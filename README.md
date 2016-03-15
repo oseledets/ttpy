@@ -6,13 +6,6 @@ important packages for working with the Tensor Train (TT) format
 in Python. It is able to do interpolation, solve linear systems, eigenproblems, solve dynamical problems. 
 Several computational routines are done in Fortran (which can be used separatedly), and are wrapped with the f2py tool.
 
-Main contributors
-============
-- Ivan Oseledets (version 0.1, build system, **CROSS**, **KSL** and **EIGB** modules)
-- Tigran Saluev (made the code usable; implemented **multifucrs** and **TT-GMRES** algorithms and many more; a lot of bugfixes; initial documentation)
-- Dmitry Savostyanov ( **tt-fort** submodule code, **AMEN** module)
-- Sergey Dolgov ( **AMEN** module)
-
 Installation
 ============
 
@@ -91,6 +84,7 @@ They have the following functionality
 
 - **tt.cross** : Has a working implementation of the black-box cross method. For now, please use the rect_cross function.
 
+
 Documentation and examples
 ==========================
 
@@ -103,9 +97,26 @@ make html
 A few examples are available right now under examples/ directory
 
 
-For any questions, please feel free to contact me by email or create an issue on Github.
+For any questions, please create an issue on Github.
 
 
+Contributor policy
+====================
+This project is now following the _git flow_ approach. Namely:
+
+- branch `master` is only for stable versions and releases;
+- branch `develop` is main working branch;
+- contributor should create new branch for certain feature and then merge with `develop` branch as feature was done;
+- each release on `master` branch should correspond to package on PyPI;
+- A maintainer checks all the pull request 
+
+A pull request should satisfy the following requirements:
+- style and quality description of pull request;
+- new changes should be tested and shouldn't break anything;
+- pull request for one fix or one feature(could be several commits);
+- try to keep the code style of the project;
+
+Current maintainer is Ivan Oseledets.
 
 
 
