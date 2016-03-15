@@ -1,19 +1,26 @@
-#This script will build the main subpackages  
-def configuration(parent_package='',top_path=None):
+# This script will build the main subpackages
+def configuration(parent_package='', top_path=None):
     from numpy.distutils.misc_util import Configuration, get_info
     config = Configuration('ksl', parent_package, top_path)
     tt_dir = '../tt-fort/'
     exp_dir = '../tt-fort/expm'
-    src = ['ttals.f90','tt_ksl.f90']
-    exp_src = ['explib.f90', 'normest.f90','expokit.f','dlacn1.f','dlapst.f','dlarpc.f','zlacn1.f']
+    src = ['ttals.f90', 'tt_ksl.f90']
+    exp_src = [
+        'explib.f90',
+        'normest.f90',
+        'expokit.f',
+        'dlacn1.f',
+        'dlapst.f',
+        'dlarpc.f',
+        'zlacn1.f']
     exp_src = [exp_dir + '/' + x for x in exp_src]
-    config.add_library('expokit',sources=exp_src)
+    config.add_library('expokit', sources=exp_src)
     src = [tt_dir + x for x in src]
     src.append('tt_ksl.pyf')
-    config.add_extension('dyn_tt',sources=src,depends=['print_lib','expokit','mytt'],
-			libraries=['print_lib','expokit','mytt'],)
+    config.add_extension('dyn_tt', sources=src, depends=['print_lib', 'expokit', 'mytt'],
+                         libraries=['print_lib', 'expokit', 'mytt'],)
     return config
-    
+
 #from distutils.core import setup
 #from numpy.distutils.core import setup, Extension
 #src = ['tt_f90.f90','tt_f90.pyf']

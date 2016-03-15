@@ -1,13 +1,13 @@
-#This script will build the main subpackages  
-def configuration(parent_package='',top_path=None):
+# This script will build the main subpackages
+def configuration(parent_package='', top_path=None):
     from numpy.distutils.misc_util import Configuration, get_info
     config = Configuration('maxvol', parent_package, top_path)
     #import ipdb; ipdb.set_trace()
-    #config.add_library()
-    src = ['maxvol.f90','maxvol.pyf']
-    config.add_extension('maxvol',sources=src)
+    # config.add_library()
+    src = ['maxvol.f90', 'maxvol.pyf']
+    config.add_extension('maxvol', sources=src)
     return config
-    
+
 #from distutils.core import setup
 #from numpy.distutils.core import setup, Extension
 #src = ['tt_f90.f90','tt_f90.pyf']

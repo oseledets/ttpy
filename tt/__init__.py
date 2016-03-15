@@ -1,4 +1,4 @@
-try: 
+try:
     from core.tt import *
 except:
     import ctypes

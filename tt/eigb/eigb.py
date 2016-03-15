@@ -1,19 +1,21 @@
 import numpy as np
 import tt_eigb
 from tt import tensor
-def eigb(A, y0, eps, rmax = 150, nswp = 20, max_full_size = 1000, verb = 1):
+
+
+def eigb(A, y0, eps, rmax=150, nswp=20, max_full_size=1000, verb=1):
     """ Approximate computation of minimal eigenvalues in tensor train format
     This function uses alternating least-squares algorithm for the computation of several
     minimal eigenvalues. If you want maximal eigenvalues, just send -A to the function.
-       
+
     :Reference:
-        
-        
-        S. V. Dolgov, B. N. Khoromskij, I. V. Oseledets, and D. V. Savostyanov. 
-        Computation of extreme eigenvalues in higher dimensions using block tensor train format. Computer Phys. Comm., 
+
+
+        S. V. Dolgov, B. N. Khoromskij, I. V. Oseledets, and D. V. Savostyanov.
+        Computation of extreme eigenvalues in higher dimensions using block tensor train format. Computer Phys. Comm.,
         185(4):1207-1216, 2014. http://dx.doi.org/10.1016/j.cpc.2013.12.017
-        
-        
+
+
     :param A: Matrix in the TT-format
     :type A: matrix
     :param y0: Initial guess in the block TT-format, r(d+1) is the number of eigenvalues sought
@@ -22,10 +24,10 @@ def eigb(A, y0, eps, rmax = 150, nswp = 20, max_full_size = 1000, verb = 1):
     :type eps: float
     :param rmax: Maximal rank
     :type rmax: int
-    :param kickrank: Addition rank, the larger the more robus the method, 
+    :param kickrank: Addition rank, the larger the more robus the method,
     :type kickrank: int
-    :rtype: A tuple (ev, tensor), where ev is a list of eigenvalues, tensor is an approximation to eigenvectors. 
-         
+    :rtype: A tuple (ev, tensor), where ev is a list of eigenvalues, tensor is an approximation to eigenvectors.
+
     :Example:
 
 
@@ -47,16 +49,16 @@ def eigb(A, y0, eps, rmax = 150, nswp = 20, max_full_size = 1000, verb = 1):
                   0.0013448   0.00164356]
 
 
-        
+
     """
     ry = y0.r.copy()
-    lam = tt_eigb.tt_block_eig.tt_eigb(y0.d, A.n, A.m, A.tt.r, A.tt.core, y0.core, ry, eps, \
+    lam = tt_eigb.tt_block_eig.tt_eigb(y0.d, A.n, A.m, A.tt.r, A.tt.core, y0.core, ry, eps,
                                        rmax, ry[y0.d], 0, nswp, max_full_size, verb)
     y = tensor()
     y.d = y0.d
     y.n = A.n.copy()
-    y.r = ry 
+    y.r = ry
     y.core = tt_eigb.tt_block_eig.result_core.copy()
     tt_eigb.tt_block_eig.deallocate_result()
     y.get_ps()
-    return y,lam
+    return y, lam
