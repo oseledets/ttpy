@@ -14,7 +14,7 @@ import core_f90 as _core_f90
 
 #The main class for working with TT-tensors
 
-class tensor:
+class tensor(object):
     """Construct new TT-tensor.
         
     When called with no arguments, creates dummy object which can be filled from outside.
@@ -550,7 +550,7 @@ class tensor:
 #############################################          #############################################
 ####################################################################################################
 
-class matrix:
+class matrix(object):
     def __init__(self, a=None, eps=1e-14, n=None, m=None, rmax = 100000):
        
         self.n = 0
