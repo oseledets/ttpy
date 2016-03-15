@@ -13,7 +13,7 @@ import warnings
 #############################################          #############################################
 ####################################################################################################
 
-#The main class for working with TT-tensors
+#The main class for working with vectors in the TT-format
 
 class vector(object):
     """Construct new TT-vector.
@@ -84,11 +84,11 @@ class vector(object):
     
     @staticmethod
     def from_list(a, order='F'):
-        """Generate TT-tensor object from given TT cores.
+        """Generate TT-vectorr object from given TT cores.
         
         :param a: List of TT cores.
         :type a: list
-        :returns: tensor -- TT-tensor constructed from the given cores.
+        :returns: vector -- TT-vector constructed from the given cores.
         
         """
         d = len(a) #Number of cores
@@ -111,9 +111,8 @@ class vector(object):
     @staticmethod
     def to_list(tt):
         """Return list of TT cores a TT decomposition consists of.
-        
-        :param tt: TT-tensor.
-        :type a: tensor
+        :param tt: TT-vector.
+        :type tt: vector
         :returns: list -- list of ``tt.d`` three-dimensional cores, ``i``-th core is an ndarray of shape ``(tt.r[i], tt.n[i], tt.r[i+1])``.
         """
         d = tt.d
@@ -130,7 +129,7 @@ class vector(object):
     
     @property 
     def erank(self):
-        """ Effective rank of the TT-tensor """
+        """ Effective rank of the TT-vector """
         r = self.r
         n = self.n
         d = self.d
@@ -150,7 +149,7 @@ class vector(object):
         return er
 
     def __getitem__(self, index):
-        """Get element of the TT-tensor.
+        """Get element of the TT-vector.
 
         :param index: array_like (it supports slicing).
         :returns: number -- an element of the tensor or a new tensor.
@@ -254,11 +253,11 @@ class vector(object):
         return vector.from_list(newcrs)
     
     def real(self):
-        """Get real part of a TT-tensor."""
+        """Get real part of a TT-vector."""
         return self.__complex_op('Re')
     
     def imag(self):
-        """Get imaginary part of a TT-tensor."""
+        """Get imaginary part of a TT-vector."""
         return self.__complex_op('Im')
     
     def c2r(self):
@@ -369,13 +368,13 @@ class vector(object):
 
     #@profile
     def round(self, eps, rmax = 1000000):
-       """Applies TT rounding procedure to the TT-tensor and **returns rounded tensor**.
+       """Applies TT rounding procedure to the TT-vector and **returns rounded tensor**.
        
        :param eps: Rounding accuracy.
        :type eps: float
        :param rmax: Maximal rank
        :type rmax: int
-       :returns: tensor -- rounded TT-tensor.
+       :returns: tensor -- rounded TT-vector.
        
        Usage example:
        
@@ -530,7 +529,7 @@ class vector(object):
         return c
 	
     def rmean(self):
-        """ Calculates the mean rank of a TT-tensor."""
+        """ Calculates the mean rank of a TT-vector."""
         if not _np.all(self.n):
             return 0
         # Solving quadratic equation ar^2 + br + c = 0;
@@ -982,37 +981,37 @@ def matvec(a, b, compression=False):
 #    return y
 
 def col(a,k):
-    """Get the column of the block TT-tensor"""
+    """Get the column of the block TT-vector"""
     if hasattr(a,'__col__'):
         return a.__col__(k)
     else:
-        raise ValueError('col is waiting for a TT-tensor or a TT-matrix')
+        raise ValueError('col is waiting for a TT-vector or a TT-matrix')
 
 def kron(a,b):
-    """Kronecker product of two TT-matrices or two TT-tensors"""
+    """Kronecker product of two TT-matrices or two TT-vectors"""
     if  hasattr(a,'__kron__'):
         return a.__kron__(b)
     if a is None:
         return b
     else:
-        raise ValueError('Kron is waiting for two TT-tensors or two TT-matrices')
+        raise ValueError('Kron is waiting for two TT-vectors or two TT-matrices')
 
 def dot(a,b):
-    """Dot product of two TT-matrices or two TT-tensors"""
+    """Dot product of two TT-matrices or two TT-vectors"""
     if  hasattr(a,'__dot__'):
         return a.__dot__(b)
     if a is None:
         return b
     else:
-        raise ValueError('Dot is waiting for two TT-tensors or two TT-    matrices')
+        raise ValueError('Dot is waiting for two TT-vectors or two TT-    matrices')
 
 
 def diag(a):
-    """ Diagonal of a TT-matrix OR diagonal matrix from a TT-tensor."""
+    """ Diagonal of a TT-matrix OR diagonal matrix from a TT-vector."""
     if hasattr(a,'__diag__'):
         return a.__diag__()
     else:
-        raise ValueError('Can be called only on TT-tensor or a TT-matrix')
+        raise ValueError('Can be called only on TT-vector or a TT-matrix')
 
 
 def mkron(a, *args):
@@ -1078,7 +1077,7 @@ def _hdm (a,b):
     return c
 
 def sum(a, axis=-1):    
-    """Sum TT-tensor over specified axes"""
+    """Sum TT-vector over specified axes"""
     d = a.d
     crs = vector.to_list(a.tt if isinstance(a, matrix) else a)
     if axis < 0:
@@ -1103,7 +1102,7 @@ def sum(a, axis=-1):
 
 
 def ones(n,d=None):
-	""" Creates a TT-tensor of all ones"""
+	""" Creates a TT-vector of all ones"""
 	c = vector()
 	if d is None:
             c.n = _np.array(n,dtype=_np.int32)
@@ -1118,7 +1117,7 @@ def ones(n,d=None):
 
 
 def rand(n, d=None, r=2):
-	"""Generate a random d-dimensional TT-tensor with ranks ``r``."""
+	"""Generate a random d-dimensional TT-vector with ranks ``r``."""
 	n0 = _np.asanyarray(n, dtype=_np.int32)
 	r0 = _np.asanyarray(r, dtype=_np.int32)
         if d is None:
@@ -1386,9 +1385,9 @@ def qlaplace_dd(d):
 def xfun(n,d=None):
     """ Create a QTT-representation of 0:prod(n) vector"""
     # call examples:
-    #   tt.xfun(2, 5)         # create 2 x 2 x 2 x 2 x 2 TT-tensor
-    #   tt.xfun(3)            # create [0, 1, 2] one-dimensional TT-tensor
-    #   tt.xfun([3, 5, 7], 2) # create 3 x 5 x 7 x 3 x 5 x 7 TT-tensor
+    #   tt.xfun(2, 5)         # create 2 x 2 x 2 x 2 x 2 TT-vector
+    #   tt.xfun(3)            # create [0, 1, 2] one-dimensional TT-vector
+    #   tt.xfun([3, 5, 7], 2) # create 3 x 5 x 7 x 3 x 5 x 7 TT-vector
     if isinstance(n, (int, long)):
         n = [n]
     if d is None:
@@ -1417,7 +1416,7 @@ def xfun(n,d=None):
 
 
 def sin(d, alpha=1.0, phase=0.0):
-    """ Create TT-tensor for :math:`\\sin(\\alpha n + \\varphi)`."""
+    """ Create TT-vector for :math:`\\sin(\\alpha n + \\varphi)`."""
     cr = []
     cur_core = _np.zeros([1, 2, 2], dtype=_np.float)
     cur_core[0, 0, :] = [_math.cos(phase)        , _math.sin(phase)        ]
@@ -1438,12 +1437,12 @@ def sin(d, alpha=1.0, phase=0.0):
 
 
 def cos(d, alpha=1.0, phase=0.0):
-    """ Create TT-tensor for :math:`\\cos(\\alpha n + \\varphi)`."""
+    """ Create TT-vector for :math:`\\cos(\\alpha n + \\varphi)`."""
     return sin(d, alpha, phase + _math.pi * 0.5)
 
 
 def delta(n, d=None, center=0):
-    """ Create TT-tensor for delta-function :math:`\\delta(x - x_0)`. """
+    """ Create TT-vector for delta-function :math:`\\delta(x - x_0)`. """
     if isinstance(n, (int, long)):
         n = [n]
     if d is None:
@@ -1469,7 +1468,7 @@ def delta(n, d=None, center=0):
     return vector.from_list(cr)
 
 def stepfun(n, d=None, center=1, direction=1):
-    """ Create TT-tensor for Heaviside step function :math:`\chi(x - x_0)`.
+    """ Create TT-vector for Heaviside step function :math:`\chi(x - x_0)`.
     
     Heaviside step function is defined as
     
@@ -1645,23 +1644,23 @@ def IpaS(d, a, tt_instance = True):
     return M
 
 def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
-    ''' Reshape of the TT-tensor
-       [TT1]=TT_RESHAPE(TT,SZ) reshapes TT-tensor or TT-matrix into another 
+    ''' Reshape of the TT-vector
+       [TT1]=TT_RESHAPE(TT,SZ) reshapes TT-vector or TT-matrix into another 
        with mode sizes SZ, accuracy 1e-14
 
-       [TT1]=TT_RESHAPE(TT,SZ,EPS) reshapes TT-tensor/matrix into another with
+       [TT1]=TT_RESHAPE(TT,SZ,EPS) reshapes TT-vector/matrix into another with
        mode sizes SZ and accuracy EPS
        
-       [TT1]=TT_RESHAPE(TT,SZ,EPS, RL) reshapes TT-tensor/matrix into another 
+       [TT1]=TT_RESHAPE(TT,SZ,EPS, RL) reshapes TT-vector/matrix into another 
        with mode size SZ and left tail rank RL
 
-       [TT1]=TT_RESHAPE(TT,SZ,EPS, RL, RR) reshapes TT-tensor/matrix into 
+       [TT1]=TT_RESHAPE(TT,SZ,EPS, RL, RR) reshapes TT-vector/matrix into 
        another with mode size SZ and tail ranks RL*RR
-       Reshapes TT-tensor/matrix into a new one, with dimensions specified by SZ.
+       Reshapes TT-vector/matrix into a new one, with dimensions specified by SZ.
 
        If the i_nput is TT-matrix, SZ must have the sizes for both modes, 
        so it is a matrix if sizes d2-by-2.
-       If the i_nput is TT-tensor, SZ may be either a column or a row vector.
+       If the i_nput is TT-vector, SZ may be either a column or a row vector.
     '''
     
     def gcd(a, b):
