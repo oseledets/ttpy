@@ -82,7 +82,7 @@ class vector(object):
         _tt_f90.tt_f90.tt_dealloc()        
     
     @staticmethod
-    def from_list(a,order='F'):
+    def from_list(a, order='F'):
         """Generate TT-tensor object from given TT cores.
         
         :param a: List of TT cores.
@@ -1382,10 +1382,6 @@ def qlaplace_dd(d):
     return matrix.from_list(cr)
 
 
-
-
-
-
 def xfun(n,d=None):
     """ Create a QTT-representation of 0:prod(n) vector"""
     # call examples:
@@ -1444,6 +1440,7 @@ def cos(d, alpha=1.0, phase=0.0):
     """ Create TT-tensor for :math:`\\cos(\\alpha n + \\varphi)`."""
     return sin(d, alpha, phase + _math.pi * 0.5)
 
+
 def delta(n, d=None, center=0):
     """ Create TT-tensor for delta-function :math:`\\delta(x - x_0)`. """
     if isinstance(n, (int, long)):
@@ -1462,8 +1459,7 @@ def delta(n, d=None, center=0):
             cind.append(center % n0[i])
             center /= n0[i]
         if center > 0:
-            cind = [0] * d
-    
+            cind = [0] * d 
     cr=[]
     for i in xrange(d):
         cur_core = _np.zeros((1, n0[i], 1))

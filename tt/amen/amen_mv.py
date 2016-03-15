@@ -116,11 +116,11 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4,
         print "Not implemented yet. Renorm is switched to 'direct'"
         renorm = 'direct'
 
-    if isinstance(x, _tt.tensor):
+    if isinstance(x, _tt.vector):
         d = x.d
         m = x.n
         rx = x.r
-        x = _tt.tensor.to_list(x) ######
+        x = _tt.vector.to_list(x) ######
         vectype = 1  # tt_tensor
     elif isinstance(x, list):
         d = len(x)
@@ -152,10 +152,10 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4,
 
     if y is None:
         y = _tt.rand(n, d, 2)
-        y = _tt.tensor.to_list(y)
+        y = _tt.vector.to_list(y)
     else:
-        if isinstance(y, _tt.tensor):
-            y = _tt.tensor.to_list(y)
+        if isinstance(y, _tt.vector):
+            y = _tt.vector.to_list(y)
 
     ry = _np.ones(d+1)
     for i in range(d):
@@ -165,10 +165,10 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4,
         if z is None:
             z = _tt.rand(n, d, kickrank + kickrank2)
             rz = z.r
-            z = _tt.tensor.to_list(z)
+            z = _tt.vector.to_list(z)
         else:
-            if isinstance(z, _tt.tensor):
-                z = _tt.tensor.to_list(z)
+            if isinstance(z, _tt.vector):
+                z = _tt.vector.to_list(z)
             rz = _np.ones(d+1)
             for i in range(d):
                 rz[i+1] = z[i].shape[2]
@@ -418,11 +418,11 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4,
 
 
     if (vectype==1):
-        y = _tt.tensor.from_list(y)
+        y = _tt.vector.from_list(y)
         if kickrank == 0:
             z = None
         else:
-            z = _tt.tensor.from_list(z)
+            z = _tt.vector.from_list(z)
 
     return y, z
 
@@ -617,7 +617,7 @@ if __name__ == '__main__':
     a = 0*_tt.rand(n*m, d, r = ra)
     a = a + _tt.ones(n*m, d)
     #a = a.round(1e-12)
-    a = _tt.tensor.to_list(a)
+    a = _tt.vector.to_list(a)
     for i in xrange(d):
         sa = a[i].shape
         a[i] = _reshape(a[i], (sa[0], m, n, sa[-1]))

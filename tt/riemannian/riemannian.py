@@ -121,7 +121,7 @@ def project(X, Z, use_jit=False, debug=False):
     Returns a tensor in the TT format with the TT-ranks equal 2 * rank(Z).
     """
     zArr = None
-    if isinstance(Z, tt.tensor):
+    if isinstance(Z, tt.vector):
         zArr = [Z]
     else:
         zArr = Z
