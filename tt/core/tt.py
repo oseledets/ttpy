@@ -5,6 +5,7 @@ import fractions as _fractions
 from numbers import Number as _Number
 import tt_f90 as _tt_f90
 import core_f90 as _core_f90
+import warnings
 
 ####################################################################################################
 #############################################          #############################################
@@ -1899,3 +1900,4 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
 class tensor(vector): #For combatibility issues
     def __init__(self, *args, **kwargs):
         super(tensor, self).__init__(*args, **kwargs)
+        warnings.warn("tt.tensor is deprecated, use tt.vector instead", DeprecationWarning) 
