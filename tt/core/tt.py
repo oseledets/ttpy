@@ -1499,11 +1499,12 @@ def qlaplace_dd(d):
 
 
 def xfun(n, d=None):
-    """ Create a QTT-representation of 0:prod(n) vector"""
-    # call examples:
-    #   tt.xfun(2, 5)         # create 2 x 2 x 2 x 2 x 2 TT-vector
-    #   tt.xfun(3)            # create [0, 1, 2] one-dimensional TT-vector
-    #   tt.xfun([3, 5, 7], 2) # create 3 x 5 x 7 x 3 x 5 x 7 TT-vector
+    """ Create a QTT-representation of 0:prod(n) vector
+        call examples:
+        tt.xfun(2, 5)         # create 2 x 2 x 2 x 2 x 2 TT-vector
+        tt.xfun(3)            # create [0, 1, 2] one-dimensional TT-vector
+        tt.xfun([3, 5, 7], 2) # create 3 x 5 x 7 x 3 x 5 x 7 TT-vector
+    """
     if isinstance(n, (int, long)):
         n = [n]
     if d is None:
@@ -1530,6 +1531,33 @@ def xfun(n, d=None):
     cur_core[1, :, 0] = ni * _np.arange(n0[d - 1])
     cr.append(cur_core)
     return vector.from_list(cr)
+
+
+def linspace(n, d=None, a=0.0, b=1.0, right=True, left=True):
+    """ Create a QTT-representation of a uniform grid on an interval [a, b] """
+    if isinstance(n, (int, long)):
+        n = [n]
+    if d is None:
+        n0 = _np.asanyarray(n, dtype=_np.int32)
+    else:
+        n0 = _np.array(n * d, dtype=_np.int32)
+    d = n0.size
+    t = xfun(n0)
+    e = ones(n0)
+    N = _np.prod(n0)  # Size
+    if left and right:
+        h = (b - a) * 1.0 / (N - 1)
+        res = a * e + t * h
+    elif left and not right:
+        h = (b - a) * 1.0 / N
+        res = a * e + t * h
+    elif right and not left:
+        h = (b - a) * 1.0 / N
+        res = a * e + (t + e) * h
+    else:
+        h = (b - a) * 1.0 / (N - 1)
+        res = a * e + (t + e) * h
+    return res.round(1e-13)
 
 
 def sin(d, alpha=1.0, phase=0.0):
