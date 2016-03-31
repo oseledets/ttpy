@@ -1,7 +1,7 @@
 import numpy as _np
 from numbers import Number as _Number
 import core_f90 as _core_f90
-from vector import vector as _vector
+import vector as _vector
 
 import tools as _tools
 
@@ -12,9 +12,9 @@ class matrix(object):
 
         self.n = 0
         self.m = 0
-        self.tt = _vector()
+        self.tt = _vector.vector()
 
-        if isinstance(a, _vector):  # Convert from a tt.vector
+        if isinstance(a, _vector.vector):  # Convert from a tt.vector
             if (n is None or m is None):
                 n1 = _np.sqrt(a.n).astype(_np.int32)
                 m1 = _np.sqrt(a.n).astype(_np.int32)
@@ -41,7 +41,7 @@ class matrix(object):
             prm = prm.flatten('F')
             sz = self.n * self.m
             b = a.transpose(prm).reshape(sz, order='F')
-            self.tt = _vector(b, eps, rmax)
+            self.tt = _vector.vector(b, eps, rmax)
             return
 
         if isinstance(a, matrix):
@@ -66,7 +66,7 @@ class matrix(object):
             m[i] = a[i].shape[2]
         res.n = n
         res.m = m
-        tt = _vector()
+        tt = _vector.vector()
         tt.n = n * m
         tt.core = cr
         tt.r = r
@@ -180,7 +180,7 @@ class matrix(object):
                 for i in xrange(self.tt.d):
                     crs.append(mycrs[i][:, row % self.n[i], :, :].copy())
                     row /= self.n[i]
-                return _vector.from_list(crs)
+                return _vector.vector.from_list(crs)
             elif isinstance(index[1], int) and index[0] == slice(None):
                 # col requested
                 col = index[1]
@@ -189,7 +189,7 @@ class matrix(object):
                 for i in xrange(self.tt.d):
                     crs.append(mycrs[i][:, :, col % self.m[i], :].copy())
                     col /= self.m[i]
-                return _vector.from_list(crs)
+                return _vector.vector.from_list(crs)
             elif isinstance(index[0], int) and isinstance(index[1], int):
                 # element requested
                 pass
@@ -231,7 +231,7 @@ class matrix(object):
         c = matrix()
         c.n = L.n.copy()
         c.m = R.m.copy()
-        res = _vector()
+        res = _vector.vector()
         res.d = L.tt.d
         res.n = c.n * c.m
         if L.is_complex or R.is_complex:
@@ -264,7 +264,7 @@ class matrix(object):
     def __mul__(self, other):
         if hasattr(other, '__matmul__'):
             return self.__matmul__(other)
-        elif isinstance(other, (_vector, _Number)):
+        elif isinstance(other, (_vector.vector, _Number)):
             c = matrix()
             c.tt = self.tt * other
             c.n = self.n
@@ -276,7 +276,7 @@ class matrix(object):
             if N != x.size:
                 raise ValueError
             x = _np.reshape(x, _np.concatenate(([1], self.m)), order='F')
-            cores = _vector.to_list(self.tt)
+            cores = _vector.vector.to_list(self.tt)
             curr = x.copy()
             for i in range(len(cores)):
                 core = cores[i]
@@ -325,7 +325,7 @@ class matrix(object):
 
     def __diag__(self):
         """ Computes the diagonal of the TT-matrix"""
-        c = _vector()
+        c = _vector.vector()
         c.n = self.n.copy()
         c.r = self.tt.r.copy()
         c.d = self.tt.d  # Number are NOT referenced

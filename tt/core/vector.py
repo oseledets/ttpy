@@ -3,6 +3,8 @@ from numbers import Number as _Number
 import tt_f90 as _tt_f90
 import warnings
 
+import matrix as _matrix
+
 # The main class for working with vectors in the TT-format
 
 
@@ -537,7 +539,7 @@ class vector(object):
                             s1, :, s2].reshape(
                             n[i], order='F'))
             res.append(res_core)
-        return matrix.from_list(res)
+        return _matrix.matrix.from_list(res)
 
     def __neg__(self):
         return self * (-1)
