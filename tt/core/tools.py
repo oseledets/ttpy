@@ -3,25 +3,25 @@ import math as _math
 import copy as _cp
 import tt_f90 as _tt_f90
 
-from ttVector import vector as _vector
-from ttMatrix import matrix as _matrix
+import vector as _vector
+import matrix as _matrix
 
-from ttUtils import ind2sub as _ind2sub
-from ttUtils import gcd as _gcd
-from ttUtils import my_chop2 as _my_chop2
+from utils import ind2sub as _ind2sub
+from utils import gcd as _gcd
+from utils import my_chop2 as _my_chop2
 
 # Some binary operations (put aside to wrap something in future)
 # TT-matrix by a TT-vector product
 
 # Available functions:
-# matvec, col, kron, dot, diag, mkron, concatenate, _hdm, sum, ones, rand, eye,
+# matvec, col, kron, dot, diag, mkron, concatenate, sum, ones, rand, eye,
 # Toeplitz, qlaplace_dd, xfun, linspace, sin, cos, delta, stepfun, qshift, unit,
 # IpaS, reshape
 
 def matvec(a, b, compression=False):
     """Matrix-vector product in TT format."""
-    acrs = _vector.to_list(a.tt)
-    bcrs = _vector.to_list(b)
+    acrs = _vector.vector.to_list(a.tt)
+    bcrs = _vector.vector.to_list(b)
     ccrs = []
     d = b.d
 
@@ -91,7 +91,7 @@ def matvec(a, b, compression=False):
                 ccr = u[:, :newr].reshape((rl, n, newr), order='F')
                 v = _np.dot(_np.diag(s[:newr]), v[:newr, :])
         ccrs.append(ccr)
-    result = _vector.from_list(ccrs)
+    result = _vector.vector.from_list(ccrs)
     if compression:
         # print result
         print "Norm actual:", result.norm(), " mean rank:", result.rmean()
@@ -161,14 +161,14 @@ def mkron(a, *args):
         else:
             a.append(i)
 
-    c = _vector()
+    c = _vector.vector()
     c.d = 0
     c.n = _np.array([], dtype=_np.int32)
     c.r = _np.array([], dtype=_np.int32)
     c.core = []
 
     for t in a:
-        thetensor = t.tt if isinstance(t, _matrix) else t
+        thetensor = t.tt if isinstance(t, _matrix.matrix) else t
         c.d += thetensor.d
         c.n = _np.concatenate((c.n, thetensor.n))
         c.r = _np.concatenate((c.r[:-1], thetensor.r))
@@ -191,35 +191,17 @@ def concatenate(*args):
 
     """
     tmp = _np.array([[1] + [0] * (len(args) - 1)])
-    result = kron(_vector(tmp), args[0])
+    result = kron(_vector.vector(tmp), args[0])
     for i in range(1, len(args)):
-        result += kron(_vector(_np.array([[0] * i +
+        result += kron(_vector.vector(_np.array([[0] * i +
                                          [1] + [0] * (len(args) - i - 1)])), args[i])
     return result
-
-
-def _hdm(a, b):
-    c = _vector()
-    c.d = a.d
-    c.n = a.n
-    c.r = _np.zeros((a.d + 1, 1), dtype=_np.int32)
-    c.ps = _np.zeros((a.d + 1, 1), dtype=_np.int32)
-    if _np.iscomplexobj(a.core) or _np.iscomplexobj(b.core):
-        c.r, c.ps = _tt_f90.tt_f90.ztt_hdm(
-            a.n, a.r, b.r, a.ps, b.ps, a.core, b.core)
-        c.core = _tt_f90.tt_f90.zcore.copy()
-    else:
-        c.r, c.ps = _tt_f90.tt_f90.dtt_hdm(
-            a.n, a.r, b.r, a.ps, b.ps, a.core, b.core)
-        c.core = _tt_f90.tt_f90.core.copy()
-    _tt_f90.tt_f90.tt_dealloc()
-    return c
 
 
 def sum(a, axis=-1):
     """Sum TT-vector over specified axes"""
     d = a.d
-    crs = _vector.to_list(a.tt if isinstance(a, _matrix) else a)
+    crs = _vector.vector.to_list(a.tt if isinstance(a, _matrix.matrix) else a)
     if axis < 0:
         axis = range(a.d)
     elif isinstance(axis, int):
@@ -236,14 +218,14 @@ def sum(a, axis=-1):
             return _np.sum(crs[ax])
         crs.pop(ax)
         d -= 1
-    return _vector.from_list(crs)
+    return _vector.vector.from_list(crs)
 
 # Basic functions for the arrays creation
 
 
 def ones(n, d=None):
     """ Creates a TT-vector of all ones"""
-    c = _vector()
+    c = _vector.vector()
     if d is None:
         c.n = _np.array(n, dtype=_np.int32)
         c.d = c.n.size
@@ -268,7 +250,7 @@ def rand(n, d=None, r=2):
         r0 = _np.ones((d + 1,), dtype=_np.int32) * r0
         r0[0] = 1
         r0[d] = 1
-    c = _vector()
+    c = _vector.vector()
     c.d = d
     c.n = n0
     c.r = r0
@@ -280,8 +262,8 @@ def rand(n, d=None, r=2):
 # Identity _matrix
 def eye(n, d=None):
     """ Creates an identity TT-matrix"""
-    c = _matrix()
-    c.tt = _vector()
+    c = _matrix.matrix()
+    c.tt = _vector.vector()
     if d is None:
         n0 = _np.asanyarray(n, dtype=_np.int32)
         c.tt.d = n0.size
@@ -462,13 +444,13 @@ def Toeplitz(x, d=None, D=None, kind='F'):
             cr = cr.reshape((2 * x.r[dp], 2, 2, x.r[dp + 1]), order='F')
             dp += 1
             crs.append(cr)
-    return _matrix.from_list(crs)
+    return _matrix.matrix.from_list(crs)
 
 
 # Laplace operator
 def qlaplace_dd(d):
     """Creates a QTT representation of the Laplace operator"""
-    res = _matrix()
+    res = _matrix.matrix()
     d0 = d[::-1]
     D = len(d0)
     I = _np.eye(2)
@@ -546,7 +528,7 @@ def qlaplace_dd(d):
                         cur_core[2, :, :, 0] = J
                         cur_core[3, :, :, 3] = I
                 cr.append(cur_core)
-    return _matrix.from_list(cr)
+    return _matrix.matrix.from_list(cr)
 
 
 def xfun(n, d=None):
@@ -564,7 +546,7 @@ def xfun(n, d=None):
         n0 = _np.array(n * d, dtype=_np.int32)
     d = n0.size
     if d == 1:
-        return _vector.from_list(
+        return _vector.vector.from_list(
             [_np.reshape(_np.arange(n0[0]), (1, n0[0], 1))])
     cr = []
     cur_core = _np.ones((1, n0[0], 2))
@@ -581,7 +563,7 @@ def xfun(n, d=None):
     cur_core = _np.ones((2, n0[d - 1], 1))
     cur_core[1, :, 0] = ni * _np.arange(n0[d - 1])
     cr.append(cur_core)
-    return _vector.from_list(cr)
+    return _vector.vector.from_list(cr)
 
 
 def linspace(n, d=None, a=0.0, b=1.0, right=True, left=True):
@@ -641,7 +623,7 @@ def sin(d, alpha=1.0, phase=0.0):
     cur_core[0, :, 0] = [0.0, _math.sin(alpha * 2 ** (d - 1))]
     cur_core[1, :, 0] = [1.0, _math.cos(alpha * 2 ** (d - 1))]
     cr.append(cur_core)
-    return _vector.from_list(cr)
+    return _vector.vector.from_list(cr)
 
 
 def cos(d, alpha=1.0, phase=0.0):
@@ -673,7 +655,7 @@ def delta(n, d=None, center=0):
         cur_core = _np.zeros((1, n0[i], 1))
         cur_core[0, cind[i], 0] = 1
         cr.append(cur_core)
-    return _vector.from_list(cr)
+    return _vector.vector.from_list(cr)
 
 
 def stepfun(n, d=None, center=1, direction=1):
@@ -768,7 +750,7 @@ def stepfun(n, d=None, center=1, direction=1):
                     cr[0, :, 0] = tempx
         prevrank = nextrank
         crs.append(cr)
-    return _vector.from_list(crs[::-1])
+    return _vector.vector.from_list(crs[::-1])
 
 
 def qshift(d):
@@ -776,7 +758,7 @@ def qshift(d):
     x.append(_np.array([0.0, 1.0]))
     for _ in xrange(1, d):
         x.append(_np.array([1.0, 0.0]))
-    return Toeplitz(_vector.from_list(x), kind='L')
+    return Toeplitz(_vector.vector.from_list(x), kind='L')
 
 ####### Recent update #######
 def unit(n, d=None, j=None, tt_instance=True):
@@ -805,7 +787,7 @@ def unit(n, d=None, j=None, tt_instance=True):
         rv.append(_np.zeros((1, n[k], 1)))
         rv[-1][0, j[k], 0] = 1
     if tt_instance:
-        rv = _vector.from_list(rv)
+        rv = _vector.vector.from_list(rv)
     return rv
 
 
@@ -836,7 +818,7 @@ def IpaS(d, a, tt_instance=True):
         M[d - 1][:, :, 0, 0] = _np.eye(2)
         M[d - 1][:, :, 1, 0] = _np.array([[0, 0], [1, 0]])
     if tt_instance:
-        M = _matrix.from_list(M)
+        M = _matrix.matrix.from_list(M)
     return M
 
 
@@ -863,7 +845,7 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
     tt1 = _cp.deepcopy(tt_array)
     sz = _cp.deepcopy(shape)
     ismatrix = False
-    if isinstance(tt1, _matrix):
+    if isinstance(tt1, _matrix.matrix):
         d1 = tt1.tt.d
         d2 = sz.shape[0]
         ismatrix = True

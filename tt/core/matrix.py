@@ -1,7 +1,9 @@
 import numpy as _np
 from numbers import Number as _Number
 import core_f90 as _core_f90
-from ttVector import vector as _vector
+from vector import vector as _vector
+
+import tools as _tools
 
 
 class matrix(object):
@@ -224,8 +226,8 @@ class matrix(object):
         Multiplication of two TT-matrices
         """
         diff = len(self.n) - len(other.m)
-        L = self if diff >= 0 else kron(self, matrix(ones(1, abs(diff))))
-        R = other if diff <= 0 else kron(other, matrix(ones(1, abs(diff))))
+        L = self if diff >= 0 else _tools.kron(self, matrix(_tools.ones(1, abs(diff))))
+        R = other if diff <= 0 else _tools.kron(other, matrix(_tools.ones(1, abs(diff))))
         c = matrix()
         c.n = L.n.copy()
         c.m = R.m.copy()
@@ -297,7 +299,7 @@ class matrix(object):
         c = matrix()
         c.n = _np.concatenate((a.n, b.n))
         c.m = _np.concatenate((a.m, b.m))
-        c.tt = kron(a.tt, b.tt)
+        c.tt = _tools.kron(a.tt, b.tt)
         return c
 
     def norm(self):

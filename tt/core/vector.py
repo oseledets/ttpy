@@ -5,6 +5,8 @@ import warnings
 
 # The main class for working with vectors in the TT-format
 
+
+
 class vector(object):
     """Construct new TT-vector.
 
@@ -576,6 +578,23 @@ class vector(object):
         r = 0.5 * (-b + _np.sqrt(D)) / a
         return r
         
+        
+def _hdm(a, b):
+    c = _vector()
+    c.d = a.d
+    c.n = a.n
+    c.r = _np.zeros((a.d + 1, 1), dtype=_np.int32)
+    c.ps = _np.zeros((a.d + 1, 1), dtype=_np.int32)
+    if _np.iscomplexobj(a.core) or _np.iscomplexobj(b.core):
+        c.r, c.ps = _tt_f90.tt_f90.ztt_hdm(
+            a.n, a.r, b.r, a.ps, b.ps, a.core, b.core)
+        c.core = _tt_f90.tt_f90.zcore.copy()
+    else:
+        c.r, c.ps = _tt_f90.tt_f90.dtt_hdm(
+            a.n, a.r, b.r, a.ps, b.ps, a.core, b.core)
+        c.core = _tt_f90.tt_f90.core.copy()
+    _tt_f90.tt_f90.tt_dealloc()
+    return c
         
 class tensor(vector):  # For combatibility issues
 
