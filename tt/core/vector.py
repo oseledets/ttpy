@@ -582,7 +582,7 @@ class vector(object):
         
         
 def _hdm(a, b):
-    c = _vector()
+    c = vector()
     c.d = a.d
     c.n = a.n
     c.r = _np.zeros((a.d + 1, 1), dtype=_np.int32)
