@@ -1,0 +1,23 @@
+#   After changing this file, check it on:
+#   http://lint.travis-ci.org/
+language: python
+sudo: false
+python:
+  - "2.7"
+  - "3.5"
+# command to install dependencies
+install:
+  - pip install .
+  - pip install -r requirements.txt
+addons:
+  apt:
+    packages:
+      - libatlas-dev
+      - libatlas-base-dev
+      - liblapack-dev
+      - gfortran
+script:
+  - cd tt
+  - python setup.py build
+notifications:
+  email: false
