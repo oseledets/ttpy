@@ -10,14 +10,7 @@ sudo: false
 python:
   - "2.7"
   - "3.5"
-before_install:
-  - apt-get install libatlas-dev
-  - apt-get install libatlas-base-dev
-  - apt-get install liblapack-dev
-  - apt-get install gfortran
-# command to install dependencies
 install:
-  - pip install .
   - pip install -r requirements.txt
 script:
   - cd tt
