@@ -3,9 +3,16 @@
 language: python
 sudo: false
 cache: pip
-python:
-  - 2.7
-  - 3.5
+matrix:
+  fast_finish: true
+  include:
+    - python: "2.7"
+    - python: "3.5"
+branches:
+  only:
+    - master
+    - develop
+    - travis-ci
 addons:
   apt:
     packages:
@@ -13,11 +20,10 @@ addons:
       - libatlas-base-dev
       - liblapack-dev
       - gfortran
-branches:
-  only:
-    - master
-    - develop
-    - travis-ci
+      - libgmp-dev
+      - libmpfr-dev
+before_install:
+  - git submodule update --init --recursive
 install:
   - pip install -r requirements.txt
   - pip install coveralls
