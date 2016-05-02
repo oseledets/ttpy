@@ -1,3 +1,8 @@
+[![Build Status](https://img.shields.io/travis/ttpy/ttpy/master.svg?style=flat-square)](https://travis-ci.org/ttpy/ttpy)
+[![Coverage Status](https://img.shields.io/coveralls/ttpy/ttpy/master.svg?style=flat-square)](https://coveralls.io/r/ttpy/ttpy)
+[![PyPi](https://img.shields.io/pypi/pyversions/ttpy.svg?style=flat-square)](https://pypi.python.org/pypi/ttpy/)
+[![Downloads](https://img.shields.io/pypi/dm/ttpy.svg?style=flat-square)](https://pypi.python.org/pypi/ttpy/)
+
 ttpy
 ====
 Python implementation of the Tensor Train (TT) -Toolbox. It contains several
