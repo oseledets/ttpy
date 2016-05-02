@@ -1,17 +1,26 @@
 #   After changing this file, check it on:
 #   http://lint.travis-ci.org/
+language: python
+sudo: false
+cache: pip
+python:
+  - 2.7
+  - 3.5
+addons:
+  apt:
+    packages:
+      - libatlas-dev
+      - libatlas-base-dev
+      - liblapack-dev
+      - gfortran
 branches:
   only:
     - master
     - develop
     - travis-ci
-language: python
-sudo: false
-python:
-  - "2.7"
-  - "3.5"
 install:
   - pip install -r requirements.txt
+  - pip install coveralls
 script:
   - cd tt
   - python setup.py build
