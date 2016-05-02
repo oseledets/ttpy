@@ -1,3 +1,8 @@
+[![Build Status](https://api.travis-ci.org/oseledets/ttpy.svg?branch=travis-ci)](https://travis-ci.org/oseledets/ttpy)
+[![Coverage Status](https://img.shields.io/coveralls/oseledets/ttpy/master.svg?style=flat-square)](https://coveralls.io/r/oseledets/ttpy)
+[![PyPi](https://img.shields.io/pypi/pyversions/ttpy.svg?style=flat-square)](https://pypi.python.org/pypi/ttpy/)
+[![Downloads](https://img.shields.io/pypi/dm/ttpy.svg?style=flat-square)](https://pypi.python.org/pypi/ttpy/)
+
 ttpy
 ====
 Python implementation of the Tensor Train (TT) -Toolbox. It contains several

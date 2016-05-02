@@ -1,0 +1,33 @@
+#   After changing this file, check it on:
+#   http://lint.travis-ci.org/
+language: python
+sudo: false
+cache: pip
+matrix:
+  fast_finish: true
+  include:
+    - python: "2.7"
+branches:
+  only:
+    - master
+    - develop
+    - travis-ci
+addons:
+  apt:
+    packages:
+      - libatlas-dev
+      - libatlas-base-dev
+      - liblapack-dev
+      - gfortran
+      - libgmp-dev
+      - libmpfr-dev
+before_install:
+  - git submodule update --init --recursive
+install:
+  - pip install -r requirements.txt
+  - pip install coveralls
+script:
+  - cd tt
+  - python setup.py build
+notifications:
+  email: false
