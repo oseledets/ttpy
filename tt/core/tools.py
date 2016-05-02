@@ -390,7 +390,7 @@ def Toeplitz(x, d=None, D=None, kind='F'):
     V = _np.transpose(V)  # '1' x 2! x 2 x 2 x 2
 
     crs = []
-    xcrs = vector.to_list(x)
+    xcrs = _vector.vector.to_list(x)
     dp = 0  # dimensions passed
     for j in xrange(D):
         currd = d[j]
