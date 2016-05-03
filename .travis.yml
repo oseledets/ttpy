@@ -19,6 +19,7 @@ addons:
 before_install:
   - git submodule update --init --recursive
 install:
+  - pip install -U pip
   - pip install -r requirements.txt
   - pip install coveralls
 script:
