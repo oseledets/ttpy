@@ -7,11 +7,6 @@ matrix:
   fast_finish: true
   include:
     - python: "2.7"
-branches:
-  only:
-    - master
-    - develop
-    - travis-ci
 addons:
   apt:
     packages:
@@ -24,10 +19,12 @@ addons:
 before_install:
   - git submodule update --init --recursive
 install:
+  - pip install -U pip
   - pip install -r requirements.txt
   - pip install coveralls
 script:
   - cd tt
-  - python setup.py build
+  - python setup.py install
+  - python -m unittest discover 'tests/'
 notifications:
   email: false
