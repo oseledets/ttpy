@@ -47,16 +47,11 @@ This command will update the submodules as well.
 
 
 ##Installing the package
-The installation of the package is done via **setup.py** scripts.
-
-The installation script is a very newbie one, but it seems to work.
-Go to the **tt** directory and run
+To install the package, run
 ```
+cd tt
 python setup.py install
 ```
-This builds the package tt with submodules amr, eigb, kls. 
-For some of the examples the quadgauss package is required, so go to 
-**quadgauss** directory and run setup.py there
 
 ## BLAS
 
@@ -72,8 +67,8 @@ What those packages do
 
 They have the following functionality
 
-- **tt** : The main package, with tt.tensor and tt.matrix classes, basic arithmetic,
-       norms, scalar products, rounding full -> tt and tt -> full conversion routines, and so on
+- **tt** : The main package, with tt.vector and tt.matrix classes, basic arithmetic,
+       norms, scalar products, rounding full -> tt and tt -> full conversion routines, and many others
 
 - **tt.amen** : AMEN solver for linear systems (Python wrapper for Fortran code written by S. V. Dolgov and D. V. Savostyanov) 
                 it can be also used for fast matrix-by-vector products. 
@@ -96,7 +91,7 @@ cd tt/doc
 make html
 ```
 
-A few examples are available right now under examples/ directory
+A few examples are available right now under [examples](examples/) directory
 
 
 For any questions, please create an issue on Github.
@@ -118,7 +113,7 @@ A pull request should satisfy the following requirements:
 - pull request for one fix or one feature(could be several commits);
 - try to keep the code style of the project;
 
-Current maintainer is Ivan Oseledets.
+Current maintainer is [Ivan Oseledets](oseledets.github.io).
 
 
 
