@@ -918,7 +918,7 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
             tt1[i] = cr
             tt1[i - 1] = cr0
 
-    r2 = _np.ones(d2 + 1)
+    r2 = _np.ones(d2 + 1, dtype=_np.int32)
 
     i1 = 0  # Working index in tt1
     i2 = 0  # Working index in tt2

@@ -13,6 +13,7 @@ class TestVector(unittest.TestCase):
         self.assertTrue((r[1:-1] == 2).all(), 'This vector ranks should be exactly 2')
         b = v.full().reshape(-1, order='F')
         self.assertTrue(np.linalg.norm(a - b) < 10 * 2**d * eps, 'The approximation error is too large')
+    
     def test_assembly(self):
         # Test direct construction of tt.vector from specified kernels
         d = 10
