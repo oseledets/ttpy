@@ -7,11 +7,6 @@ matrix:
   fast_finish: true
   include:
     - python: "2.7"
-branches:
-  only:
-    - master
-    - develop
-    - travis-ci
 addons:
   apt:
     packages:
