@@ -29,5 +29,6 @@ install:
 script:
   - cd tt
   - python setup.py build
+  - python -m unittest discover 'tests/'
 notifications:
   email: false
