@@ -889,7 +889,7 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
 
     if d2 <= d1:
         i2 = 0
-        n2 = sz
+        n2 = _cp.deepcopy(sz)
         for i1 in xrange(d1):
             if n2[i2] == 1:
                 i2 = i2 + 1
