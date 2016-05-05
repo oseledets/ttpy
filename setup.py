@@ -9,6 +9,7 @@ Several computational routines are done in Fortran (which can be used separatedl
 from numpy.distutils.core import setup
 from numpy.distutils.misc_util import Configuration
 
+DOCLINES = (__doc__ or '').split('\n')
 
 PLATFORMS = [
     'Windows',
