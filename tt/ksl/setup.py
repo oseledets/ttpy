@@ -1,37 +1,59 @@
-# This script will build the main subpackages
-def configuration(parent_package='', top_path=None):
-    from numpy.distutils.misc_util import Configuration, get_info
-    config = Configuration('ksl', parent_package, top_path)
-    tt_dir = '../tt-fort/'
-    exp_dir = '../tt-fort/expm'
-    src = ['ttals.f90', 'tt_ksl.f90']
-    exp_src = [
-        'explib.f90',
-        'normest.f90',
-        'expokit.f',
-        'dlacn1.f',
-        'dlapst.f',
-        'dlarpc.f',
-        'zlacn1.f']
-    exp_src = [exp_dir + '/' + x for x in exp_src]
-    config.add_library('expokit', sources=exp_src)
-    src = [tt_dir + x for x in src]
-    src.append('tt_ksl.pyf')
-    config.add_extension('dyn_tt', sources=src, depends=['print_lib', 'expokit', 'mytt'],
-                         libraries=['print_lib', 'expokit', 'mytt'],)
-    return config
+#   setup.py
+#   This script will build the main subpackages
+#   See LICENSE for details
 
-#from distutils.core import setup
-#from numpy.distutils.core import setup, Extension
-#src = ['tt_f90.f90','tt_f90.pyf']
-#inc_dir = ['tt-fort']
-#lib = ['tt-fort/mytt.a']
-#ext = Extension('tt_f90', src, include_dirs=inc_dir)
-#setup(ext_modules = [ext])
+from __future__ import print_function, absolute_import
+from numpy.distutils.misc_util import Configuration
+from os.path import join
+
+
+TTFORT_DIR = '../tt-fort'
+EXPM_DIR = '../tt-fort/expm'
+
+EXPOKIT_SRC = [
+    'explib.f90',
+    'normest.f90',
+    'expokit.f',
+    'dlacn1.f',
+    'dlapst.f',
+    'dlarpc.f',
+    'zlacn1.f',
+]
+
+TTKSL_SRC = [
+    'ttals.f90',
+    'tt_ksl.f90',
+]
+
+
+def configuration(parent_package='', top_path=None):
+    expokit_src = [join(EXPM_DIR, x) for x in EXPOKIT_SRC]
+
+    ttksl_src = [join(TTFORT_DIR, x) for x in TTKSL_SRC]
+    ttksl_src.append('tt_ksl.pyf')
+
+    config = Configuration('ksl', parent_package, top_path)
+    config.add_library(
+        'expokit',
+        sources=expokit_src,
+    )
+    config.add_extension(
+        'dyn_tt',
+        sources=ttksl_src,
+        depends=[
+            'print_lib',
+            'expokit',
+            'mytt',
+        ],
+        libraries=[
+            'print_lib',
+            'expokit',
+            'mytt',
+        ],
+    )
+
+    return config
 
 
 if __name__ == '__main__':
-    print 'This is the wrong setup.py to run'
-
-
-#, include_dirs=None, define_macros=None, undef_macros=None, library_dirs=None, libraries=None, runtime_library_dirs=None, extra_objects=None, extra_compile_args=None, extra_link_args=None, export_symbols=None, swig_opts=None, depends=None, language=None, f2py_options=None, module_dirs
+    print('This is the wrong setup.py to run')

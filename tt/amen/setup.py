@@ -1,21 +1,28 @@
-# This script will build the main subpackages
-from distutils.util import get_platform
-import sys
+#   setup.py
+#   This script will build the main subpackages
+#   See LICENSE for details
+
+from __future__ import print_function, absolute_import
+from numpy.distutils.misc_util import Configuration
+
+
+AMEN_SRC = [
+    'amen_f90.f90',
+    'amen_f90.pyf',
+]
 
 
 def configuration(parent_package='', top_path=None):
-    from numpy.distutils.misc_util import Configuration, get_info
     config = Configuration('amen', parent_package, top_path)
-
-    src = ['amen_f90.f90', 'amen_f90.pyf']
-
     config.add_extension(
         'amen_f90',
-        sources=src,
+        sources=AMEN_SRC,
         depends=['mytt'],
-        libraries=['mytt'])
+        libraries=['mytt'],
+    )
+
     return config
 
 
 if __name__ == '__main__':
-    print 'This is the wrong setup.py to run'
+    print('This is the wrong setup.py to run')

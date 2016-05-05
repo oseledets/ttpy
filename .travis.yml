@@ -23,8 +23,8 @@ install:
   - pip install -r requirements.txt
   - pip install coveralls
 script:
-  - cd tt
   - python setup.py install
-  - python -m unittest discover 'tests/'
+  - cd tt
+  - python -m unittest discover tests/
 notifications:
   email: false
