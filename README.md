@@ -30,7 +30,6 @@ To update to the latest version, run
 ```
 git pull
 git submodule update --init --recursive *
-python setup.py install
 ```
 This command will update the submodules as well.
 ##Prerequisites
@@ -47,9 +46,10 @@ This command will update the submodules as well.
 
 
 ##Installing the package
-To install the package, run
+The installation of the package is done via **setup.py** scripts.
+
+The installation script is a very newbie one, but it seems to work.
 ```
-cd tt
 python setup.py install
 ```
 
