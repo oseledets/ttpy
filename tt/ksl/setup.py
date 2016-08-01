@@ -23,6 +23,7 @@ EXPOKIT_SRC = [
 TTKSL_SRC = [
     'ttals.f90',
     'tt_ksl.f90',
+    'tt_diag_ksl.f90'
 ]
 
 
