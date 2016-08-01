@@ -171,7 +171,7 @@ def diag_ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000):
     # Check for dtype
     y = tt.vector()
     if np.iscomplex(A.core).any() or np.iscomplex(y0.core).any():
-        dyn_diag-tt.dyn_diag_tt.ztt_diag_ksl(
+        dyn_tt.dyn_diag_tt.ztt_diag_ksl(
             y0.d,
             A.n,
             A.r,
@@ -185,11 +185,11 @@ def diag_ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000):
             verb,
             tp,
             space)
-        y.core = dyn_diag_tt.dyn_diag_tt.zresult_core.copy()
+        y.core = dyn_tt.dyn_diag_tt.zresult_core.copy()
     else:
         A.core = np.real(A.core)
         y0.core = np.real(y0.core)
-        dyn_diag_tt.dyn_diag_tt.dtt_diag_ksl(
+        dyn_tt.dyn_diag_tt.dtt_diag_ksl(
             y0.d,
             A.n,
             A.r,
@@ -201,8 +201,8 @@ def diag_ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000):
             0,
             10,
             verb)
-        y.core = dyn_diag_tt.dyn_diag_tt.result_core.copy()
-    dyn_diag_tt.dyn_diag_tt.deallocate_result()
+        y.core = dyn_tt.dyn_diag_tt.result_core.copy()
+    dyn_tt.dyn_diag_tt.deallocate_result()
     y.d = y0.d
     y.n = A.n.copy()
     y.r = ry
