@@ -98,8 +98,11 @@ def ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000):
             rmax,
             0,
             10,
-            verb)
-        y.core = dyn_tt.dyn_tt.result_core.copy()
+            verb,
+            tp,
+            space
+            )
+        y.core = dyn_tt.dyn_tt.dresult_core.copy()
     dyn_tt.dyn_tt.deallocate_result()
     y.d = y0.d
     y.n = A.n.copy()
@@ -200,8 +203,10 @@ def diag_ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000):
             rmax,
             0,
             10,
-            verb)
-        y.core = dyn_tt.dyn_diag_tt.result_core.copy()
+            verb,
+            tp,
+            space)
+        y.core = dyn_tt.dyn_diag_tt.dresult_core.copy()
     dyn_tt.dyn_diag_tt.deallocate_result()
     y.d = y0.d
     y.n = A.n.copy()
