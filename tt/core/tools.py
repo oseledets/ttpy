@@ -755,9 +755,9 @@ def stepfun(n, d=None, center=1, direction=1):
 
 def qshift(d):
     x = []
-    x.append(_np.array([0.0, 1.0]))
+    x.append(_np.array([0.0, 1.0]).reshape((1, 2, 1)))
     for _ in xrange(1, d):
-        x.append(_np.array([1.0, 0.0]))
+        x.append(_np.array([1.0, 0.0]).reshape((1, 2, 1)))
     return Toeplitz(_vector.vector.from_list(x), kind='L')
 
 ####### Recent update #######

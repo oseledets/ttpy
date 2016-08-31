@@ -93,12 +93,12 @@ class vector(object):
         d = len(a)  # Number of cores
         res = vector()
         n = _np.zeros(d, dtype=_np.int32)
-        r = _np.zeros(d + 1, dtype=_np.int32)
+        r = _np.zeros(d+1, dtype=_np.int32)
         cr = _np.array([])
         for i in xrange(d):
             cr = _np.concatenate((cr, a[i].flatten(order)))
             r[i] = a[i].shape[0]
-            r[i + 1] = a[i].shape[2]
+            r[i+1] = a[i].shape[2]
             n[i] = a[i].shape[1]
         res.d = d
         res.n = n
