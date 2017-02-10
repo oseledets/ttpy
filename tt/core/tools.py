@@ -890,13 +890,13 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
     if d2 <= d1:
         i2 = 0
         n2 = _cp.deepcopy(sz)
-        for i1 in xrange(d1):
+        for i1 in range(d1):
             if n2[i2] == 1:
                 i2 = i2 + 1
                 if i2 > d2:
                     break
             if n2[i2] % n1[i1] == 0:
-                n2[i2] = n2[i2] / n1[i1]
+                n2[i2] = n2[i2] // n1[i1]
             else:
                 needQRs = True
                 break
@@ -905,7 +905,7 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
     tt1 = tt1.to_list(tt1)
 
     if needQRs:  # We have to split some cores -> perform QRs
-        for i in xrange(d1 - 1, 0, -1):
+        for i in range(d1 - 1, 0, -1):
             cr = tt1[i]
             cr = _np.reshape(cr, (r1[i], n1[i] * r1[i + 1]), order='F')
             [cr, rv] = _np.linalg.qr(cr.T)  # Size n*r2, r1new - r1nwe,r1
@@ -925,10 +925,10 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
     core2 = _np.zeros((0))
     curcr2 = 1
     restn2 = sz
-    n2 = _np.ones(d2)
+    n2 = _np.ones(d2, dtype=_np.int32)
     if ismatrix:
-        n2_n = _np.ones(d2)
-        n2_m = _np.ones(d2)
+        n2_n = _np.ones(d2, dtype=_np.int32)
+        n2_m = _np.ones(d2, dtype=_np.int32)
 
     while i1 < d1:
         curcr1 = tt1[i1]
@@ -1007,7 +1007,7 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
                 r2[i2 + 1] = r
                 # Update the sizes of tt2
                 n2[i2] = n2[i2] * n12
-                restn2[i2] = restn2[i2] / n12
+                restn2[i2] = restn2[i2] // n12
                 curcr2 = _np.reshape(
                     curcr2, (r2[i2] * n2[i2], r2[i2 + 1]), order='F')
                 r1[i1] = r
