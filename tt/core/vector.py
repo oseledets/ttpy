@@ -55,9 +55,9 @@ class vector(object):
         if a is None:
             self.core = _np.array([0.0])
             self.d = 0
-            self.n = _np.array([0])
-            self.r = _np.array([1], dtype=_np.int)
-            self.ps = _np.array([0], dtype=_np.int)
+            self.n = _np.array([0], dtype=_np.int32)
+            self.r = _np.array([1], dtype=_np.int32)
+            self.ps = _np.array([0], dtype=_np.int32)
             return
         self.d = a.ndim
         self.n = _np.array(a.shape, dtype=_np.int32)
@@ -342,7 +342,6 @@ class vector(object):
             sz = _np.concatenate(([self.r[0]], sz))
         if self.r[self.d] > 1:
             sz = _np.concatenate(([self.r[self.d]], sz))
-        #a = _np.zeros(sz,order='F')
         if (_np.iscomplex(self.core).any()):
             a = _tt_f90.tt_f90.ztt_to_full(
                 self.n, self.r, self.ps, self.core, _np.prod(sz))
@@ -351,7 +350,6 @@ class vector(object):
                 self.n, self.r, self.ps, _np.real(
                     self.core), _np.prod(sz))
         a = a.reshape(sz, order='F')
-        #import ipdb; ipdb.set_trace()
         return a
 
     def __add__(self, other):
@@ -367,7 +365,7 @@ class vector(object):
                 self.n, self.r, other.r, self.ps, other.ps, self.core + 0j, other.core + 0j)
             c.core = _tt_f90.tt_f90.zcore.copy()
         else:
-             # This could be a real fix in the case we fell to the real world
+            # This could be a real fix in the case we fell to the real world
             c.r, c.ps = _tt_f90.tt_f90.dtt_add(
                 self.n, self.r, other.r, self.ps, other.ps, _np.real(
                     self.core), _np.real(
