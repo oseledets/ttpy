@@ -70,7 +70,7 @@ def min_func(fun, bounds_min, bounds_max, d=None, rmax=10,
     swp = 0
     dirn = -1
     i = d - 1
-    lm = 999999999999
+    lm = float('Inf')
     while swp < nswp:
         # Right-to-left sweep
         # The idea: compute the current core; compute the function of it;
@@ -178,7 +178,7 @@ def min_tens(tens, rmax=10, nswp=10, verb=True, smooth_fun=None):
     swp = 0
     dirn = -1
     i = d - 1
-    lm = 999999999999
+    lm = float('Inf')
     while swp < nswp:
         # Right-to-left sweep
         # The idea: compute the current core; compute the function of it;
