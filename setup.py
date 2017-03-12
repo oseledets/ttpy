@@ -66,6 +66,7 @@ def setup_package():
         download_url='https://github.com/oseledets/ttpy/tarball/v' + VERSION,
         author='Ivan Oseledets',
         maintainer='Ivan Oseledets',
+        author_email='ivan.oseledets@gmail.com',
         platforms=PLATFORMS,
         classifiers=[line for line in CLASSIFIERS.split('\n') if line],
         configuration=configuration,
