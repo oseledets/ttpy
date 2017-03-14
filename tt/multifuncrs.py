@@ -1,3 +1,4 @@
+from __future__ import print_function
 import numpy as np
 from numpy import prod, nonzero, size
 import math
@@ -229,7 +230,7 @@ def multifuncrs(X, funs, eps=1E-6,
                 s = np.ones((r, ))
 
         if verb > 1:
-            print '=multifuncrs=   block %d{%d}, dy: %3.3e, r: %d' % (i, dirn, dy[i], r)
+            print('=multifuncrs=   block %d{%d}, dy: %3.3e, r: %d' % (i, dirn, dy[i], r))
 
         # kicks and interfaces
         if dirn > 0 and i < d - 1:
@@ -398,8 +399,8 @@ def multifuncrs(X, funs, eps=1E-6,
         if cur_order[order_index] == 0:
             order_index = order_index + 1
             if verb > 0:
-                print '=multifuncrs= sweep %d{%d}, max_dy: %3.3e, erank: %g' % (swp, order_index, max_dy,
-                                                                                math.sqrt(np.dot(ry[:d], n * ry[1:]) / np.sum(n)))
+                print('=multifuncrs= sweep %d{%d}, max_dy: %3.3e, erank: %g' % (swp, order_index, max_dy,
+                                                                                math.sqrt(np.dot(ry[:d], n * ry[1:]) / np.sum(n))))
 
             if last_sweep:
                 break
