@@ -1,3 +1,4 @@
+from __future__ import print_function
 import numpy as np
 from numpy import prod, nonzero, size
 import math
@@ -176,7 +177,7 @@ def multifuncrs2(X, funs, eps=1e-6,
         try:
             dy = np.linalg.norm(newy - oldy) / np.linalg.norm(newy)
         except ZeroDivisionError:
-            print 'Bad initial indices, the solution is exactly zero. Restarting'
+            print('Bad initial indices, the solution is exactly zero. Restarting')
             return
         max_dy = max(max_dy, dy)
         # truncation
@@ -214,7 +215,7 @@ def multifuncrs2(X, funs, eps=1e-6,
                 r = u.shape[1]
                 s = np.ones((r, ))
         if verb > 1:
-            print '=multifuncrs2=   block %d{%d}, dy: %3.3e, r: %d' % (i, dirn, dy, r)
+            print('=multifuncrs2=   block %d{%d}, dy: %3.3e, r: %d' % (i, dirn, dy, r))
         #Kicks and interfaces
         if dirn > 0 and i < d - 1:
             u = u[:, :r]
@@ -470,8 +471,8 @@ def multifuncrs2(X, funs, eps=1e-6,
         if cur_order[order_index] == 0:
             order_index = order_index + 1
             if verb > 0:
-                print '=multifuncrs= sweep %d{%d}, max_dy: %3.3e, erank: %g' % (swp, order_index, max_dy,
-                                                                                math.sqrt(np.dot(ry[:d], n * ry[1:]) / np.sum(n)))
+                print('=multifuncrs= sweep %d{%d}, max_dy: %3.3e, erank: %g' % (swp, order_index, max_dy,
+                                                                                math.sqrt(np.dot(ry[:d], n * ry[1:]) / np.sum(n))))
             if max_dy < eps_exit and dirn > 0:
                 break
             if order_index >= len(cur_order):  # New global sweep

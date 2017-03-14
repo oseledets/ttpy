@@ -1,3 +1,4 @@
+from __future__ import print_function
 try:
     from core.tt import *
 except:
@@ -8,7 +9,7 @@ except:
         try:
             ctypes.CDLL("liblapack.so", ctypes.RTLD_GLOBAL)
         except:
-            print "Did not find MKL or LAPACK library"
+            print("Did not find MKL or LAPACK library")
     from core.tt import *
 
 from multifuncrs import multifuncrs
