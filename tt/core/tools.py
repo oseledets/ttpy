@@ -1,3 +1,4 @@
+from __future__ import print_function
 import numpy as _np
 import math as _math
 import copy as _cp
@@ -59,7 +60,7 @@ def matvec(a, b, compression=False):
                 newr = min(rl * n, rr)
                 ccr = u[:, :newr].reshape((rl, n, newr), order='F')
                 v = _np.dot(_np.diag(s[:newr]), v[:newr, :])
-            # print ccr.shape
+            # print(ccr.shape)
             # r x r . r x n x R -> r x n x R
             nrm = _np.tensordot(nrm, ccr, (0, 0))
             # r x n x R . r x n x R -> n x R x n x R
@@ -68,9 +69,9 @@ def matvec(a, b, compression=False):
             nrm = nrm.sum(axis=2)  # R x R x n -> R x R
         if nrm.size > 1:
             raise Exception('too many numbers in norm')
-        # print "Norm calculated:", nrm
+        # print("Norm calculated:", nrm)
         nrm = _np.sqrt(_np.linalg.norm(nrm))
-        # print "Norm predicted:", nrm
+        # print("Norm predicted:", nrm)
         compression = compression * nrm / _np.sqrt(d - 1)
         v = _np.array([[1.0]])
 
@@ -87,15 +88,15 @@ def matvec(a, b, compression=False):
                 ss = _np.cumsum(s[::-1])[::-1]
                 newr = max(min([r for r in range(ss.size) if ss[
                            r] <= compression] + [min(rl * n, rr)]), 1)
-                # print "Rank % 4d replaced by % 4d" % (rr, newr)
+                # print("Rank % 4d replaced by % 4d" % (rr, newr))
                 ccr = u[:, :newr].reshape((rl, n, newr), order='F')
                 v = _np.dot(_np.diag(s[:newr]), v[:newr, :])
         ccrs.append(ccr)
     result = _vector.vector.from_list(ccrs)
     if compression:
-        # print result
-        print "Norm actual:", result.norm(), " mean rank:", result.rmean()
-        # print "Norm very actual:", matvec(a,b).norm()
+        # print(result)
+        print("Norm actual:", result.norm(), " mean rank:", result.rmean())
+        # print("Norm very actual:", matvec(a,b).norm())
     return result
 
 

@@ -1,3 +1,4 @@
+from __future__ import print_function
 import tt as _tt
 import numpy as _np
 from scipy.sparse import spdiags as _spdiags
@@ -112,7 +113,7 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4,
     '''
 
     if renorm is 'gram':
-        print "Not implemented yet. Renorm is switched to 'direct'"
+        print("Not implemented yet. Renorm is switched to 'direct'")
         renorm = 'direct'
 
     if isinstance(x, _tt.vector):
@@ -436,12 +437,12 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4,
                     phizy[i + 1], z[i], y[i], 'rl', return_norm=False)
 
         if (verb > 1):
-            print 'amen-mv: swp=[%d,%d], dx=%.3e, r=%d, |y|=%.3e, |z|=%.3e' % (swp, i, dx, r, _np.linalg.norm(cry), nrmz)
+            print('amen-mv: swp=[%d,%d], dx=%.3e, r=%d, |y|=%.3e, |z|=%.3e' % (swp, i, dx, r, _np.linalg.norm(cry), nrmz))
 
         # Stopping or reversing
         if ((direct > 0) and (i == d - 1)) or ((direct < 0) and (i == 0)):
             if (verb > 0):
-                print 'amen-mv: swp=%d{%d}, max_dx=%.3e, max_r=%d' % (swp, (1 - direct) / 2, max_dx, max(ry))
+                print('amen-mv: swp=%d{%d}, max_dx=%.3e, max_r=%d' % (swp, (1 - direct) / 2, max_dx, max(ry)))
             if ((max_dx < tol) or (swp == nswp)) and (direct > 0):
                 break
             else:
@@ -679,4 +680,4 @@ if __name__ == '__main__':
                 kickrank2=0, verb=True, init_qr=True, renorm='gram', fkick=False)
     d = _tt.matvec(A, b).round(eps)
 
-    print (c[0] - d).norm() / d.norm()
+    print((c[0] - d).norm() / d.norm())

@@ -1,6 +1,7 @@
 """This module contains a prototype implementation of the
 TT-cross-based minimization procedure
 """
+from __future__ import print_function
 import numpy as np
 import math
 import tt
@@ -102,7 +103,7 @@ def min_func(fun, bounds_min, bounds_max, d=None, rmax=10,
             x_full = J[ind_cur, :]
             val = fun(x_full)
             if verb:
-                print 'New record:', val, 'Point:', x_full, 'fevals:', fun_evals
+                print('New record:', val, 'Point:', x_full, 'fevals:', fun_evals)
         cry = smooth_fun(cry, lm)
         if (dirn < 0 and i > 0):
             cry = reshape(cry, (ry[i], n[i] * ry[i + 1]))
@@ -213,7 +214,7 @@ def min_tens(tens, rmax=10, nswp=10, verb=True, smooth_fun=None):
             x_full = J[ind_cur, :]
             val = tens[x_full]
             if verb:
-                print 'New record:', val, 'Point:', x_full, 'elements seen:', elements_seen
+                print('New record:', val, 'Point:', x_full, 'elements seen:', elements_seen)
         cry = smooth_fun(cry, lm)
         if dirn < 0 and i > 0:
             cry = reshape(cry, (ry[i], n[i] * ry[i + 1]))
