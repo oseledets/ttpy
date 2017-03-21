@@ -11,7 +11,7 @@ in Python. It is able to do TT-interpolation, solve linear systems, eigenproblem
 Several computational routines are done in Fortran (which can be used separatedly), and are wrapped with the f2py tool.
 Installation
 ============
-##Prerequisites
+## Prerequisites
 
 **It is recommended** that you use [Anaconda Python distribution](https://store.continuum.io/cshop/anaconda/) 
   which has MKL library built-in. Anaconda Python is used for the development  of ttpy.
@@ -26,7 +26,7 @@ Install ttpy
    pip install ttpy
 ```
 
-##Installing from source code
+## Installing from source code
 
 To install the development version, you need to install from the source.
 First, clone the repository with all submodules:
