@@ -1,15 +1,17 @@
-from __future__ import print_function
+from __future__ import print_function, absolute_import, division
+import six
+from six.moves import xrange
 import numpy as _np
 import math as _math
 import copy as _cp
-import tt_f90 as _tt_f90
+from . import tt_f90 as _tt_f90
 
-import vector as _vector
-import matrix as _matrix
+from . import vector as _vector
+from . import matrix as _matrix
 
-from utils import ind2sub as _ind2sub
-from utils import gcd as _gcd
-from utils import my_chop2 as _my_chop2
+from .utils import ind2sub as _ind2sub
+from .utils import gcd as _gcd
+from .utils import my_chop2 as _my_chop2
 
 # Some binary operations (put aside to wrap something in future)
 # TT-matrix by a TT-vector product
@@ -316,7 +318,7 @@ def Toeplitz(x, d=None, D=None, kind='F'):
     # checking for arguments consistency
     def check_kinds(D, kind):
         if D % len(kind) == 0:
-            kind.extend(kind * (D / len(kind) - 1))
+            kind.extend(kind * (D // len(kind) - 1))
         if len(kind) != D:
             raise ValueError(
                 "Must give proper amount of _matrix kinds (one or D, for example)")
@@ -331,15 +333,15 @@ def Toeplitz(x, d=None, D=None, kind='F'):
             raise ValueError(
                 "x.d must be divisible by D when d is not specified!")
         if len(kind) == 1:
-            d = _np.array([x.d / D - (1 if kind[0] == 'F' else 0)]
+            d = _np.array([x.d // D - (1 if kind[0] == 'F' else 0)]
                           * D, dtype=_np.int32)
             kind = kind * D
         else:
             check_kinds(D, kind)
             if set(kind).issubset(['F']):
-                d = _np.array([x.d / D - 1] * D, dtype=_np.int32)
+                d = _np.array([x.d // D - 1] * D, dtype=_np.int32)
             elif set(kind).issubset(['C', 'L', 'U']):
-                d = _np.array([x.d / D] * D, dtype=_np.int32)
+                d = _np.array([x.d // D] * D, dtype=_np.int32)
             else:
                 raise ValueError(
                     "Only similar _matrix kinds (only F or only C, L and U) are accepted when d is not specified!")
@@ -539,7 +541,7 @@ def xfun(n, d=None):
         tt.xfun(3)            # create [0, 1, 2] one-dimensional TT-vector
         tt.xfun([3, 5, 7], 2) # create 3 x 5 x 7 x 3 x 5 x 7 TT-vector
     """
-    if isinstance(n, (int, long)):
+    if isinstance(n, six.integer_types):
         n = [n]
     if d is None:
         n0 = _np.asanyarray(n, dtype=_np.int32)
@@ -569,7 +571,7 @@ def xfun(n, d=None):
 
 def linspace(n, d=None, a=0.0, b=1.0, right=True, left=True):
     """ Create a QTT-representation of a uniform grid on an interval [a, b] """
-    if isinstance(n, (int, long)):
+    if isinstance(n, six.integer_types):
         n = [n]
     if d is None:
         n0 = _np.asanyarray(n, dtype=_np.int32)
@@ -634,7 +636,7 @@ def cos(d, alpha=1.0, phase=0.0):
 
 def delta(n, d=None, center=0):
     """ Create TT-vector for delta-function :math:`\\delta(x - x_0)`. """
-    if isinstance(n, (int, long)):
+    if isinstance(n, six.integer_types):
         n = [n]
     if d is None:
         n0 = _np.asanyarray(n, dtype=_np.int32)
@@ -648,7 +650,7 @@ def delta(n, d=None, center=0):
         cind = []
         for i in xrange(d):
             cind.append(center % n0[i])
-            center /= n0[i]
+            center //= n0[i]
         if center > 0:
             cind = [0] * d
     cr = []
@@ -669,7 +671,7 @@ def stepfun(n, d=None, center=1, direction=1):
         \chi(x) = \\left\{ \\begin{array}{l} 1 \mbox{ when } x \ge 0, \\\\ 0 \mbox{ when } x < 0. \\end{array} \\right.
 
     For negative value of ``direction`` :math:`\chi(x_0 - x)` is approximated. """
-    if isinstance(n, (int, long)):
+    if isinstance(n, six.integer_types):
         n = [n]
     if d is None:
         n0 = _np.asanyarray(n, dtype=_np.int32)
@@ -689,7 +691,7 @@ def stepfun(n, d=None, center=1, direction=1):
     cind = []
     for i in xrange(d):
         cind.append(center % n0[i])
-        center /= n0[i]
+        center //= n0[i]
 
     def gen_notx(currcind, currn):
         return [0.0] * (currn - currcind) + [1.0] * currcind
@@ -960,12 +962,12 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
                 # Update the "matrix" sizes
                 n2_n[i2] = n2_n[i2] * n1_n[i1]
                 n2_m[i2] = n2_m[i2] * n1_m[i1]
-                restn2_n[i2] = restn2_n[i2] / n1_n[i1]
-                restn2_m[i2] = restn2_m[i2] / n1_m[i1]
+                restn2_n[i2] = restn2_n[i2] // n1_n[i1]
+                restn2_m[i2] = restn2_m[i2] // n1_m[i1]
             r2[i2 + 1] = r1[i1 + 1]
             # Update the sizes of tt2
             n2[i2] = n2[i2] * n1[i1]
-            restn2[i2] = restn2[i2] / n1[i1]
+            restn2[i2] = restn2[i2] // n1[i1]
             curcr2 = _np.reshape(
                 curcr2, (r2[i2] * n2[i2], r2[i2 + 1]), order='F')
             i1 = i1 + 1  # current core1 is over
@@ -981,22 +983,22 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
                     curcr1 = _np.reshape(curcr1,
                                          (r1[i1],
                                           n12_n,
-                                          n1_n[i1] / n12_n,
+                                          n1_n[i1] // n12_n,
                                              n12_m,
-                                             n1_m[i1] / n12_m,
+                                             n1_m[i1] // n12_m,
                                              r1[i1 + 1]),
                                          order='F')
                     curcr1 = _np.transpose(curcr1, [0, 1, 3, 2, 4, 5])
                     # Update the _matrix sizes of tt2 and tt1
                     n2_n[i2] = n2_n[i2] * n12_n
                     n2_m[i2] = n2_m[i2] * n12_m
-                    restn2_n[i2] = restn2_n[i2] / n12_n
-                    restn2_m[i2] = restn2_m[i2] / n12_m
-                    n1_n[i1] = n1_n[i1] / n12_n
-                    n1_m[i1] = n1_m[i1] / n12_m
+                    restn2_n[i2] = restn2_n[i2] // n12_n
+                    restn2_m[i2] = restn2_m[i2] // n12_m
+                    n1_n[i1] = n1_n[i1] // n12_n
+                    n1_m[i1] = n1_m[i1] // n12_m
 
                 curcr1 = _np.reshape(
-                    curcr1, (r1[i1] * n12, (n1[i1] / n12) * r1[i1 + 1]), order='F')
+                    curcr1, (r1[i1] * n12, (n1[i1] // n12) * r1[i1 + 1]), order='F')
                 [u, s, v] = _np.linalg.svd(curcr1, full_matrices=False)
                 r = _my_chop2(s, eps * _np.linalg.norm(s) / (d2 - 1)**0.5)
                 u = u[:, :r]
@@ -1013,7 +1015,7 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
                     curcr2, (r2[i2] * n2[i2], r2[i2 + 1]), order='F')
                 r1[i1] = r
                 # and tt1
-                n1[i1] = n1[i1] / n12
+                n1[i1] = n1[i1] // n12
                 # keep v in tt1 for next operations
                 curcr1 = _np.reshape(
                     v.T, (r1[i1], n1[i1], r1[i1 + 1]), order='F')
@@ -1071,8 +1073,8 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
     tt2.core = core2
     tt2.ps = _np.cumsum(_np.concatenate((_np.ones(1), r2[:-1] * n2 * r2[1:])))
 
-    tt2.n[0] = tt2.n[0] / rl
-    tt2.n[d2 - 1] = tt2.n[d2 - 1] / rr
+    tt2.n[0] = tt2.n[0] // rl
+    tt2.n[d2 - 1] = tt2.n[d2 - 1] // rr
     tt2.r[0] = rl
     tt2.r[d2] = rr
 

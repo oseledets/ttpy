@@ -1,4 +1,5 @@
-from __future__ import print_function
+from __future__ import print_function, absolute_import, division
+from six.moves import xrange
 import tt as _tt
 import numpy as _np
 from scipy.sparse import spdiags as _spdiags
@@ -442,7 +443,7 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4,
         # Stopping or reversing
         if ((direct > 0) and (i == d - 1)) or ((direct < 0) and (i == 0)):
             if (verb > 0):
-                print('amen-mv: swp=%d{%d}, max_dx=%.3e, max_r=%d' % (swp, (1 - direct) / 2, max_dx, max(ry)))
+                print('amen-mv: swp=%d{%d}, max_dx=%.3e, max_r=%d' % (swp, (1 - direct) // 2, max_dx, max(ry)))
             if ((max_dx < tol) or (swp == nswp)) and (direct > 0):
                 break
             else:
@@ -499,8 +500,8 @@ def _compute_next_Phi(Phi_prev, x, y, direction, A=None,
         else:
             # Just full format
             [ra1, ra2] = A.shape
-            ra1 = ra1 / n
-            ra2 = ra2 / m
+            ra1 = ra1 // n
+            ra2 = ra2 // m
     # ?????????????????????????????????????
     else:
         [ra1, ra2] = [1, 1]
@@ -636,8 +637,8 @@ def _bfun3(Phi1, A, Phi2, x):
         # Phi2: rx2, ra2, ry2
         [rx2, ra2, ry2] = Phi2.shape
         [n, m] = A.shape
-        n = n / ra1
-        m = m / ra2
+        n = n // ra1
+        m = m // ra2
 
         y = _reshape(x.T, (b * rx1 * m, rx2))
         Phi2 = _reshape(Phi2, (rx2, ra2 * ry2))

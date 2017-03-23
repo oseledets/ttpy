@@ -1,6 +1,9 @@
+from __future__ import print_function, absolute_import, division
+from six.moves import xrange
 import numpy as np
-import cross
-from tt_tensor2 import *
+from . import cross
+from .tt_tensor2 import *
+
 class black_box_tensor:
     def __init__(self,sz,f=None,eps=1e-6):
         self.f = f

@@ -1,9 +1,9 @@
+from __future__ import print_function, absolute_import, division
+from six.moves import xrange
 import numpy as _np
 from numbers import Number as _Number
-import tt_f90 as _tt_f90
+from . import tt_f90 as _tt_f90
 import warnings
-
-import matrix as _matrix
 
 # The main class for working with vectors in the TT-format
 
@@ -520,6 +520,7 @@ class vector(object):
         return c
 
     def __diag__(self):
+        from . import matrix as _matrix
         cl = tensor.to_list(self)
         d = self.d
         r = self.r
