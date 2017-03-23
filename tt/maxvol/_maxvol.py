@@ -1,4 +1,4 @@
-from maxvol import dmaxvol, zmaxvol
+from .maxvol import dmaxvol, zmaxvol
 from numpy import arange, asanyarray, iscomplexobj
 
 

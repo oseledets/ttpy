@@ -1,3 +1,4 @@
+from __future__ import print_function, absolute_import, division
 import sys
 sys.path.append('../')
 import numpy as np
@@ -22,5 +23,5 @@ t = time.time()
 y, lam = eigb(A, x, 1e-6)
 
 t1 = time.time()
-print 'Eigenvalues:', lam
-print 'Time is:', t1-t
+print('Eigenvalues:', lam)
+print('Time is:', t1-t)

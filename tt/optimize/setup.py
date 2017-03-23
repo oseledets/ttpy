@@ -2,7 +2,7 @@
 #   This script will build the main subpackages
 #   See LICENSE for details
 
-from __future__ import print_function, absolute_import
+from __future__ import print_function, absolute_import, division
 from numpy.distutils.misc_util import Configuration
 
 

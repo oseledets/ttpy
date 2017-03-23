@@ -1,1 +1,1 @@
-from _maxvol import *
+from ._maxvol import *

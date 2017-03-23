@@ -1,4 +1,4 @@
-from __future__ import print_function
+from __future__ import print_function, absolute_import, division
 import numpy as np
 from numpy import prod, nonzero, size
 import math
@@ -70,7 +70,7 @@ def multifuncrs(X, funs, eps=1E-6,
     """
 
     dtype = np.float64
-    if len(filter(lambda x: x.is_complex, X)) > 0:
+    if len([x for x in X if x.is_complex]) > 0:
         dtype = np.complex128
 
     y = y0

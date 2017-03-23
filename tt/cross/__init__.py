@@ -1,3 +1,3 @@
-from rectcross import cross as rect_cross
+from .rectcross import rect_cross
 __all__ = ['rect_cross']
 

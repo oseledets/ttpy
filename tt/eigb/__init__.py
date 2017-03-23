@@ -1,1 +1,1 @@
-from eigb import *
+from .eigb import *

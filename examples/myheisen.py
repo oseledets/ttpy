@@ -1,3 +1,5 @@
+from __future__ import print_function, absolute_import, division
+from six.moves import xrange
 import sys
 sys.path.append('../')
 import tt
@@ -52,8 +54,8 @@ if __name__ == '__main__':
     r[d] = B
     x0 = tt.rand(n,d,r)
     t1 = time.time()
-    print 'Matrices are done'
+    print('Matrices are done')
     y, lam = eigb(A, x0, eps, max_full_size = 1000)
     t2 = time.time()
-    print 'Elapsed time: %3.1f' % (t2 - t1)
-    print 'Eigenvalues: ', lam
+    print('Elapsed time: %3.1f' % (t2 - t1))
+    print('Eigenvalues: ', lam)

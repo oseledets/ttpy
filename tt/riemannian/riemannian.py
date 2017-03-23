@@ -2,6 +2,8 @@
 # [1] C. Lubich, I. Oseledets and B. Vandereycken, Time integration of
 # tensor trains.
 
+from __future__ import print_function, absolute_import, division
+from six.moves import xrange
 import tt
 import numpy as np
 from math import ceil
