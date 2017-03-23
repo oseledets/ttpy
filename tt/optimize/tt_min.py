@@ -1,7 +1,8 @@
 """This module contains a prototype implementation of the
 TT-cross-based minimization procedure
 """
-from __future__ import print_function
+from __future__ import print_function, absolute_import, division
+from six.moves import xrange
 import numpy as np
 import math
 import tt

@@ -1,9 +1,9 @@
+from __future__ import print_function, absolute_import, division
+from six.moves import xrange
 import numpy as _np
 from numbers import Number as _Number
-import core_f90 as _core_f90
-import vector as _vector
-
-import tools as _tools
+from . import core_f90 as _core_f90
+from . import vector as _vector
 
 
 class matrix(object):
@@ -31,7 +31,7 @@ class matrix(object):
             return
 
         if isinstance(a, _np.ndarray):
-            d = a.ndim / 2
+            d = a.ndim // 2
             p = a.shape
             self.n = _np.array(p[:d], dtype=_np.int32)
             self.m = _np.array(p[d:], dtype=_np.int32)
@@ -179,7 +179,7 @@ class matrix(object):
                 crs = []
                 for i in xrange(self.tt.d):
                     crs.append(mycrs[i][:, row % self.n[i], :, :].copy())
-                    row /= self.n[i]
+                    row //= self.n[i]
                 return _vector.vector.from_list(crs)
             elif isinstance(index[1], int) and index[0] == slice(None):
                 # col requested
@@ -188,7 +188,7 @@ class matrix(object):
                 crs = []
                 for i in xrange(self.tt.d):
                     crs.append(mycrs[i][:, :, col % self.m[i], :].copy())
-                    col /= self.m[i]
+                    col //= self.m[i]
                 return _vector.vector.from_list(crs)
             elif isinstance(index[0], int) and isinstance(index[1], int):
                 # element requested
@@ -225,6 +225,7 @@ class matrix(object):
         """
         Multiplication of two TT-matrices
         """
+        from . import tools as _tools
         diff = len(self.n) - len(other.m)
         L = self if diff >= 0 else _tools.kron(self, matrix(_tools.ones(1, abs(diff))))
         R = other if diff <= 0 else _tools.kron(other, matrix(_tools.ones(1, abs(diff))))
@@ -252,7 +253,7 @@ class matrix(object):
         return c
 
     def __rmul__(self, other):
-        if hasattr(other, '__matmul__'):
+        if hasattr(other, '__matmul__') and not isinstance(other, _np.ndarray):
             return other.__matmul__(self)
         else:
             c = matrix()
@@ -262,7 +263,7 @@ class matrix(object):
             return c
 
     def __mul__(self, other):
-        if hasattr(other, '__matmul__'):
+        if hasattr(other, '__matmul__') and not isinstance(other, _np.ndarray):
             return self.__matmul__(other)
         elif isinstance(other, (_vector.vector, _Number)):
             c = matrix()
@@ -284,7 +285,7 @@ class matrix(object):
                     core, [
                         self.tt.r[i], self.n[i], self.m[i], self.tt.r[
                             i + 1]], order='F')
-                # print curr.shape, core.shape
+                # print(curr.shape, core.shape)
                 curr = _np.tensordot(curr, core, axes=([0, 1], [0, 2]))
                 curr = _np.rollaxis(curr, -1)
             curr = _np.sum(curr, axis=0)
@@ -292,6 +293,7 @@ class matrix(object):
 
     def __kron__(self, other):
         """ Kronecker product of two TT-matrices """
+        from . import tools as _tools
         if other is None:
             return self
         a = self

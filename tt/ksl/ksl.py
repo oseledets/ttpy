@@ -1,6 +1,7 @@
 """ Dynamical TT-approximation """
+from __future__ import print_function, absolute_import, division
 import numpy as np
-import dyn_tt
+from . import dyn_tt
 import tt
 
 def ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000):

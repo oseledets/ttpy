@@ -1,6 +1,7 @@
-import amen_f90
+from __future__ import print_function, absolute_import, division
+from . import amen_f90
 import tt
-from amen_mv import amen_mv
+from .amen_mv import amen_mv
 
 
 def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',

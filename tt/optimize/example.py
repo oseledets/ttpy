@@ -1,5 +1,6 @@
 """Example of using tt.optimize module."""
 
+from __future__ import print_function, absolute_import, division
 import tt
 from tt.optimize import tt_min
 from scipy.optimize import rosen
