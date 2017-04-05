@@ -126,7 +126,7 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4,
     elif isinstance(x, list):
         d = len(x)
         m = _np.zeros(d)
-        rx = _np.ones(d + 1)
+        rx = _np.ones(d + 1, dtype=_np.int32)
         for i in xrange(d):
             [_, m[i], rx[i + 1]] = x[i].shape
         vectype = 0  # cell
@@ -158,7 +158,7 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4,
         if isinstance(y, _tt.vector):
             y = _tt.vector.to_list(y)
 
-    ry = _np.ones(d + 1)
+    ry = _np.ones(d + 1, dtype=_np.int32)
     for i in range(d):
         ry[i + 1] = y[i].shape[2]
 
@@ -170,7 +170,7 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4,
         else:
             if isinstance(z, _tt.vector):
                 z = _tt.vector.to_list(z)
-            rz = _np.ones(d + 1)
+            rz = _np.ones(d + 1, dtype=_np.int32)
             for i in range(d):
                 rz[i + 1] = z[i].shape[2]
 
