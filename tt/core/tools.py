@@ -1077,6 +1077,7 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
     tt2.n[d2 - 1] = tt2.n[d2 - 1] // rr
     tt2.r[0] = rl
     tt2.r[d2] = rr
+    tt2.n = tt2.n.astype('i')
 
     if ismatrix:
         ttt = eye(1, 1)  # dummy tt _matrix
