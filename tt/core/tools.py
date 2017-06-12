@@ -777,7 +777,7 @@ def unit(n, d=None, j=None, tt_instance=True):
     if isinstance(n, int):
         if d is None:
             d = 1
-        n = n * _np.ones(d)
+        n = n * _np.ones(d, dtype=_np.int32)
     else:
         d = len(n)
     if j is None:
