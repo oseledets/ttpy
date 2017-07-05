@@ -22,7 +22,7 @@ def ind2sub(siz, idx):
     for i in xrange(n - 1, -1, -1):
         subs[i] = _np.floor(idx / k[i])
         idx = idx % k[i]
-    return subs
+    return subs.astype(_np.int32)
     
 def gcd(a, b):
     '''Greatest common divider'''
