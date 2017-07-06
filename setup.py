@@ -39,7 +39,7 @@ Operating System :: MacOS
 """
 
 MAJOR = 1
-MINOR = 1
+MINOR = 2
 MICRO = 0
 ISRELEASED = True
 VERSION = '%d.%d.%d' % (MAJOR, MINOR, MICRO)
@@ -66,6 +66,7 @@ def setup_package():
         download_url='https://github.com/oseledets/ttpy/tarball/v' + VERSION,
         author='Ivan Oseledets',
         maintainer='Ivan Oseledets',
+        author_email='ivan.oseledets@gmail.com',
         platforms=PLATFORMS,
         classifiers=[line for line in CLASSIFIERS.split('\n') if line],
         configuration=configuration,

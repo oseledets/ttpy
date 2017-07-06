@@ -9,77 +9,53 @@ Python implementation of the Tensor Train (TT) -Toolbox. It contains several
 important packages for working with the TT-format
 in Python. It is able to do TT-interpolation, solve linear systems, eigenproblems, solve dynamical problems. 
 Several computational routines are done in Fortran (which can be used separatedly), and are wrapped with the f2py tool.
+
 Installation
 ============
+## Prerequisites
 
-##From a binstar repository
-If you use 64 bit linux, you can install the module from the binstar repository:
-```
-sudo apt-get install libgfortran3
-conda install -c https://conda.binstar.org/bihaqo ttpy
-```
-##Downloading the code
-This installation works with git submodules, so you should be sure, that you got them all right.
-The best way is to work with this repository is to use git with a version >= 1.6.5.
-Then, to clone the repository, you can simply run
-```
-git clone --recursive git://github.com/oseledets/ttpy.git
+**It is recommended** that you use [Anaconda Python distribution](https://store.continuum.io/cshop/anaconda/) 
+  which has MKL library built-in. Anaconda Python is used for the development  of ttpy.
 
+## Pip install 
+Install dependencies (numpy and cython)
 ```
-To update to the latest version, run
+   conda install numpy cython
+```
+Install ttpy
+```
+   pip install ttpy
+```
+
+## Installing from source code
+
+To install the development version, you need to install from the source.
+First, clone the repository with all submodules:
+```
+   git clone --recursive git://github.com/oseledets/ttpy.git
+```
+```
+   python setup.py install
+```
+To update to the latest version (with all submodules) run
 ```
 git pull
 git submodule update --init --recursive *
 ```
-This command will update the submodules as well.
-##Prerequisites
-
-**It is highly recommended** that you use either
-
-- [Anaconda Python distribution](https://store.continuum.io/cshop/anaconda/) 
-  which has MKL in built in for the [academics](https://store.continuum.io/cshop/academicanaconda)
-  Anaconda Python is the version for which the development of ttpy is done
-
-- [Enthought Python distribution](https://www.enthought.com/products/epd/) -- should work as well with 
-  the non-free version, but not tested
-
-
-
-##Installing the package
-The installation of the package is done via **setup.py** scripts.
-
-The installation script is a very newbie one, but it seems to work.
-```
-python setup.py install
-```
-
-## BLAS
-
-Almost all of the packages depend on the BLAS/LAPACK libraries, but the code 
-is **not explicitly linked** against them, so if you do not have the BLAS/LAPACK
-in the global namespace of your Python interpreter, you will encounter "undefined symbols"
-error during the import of the **tt** package. If you have Anaconda or EPD with MKL installed, it should
-work ``as it is''. The  [initialization file of **ttpy**](/tt/__init__.py) tries to dynamically load runtime MKL or lapack libraries 
-(should work on Linux if those libraries are in LD_LIBRARY_PATH).
 
 What those packages do
 ======================
 
 They have the following functionality
 
-- **tt** : The main package, with tt.vector and tt.matrix classes, basic arithmetic,
+- `tt` : The main package, with tt.vector and tt.matrix classes, basic arithmetic,
        norms, scalar products, rounding full -> tt and tt -> full conversion routines, and many others
-
-- **tt.amen** : AMEN solver for linear systems (Python wrapper for Fortran code written by S. V. Dolgov and D. V. Savostyanov) 
+- `tt.amen` : AMEN solver for linear systems (Python wrapper for Fortran code written by S. V. Dolgov and D. V. Savostyanov) 
                 it can be also used for fast matrix-by-vector products. 
-
-- **tt.eigb** : Block eigenvalue solver in the TT-format 
-            (subroutine **tt.eigb.eigb**) 
-
-- **tt.ksl** :  Solution of the linear dynamic problems in the TT-format, using the projector-splitting 
+- `tt.eigb` : Block eigenvalue solver in the TT-format 
+- `tt.ksl` :  Solution of the linear dynamic problems in the TT-format, using the projector-splitting 
                 KSL scheme. A Python wrapper for a Fortran code (I. V. Oseledets)
-
-- **tt.cross** : Has a working implementation of the black-box cross method. For now, please use the rect_cross function.
+- `tt.cross` : Has a working implementation of the black-box cross method. 
 
 
 Documentation and examples
