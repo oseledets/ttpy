@@ -1086,3 +1086,114 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
         return ttt
     else:
         return tt2
+
+def permute(x, order, eps=None, return_cores=False):
+    '''
+    Permute dimensions (python translation of original matlab code)
+       Y = permute(X, ORDER, EPS) permutes the dimensions of the TT-tensor X
+       according to ORDER, delivering a result at relative accuracy EPS. This
+       function is equivalent to 
+          Y = tt_tensor(permute(reshape(full(X), X.n'),ORDER), EPS) 
+       but avoids the conversion to the full format.
+    
+    
+     Simon Etter, Summer 2015
+     Seminar of Applied Mathematics, ETH Zurich
+    
+    
+     TT-Toolbox 2.2, 2009-2012
+    
+    This is TT Toolbox, written by Ivan Oseledets et al. Institute of
+    Numerical Mathematics, Moscow, Russia webpage:
+    http://spring.inm.ras.ru/osel
+    
+    For all questions, bugs and suggestions please mail
+    ivan.oseledets@gmail.com 
+    ---------------------------
+
+     This code basically performs insertion sort on the TT dimensions: 
+      for k = 2:d
+         Bubble the kth dimension to the right (according to ORDER) position in the first 1:k dimensions. 
+    
+     The current code could be optimised at the following places:
+      - Instead of initially orthogonalising with respect to the first two vertices, 
+        orthogonalise directly with respect to the first inversion. 
+      - When performing the SVD, check on which side of the current position the 
+        next swap will occur and directly establish the appropriate orthogonality
+        (current implementation always assumes we move left). 
+     Both changes reduce the number of QRs by at most O(d) and are therefore likely
+     to produce negligible speedup while rendering the code more complicated. 
+     '''
+
+    def _reshape(tensor, shape):
+        return _np.reshape(tensor, shape, order='F')
+    
+    # Parse input
+    if eps is None:
+        eps = _np.spacing(1)
+    cores = _vector.vector.to_list(x)
+    d = _cp.deepcopy(x.d)
+    n = _cp.deepcopy(x.n)
+    r = _cp.deepcopy(x.r)
+
+    idx = _np.empty(len(order))
+    idx[order] = _np.arange(len(order))
+    eps /= d**1.5 
+    # ^Numerical evidence suggests that eps = eps/d may be sufficient, however I can only prove correctness
+    #  for this choice of global-to-local conversion factor.
+    assert len(order) > d-1, 'ORDER must have at least D elements for a D-dimensional tensor'
+
+    # RL-orthogonalise x
+    for kk in xrange(d-1, 1, -1): ##########################################
+        new_shape = [r[kk], n[kk]*r[kk+1]]
+        Q, R = _np.linalg.qr(_reshape(cores[kk], new_shape).T)
+        tr = min(new_shape)
+        cores[kk] = _reshape(Q.T, [tr, n[kk], r[kk+1]])
+        tmp = _reshape(cores[kk-1], [r[kk-1]*n[kk-1], r[kk]])
+        tmp = _np.dot(tmp, R.T)
+        cores[kk-1] = _reshape(tmp, [r[kk-1], n[kk-1], tr])
+        r[kk] = tr
+    k = 0
+    while (True):
+        # Find next inversion
+        nk = k
+        while (nk < d-1) and (idx[nk] < idx[nk+1]):
+            nk += 1
+        if (nk == d-1):
+            break
+
+        # Move orthogonal centre there
+        for kk in xrange(k, nk-1): #############
+            new_shape = [r[kk]*n[kk], r[kk+1]]
+            Q, R = _np.linalg.qr(_reshape(cores[kk], new_shape))
+            tr = min(new_shape)
+            new_shape = [r[kk], n[kk], tr]
+            cores[kk] = _reshape(Q, new_shape)
+            tmp = _reshape(cores[kk+1], [r[kk+1], n[kk+1]*r[kk+2]])
+            tmp = _np.dot(R, tmp)
+            cores[kk+1] = _reshape(tmp, [tr, n[kk+1], r[kk+2]])
+            r[kk+1] = tr
+        k = nk
+
+        # Swap dimensions
+        tmp = _reshape(cores[k], [r[k]*n[k], r[k+1]])
+        tmp = _np.dot(tmp, _reshape(cores[k+1], [r[k+1], n[k+1]*r[k+2]]))
+        c = _reshape(tmp, [r[k], n[k], n[k+1], r[k+2]])
+        c = _np.transpose(c, [0, 2, 1, 3])
+        tmp = _reshape(c, [r[k]*n[k+1], n[k]*r[k+2]])
+        U, S, Vt = _np.linalg.svd(tmp, full_matrices=False)
+        r[k+1] = max(_my_chop2(S, _np.linalg.norm(S)*eps), 1)
+        lenS = len(S)
+        tmp = U[:, :lenS]*S # multiplication by diagonal matrix
+        cores[k] = _reshape(tmp[:, :r[k+1]], [r[k], n[k+1], r[k+1]])
+        cores[k+1] = _reshape(Vt[:r[k+1], :], [r[k+1], n[k], r[k+2]])
+        idx[[k, k+1]] = idx[[k+1, k]]
+        n[[k, k+1]] = n[[k+1, k]]
+        k = max(k-1, 0) ##################
+    # Parse output
+    if return_cores:
+        return cores
+    return _vector.vector.from_list(cores)
+    
+if __name__ == '__main__':
+    pass
