@@ -557,9 +557,6 @@ class vector(object):
     def alloc_core(self):
         self.core = _np.zeros((self.ps[self.d] - 1,), dtype=_np.float)
     
-    def xxx(self):
-        return 1
-        
     def copy(self):
         c = vector()
         c.core = self.core.copy()
