@@ -37,8 +37,6 @@ def configuration(parent_package='', top_path=None):
     config.add_library(
         'expokit',
         sources=expokit_src,
-        f2py_options=[' --debug-capi']
-        #extra_compile_args=[' -O0 -g -fcheck=all,no-array-temps -fbacktrace -ffpe-trap=zero,overflow,underflow'],
     )
     config.add_extension(
         'dyn_tt',
@@ -53,8 +51,6 @@ def configuration(parent_package='', top_path=None):
             'expokit',
             'mytt',
         ],
-        # extra_compile_args=[' -O0 -g -fcheck=all,no-array-temps -fbacktrace -ffpe-trap=zero,overflow,underflow'],
-        # f2py_options=[' --debug-capi'],
     )
 
     return config
