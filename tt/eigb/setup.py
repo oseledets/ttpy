@@ -25,7 +25,6 @@ def configuration(parent_package='', top_path=None):
         'primme',
         sources=[join(PRIMME_DIR, '*.c')] + [join(PRIMME_DIR, '*.f')],
         include_dirs=['.'],
-        #extra_compile_args=[' -O0 -g -fcheck=all,no-array-temps -fbacktrace -ffpe-trap=zero,overflow,underflow'],
     )
     config.add_extension(
         'tt_eigb',
@@ -40,7 +39,6 @@ def configuration(parent_package='', top_path=None):
             'mytt',
             'print_lib',
         ],
-        #extra_compile_args=[' -O0 -g -fcheck=all,no-array-temps -fbacktrace -ffpe-trap=zero,overflow,underflow'],
     )
 
     return config
