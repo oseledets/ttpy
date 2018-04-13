@@ -212,7 +212,7 @@ def min_tens(tens, rmax=10, nswp=10, verb=True, smooth_fun=None):
         ind_cur = np.argmin(cry.flatten("F"))
         if lm > min_cur:
             lm = min_cur
-            x_full = J[ind_cur, :]
+            x_full = np.asarray(J[ind_cur, :],dtype=int)
             val = tens[x_full]
             if verb:
                 print('New record:', val, 'Point:', x_full, 'elements seen:', elements_seen)
