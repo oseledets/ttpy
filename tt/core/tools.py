@@ -1071,7 +1071,7 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
     tt2.n = n2
     tt2.r = r2
     tt2.core = core2
-    tt2.ps = _np.cumsum(_np.concatenate((_np.ones(1), r2[:-1] * n2 * r2[1:])))
+    tt2.ps = _np.int32(_np.cumsum(_np.concatenate((_np.ones(1), r2[:-1] * n2 * r2[1:]))))
 
     tt2.n[0] = tt2.n[0] // rl
     tt2.n[d2 - 1] = tt2.n[d2 - 1] // rr
