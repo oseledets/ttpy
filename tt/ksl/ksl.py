@@ -37,8 +37,8 @@ def ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000, use_normest=True)
     :type scheme: str
     :param space: Maximal dimension of the Krylov space for the local EXPOKIT solver.
     :type space: int
-    :param use_normest: Use matrix norm estimation instead of the true 1-norm in KSL procedure
-    :type use_normest: bool
+    :param use_normest: Use matrix norm estimation instead of the true 1-norm in KSL procedure. 0 -use true norm, 1 - Higham norm estimator, 2 - fixed norm=1.0 (for testing purposes only)
+    :type use_normest: int, default: 1
     :rtype: tensor
 
     :Example:
@@ -71,7 +71,7 @@ def ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000, use_normest=True)
     else:
         tp = 1
 
-    usenrm = 1 if use_normest else 0
+    usenrm = int(use_normest)
 
     # Check for dtype
     y = tt.vector()
