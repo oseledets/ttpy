@@ -8,7 +8,7 @@ python module dyn_tt
             
             subroutine deallocate_result ! in tt_eigb.f90:tt_block_eig
             end subroutine deallocate_result
-            subroutine tt_ksl(d,n,m,ra,cra,cry0,ry,tau,rmax,kickrank,nswp,verb, typ0, order0) 
+            subroutine tt_ksl(d,n,m,ra,cra,cry0,ry,tau,rmax,kickrank,nswp,verb, typ0, order0, usenrm0) 
                 integer intent(in) :: d
                 integer dimension(*),intent(in) :: n
                 integer dimension(*),intent(in) :: m
@@ -23,10 +23,11 @@ python module dyn_tt
                 integer, optional,intent(in) :: verb
                 integer, optional, intent(in) :: typ0 
                 integer, optional, intent(in) :: order0
+                integer, optional, intent(in) :: usenrm0
             end subroutine tt_ksl
             
 
-            subroutine ztt_ksl(d,n,m,ra,cra,cry0,ry,tau,rmax,kickrank,nswp,verb, typ0, order0) 
+            subroutine ztt_ksl(d,n,m,ra,cra,cry0,ry,tau,rmax,kickrank,nswp,verb, typ0, order0, usenrm0) 
                 integer intent(in) :: d
                 integer dimension(*),intent(in) :: n
                 integer dimension(*),intent(in) :: m
@@ -41,6 +42,7 @@ python module dyn_tt
                 integer, optional, intent(in) :: verb
                 integer, optional, intent(in) :: typ0 
                 integer, optional, intent(in) :: order0
+                integer, optional, intent(in) :: usenrm0
             end subroutine ztt_ksl         
         end module dyn_tt
         module dyn_diag_tt ! 

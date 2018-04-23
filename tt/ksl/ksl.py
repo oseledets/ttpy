@@ -4,7 +4,7 @@ import numpy as np
 from . import dyn_tt
 import tt
 
-def ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000):
+def ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000, use_normest=1):
     """ Dynamical tensor-train approximation based on projector splitting
         This function performs one step of dynamical tensor-train approximation
         for the equation
@@ -37,6 +37,8 @@ def ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000):
     :type scheme: str
     :param space: Maximal dimension of the Krylov space for the local EXPOKIT solver.
     :type space: int
+    :param use_normest: Use matrix norm estimation instead of the true 1-norm in KSL procedure. 0 -use true norm, 1 - Higham norm estimator, 2 - fixed norm=1.0 (for testing purposes only)
+    :type use_normest: int, default: 1
     :rtype: tensor
 
     :Example:
@@ -68,6 +70,9 @@ def ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000):
         tp = 2
     else:
         tp = 1
+
+    usenrm = int(use_normest)
+
     # Check for dtype
     y = tt.vector()
     if np.iscomplex(A.tt.core).any() or np.iscomplex(y0.core).any():
@@ -85,7 +90,9 @@ def ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000):
             10,
             verb,
             tp,
-            space)
+            space,
+            usenrm
+        )
         y.core = dyn_tt.dyn_tt.zresult_core.copy()
     else:
         A.tt.core = np.real(A.tt.core)
@@ -104,7 +111,8 @@ def ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000):
             10,
             verb,
             tp,
-            space
+            space,
+            usenrm
             )
         y.core = dyn_tt.dyn_tt.dresult_core.copy()
     dyn_tt.dyn_tt.deallocate_result()
@@ -178,6 +186,7 @@ def diag_ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000):
         tp = 2
     else:
         tp = 1
+    
     # Check for dtype
     y = tt.vector()
     if np.iscomplex(A.core).any() or np.iscomplex(y0.core).any():
