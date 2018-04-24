@@ -579,14 +579,12 @@ class vector(object):
         return r
 
     def qtt_fft1(self,tol): 
-        """
-        A python translation of the Matlab function "qtt_fft1" in Ivan Oseledets' project TT-Toolbox(https://github.com/oseledets/TT-Toolbox)
-
-        Discrete Fourier Transform in the QTT format, 1D function y = qtt_fft1(x, tol)
-        Computes the one-dimensional DFT of the vector x in the QTT format with
-        the approximation tolerance tol.
-        Returns the frequency bits in the correct ordering. The tail ranks
-        (if ~=1) will be reversed.
+        """ Compute 1D discrete Fourier Transform in the QTT format.
+        :param tol: error tolerance.
+        :type tol: float 
+        :returns: QTT-vector of FFT coefficients. 
+ 
+        This is a python translation of the Matlab function "qtt_fft1" in Ivan Oseledets' project TT-Toolbox(https://github.com/oseledets/TT-Toolbox)
        
         See S. Dolgov, B. Khoromskij, D. Savostyanov, 
         Superfast Fourier transform using QTT approximation,
@@ -658,14 +656,14 @@ class vector(object):
                 
             y[0] = _np.reshape(y[0], (r[0],2, r[1]), order='F' )
         
-        ## FFT on the first block
+        # FFT on the first block
         y[0]=_np.transpose(y[0],(1,0,2))
         y[0]=_np.reshape(y[0],(2, r[0]*r[1]),order='F')
         y[0]= _np.dot( _np.array([[1,1],[1,-1]]), y[0])/_np.sqrt(2)
         y[0]=_np.reshape(y[0],(2, r[0], r[1]),order='F')
         y[0]=_np.transpose(y[0],(1,0,2))
         
-        ## Reverse the train
+        # Reverse the train
         y2=[None]*d
         for i in range(d):
             y2[d-i-1]= _np.transpose(y[i],(2,1,0))
