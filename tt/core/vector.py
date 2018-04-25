@@ -3,11 +3,10 @@ from six.moves import xrange
 import numpy as _np
 from numbers import Number as _Number
 from . import tt_f90 as _tt_f90
+from tt.core.utils import my_chop2
 import warnings
 
-# The main class for working with vectors in the TT-format
-
-
+# The main class for working with vectors in the TT-format 
 
 class vector(object):
     """Construct new TT-vector.
@@ -578,7 +577,100 @@ class vector(object):
         D = b ** 2 - 4 * a * c
         r = 0.5 * (-b + _np.sqrt(D)) / a
         return r
+
+    def qtt_fft1(self,tol): 
+        """ Compute 1D discrete Fourier Transform in the QTT format.
+        :param tol: error tolerance.
+        :type tol: float 
+        :returns: QTT-vector of FFT coefficients. 
+ 
+        This is a python translation of the Matlab function "qtt_fft1" in Ivan Oseledets' project TT-Toolbox(https://github.com/oseledets/TT-Toolbox)
+       
+        See S. Dolgov, B. Khoromskij, D. Savostyanov, 
+        Superfast Fourier transform using QTT approximation,
+        J. Fourier Anal. Appl., 18(5), 2012.
+        """
+    
+        d = self.d 
+        r = self.r 
+        y = self.to_list(self)   
         
+        for i in range(d-1, 0, -1):
+            
+            r1= y[i].shape[0]   # head r
+            r2= y[i].shape[2]   # tail r
+            crd2 = _np.zeros((r1, 2, r2), order='F',  dtype=complex) 
+            # last block +-
+            crd2[:,0,:]= (y[i][:,0,:] + y[i][:,1,:])/_np.sqrt(2)
+            crd2[:,1,:]= (y[i][:,0,:] - y[i][:,1,:])/_np.sqrt(2)
+            # last block twiddles
+            y[i]= _np.zeros((r1*2, 2, r2),order='F',dtype=complex) 
+            y[i][0:r1,    0, 0:r2]= crd2[:,0,:]
+            y[i][r1:r1*2, 1, 0:r2]= crd2[:,1,:]
+            #1..i-1 block twiddles and qr
+            rv=1; 
+            
+            for j in range(0, i):
+            
+                cr=y[j]
+                r1= cr.shape[0]   # head r
+                r2= cr.shape[2]   # tail r
+                if j==0:
+                    r[j]=r1
+                    r[j+1] = r2*2
+                    y[j] = _np.zeros((r[j], 2, r[j+1]),order='F',dtype=complex)
+                    y[j][0:r1, :, 0:r2] = cr 
+                    y[j][0:r1, 0, r2 :r[j+1]] = cr[:,0,:] 
+                    y[j][0:r1, 1, r2 :r[j+1]] = _np.exp(-2*_np.pi*1j/(2**(i-j+1)))*cr[:,1,:]
+                else:
+                    r[j]=r1*2
+                    r[j+1] = r2*2
+                    y[j] = _np.zeros((r[j], 2, r[j+1]),order='F',dtype=complex)
+                    y[j][0:r1, :, 0:r2] = cr 
+                    y[j][r1:r[j], 0, r2 :r[j+1]] = cr[:,0,:] 
+                    y[j][r1:r[j], 1, r2 :r[j+1]] = _np.exp(-2*_np.pi*1j/(2**(i-j+1)))*cr[:,1,:]
+                        
+                    
+                y[j] = _np.reshape(y[j],( r[j], 2*r[j+1]),order='F')
+                y[j] = _np.dot(rv,y[j])
+                r[j] = y[j].shape[0]
+                y[j] = _np.reshape(y[j],( 2*r[j],  r[j+1]),order='F')
+                
+                y[j], rv = _np.linalg.qr(y[j])
+                y[j] = _np.reshape(y[j], (r[j], 2, rv.shape[0]),order='F')
+            
+            y[i] = _np.reshape(y[i], (r[i], 2*r[i+1]),order='F')  
+            y[i] = _np.dot(rv,y[i])
+            r[i] = rv.shape[0]
+            # backward svd
+            for j in range(i, 0,-1):
+                u,s,v = _np.linalg.svd(y[j], full_matrices=False)
+                rnew = my_chop2(s, _np.linalg.norm(s)*tol/_np.sqrt(i))
+                u=_np.dot(u[:, 0:rnew], _np.diag(s[0:rnew]))
+                v= v[0:rnew, :] 
+                y[j] = _np.reshape(v, (rnew, 2, r[j+1]),order='F' )
+                y[j-1] = _np.reshape(y[j-1], (r[j-1]*2,r[j] ),order='F' )
+                y[j-1] = _np.dot(y[j-1], u)
+                r[j] = rnew
+                y[j-1] = _np.reshape(y[j-1], (r[j-1],r[j]*2 ),order='F' )
+                
+            y[0] = _np.reshape(y[0], (r[0],2, r[1]), order='F' )
+        
+        # FFT on the first block
+        y[0]=_np.transpose(y[0],(1,0,2))
+        y[0]=_np.reshape(y[0],(2, r[0]*r[1]),order='F')
+        y[0]= _np.dot( _np.array([[1,1],[1,-1]]), y[0])/_np.sqrt(2)
+        y[0]=_np.reshape(y[0],(2, r[0], r[1]),order='F')
+        y[0]=_np.transpose(y[0],(1,0,2))
+        
+        # Reverse the train
+        y2=[None]*d
+        for i in range(d):
+            y2[d-i-1]= _np.transpose(y[i],(2,1,0))
+        
+        y=self.from_list(y2)
+        
+        return y        
         
 def _hdm(a, b):
     c = vector()
