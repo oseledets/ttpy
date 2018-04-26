@@ -325,15 +325,13 @@ class vector(object):
                 self.n, self.r, self.ps, _np.real(
                     self.core), fname)
 
-    def full(self):
+    def full(self, asvector=False):
         """Returns full array (uncompressed).
-
+        
         .. warning::
            TT compression allows to keep in memory tensors much larger than ones PC can handle in
            raw format. Therefore this function is quite unsafe; use it at your own risk.
-
        :returns: numpy.ndarray -- full tensor.
-
        """
         # Generate correct size vector
         sz = self.n.copy()
@@ -349,6 +347,8 @@ class vector(object):
                 self.n, self.r, self.ps, _np.real(
                     self.core), _np.prod(sz))
         a = a.reshape(sz, order='F')
+        if asvector:
+            a=a.flatten(order='F')
         return a
 
     def __add__(self, other):
@@ -379,7 +379,7 @@ class vector(object):
         return other + self
 
     #@profile
-    def round(self, eps, rmax=1000000):
+    def round(self, eps=1e-14, rmax=1000000):
         """Applies TT rounding procedure to the TT-vector and **returns rounded tensor**.
 
         :param eps: Rounding accuracy.
