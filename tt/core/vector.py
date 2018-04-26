@@ -327,11 +327,13 @@ class vector(object):
 
     def full(self, asvector=False):
         """Returns full array (uncompressed).
-        
+
         .. warning::
            TT compression allows to keep in memory tensors much larger than ones PC can handle in
            raw format. Therefore this function is quite unsafe; use it at your own risk.
+
        :returns: numpy.ndarray -- full tensor.
+
        """
         # Generate correct size vector
         sz = self.n.copy()
