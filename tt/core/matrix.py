@@ -49,7 +49,14 @@ class matrix(object):
             self.m = a.m.copy()
             self.tt = a.tt.copy()
             return
-
+    @property
+    def r(self):
+        return self.tt.r
+    
+    @property
+    def d(self):
+        return self.tt.d
+    
     @staticmethod
     def from_list(a):
         d = len(a)  # Number of cores
