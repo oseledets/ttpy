@@ -307,7 +307,7 @@ class matrix(object):
     def norm(self):
         return self.tt.norm()
 
-    def round(self, eps, rmax=100000):
+    def round(self, eps=1e-14, rmax=100000):
         """ Computes an approximation to a
             TT-matrix in with accuracy EPS
         """

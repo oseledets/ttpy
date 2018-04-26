@@ -379,7 +379,7 @@ class vector(object):
         return other + self
 
     #@profile
-    def round(self, eps, rmax=1000000):
+    def round(self, eps=1e-14, rmax=1000000):
         """Applies TT rounding procedure to the TT-vector and **returns rounded tensor**.
 
         :param eps: Rounding accuracy.
