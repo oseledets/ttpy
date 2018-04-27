@@ -6,14 +6,12 @@ from . import tt_f90 as _tt_f90
 from tt.core.utils import my_chop2
 import warnings
 
-# The main class for working with vectors in the TT-format 
 
 class vector(object):
-    """Construct new TT-vector.
-
-    When called with no arguments, creates dummy object which can be filled from outside.
-
-    When ``a`` is specified, computes approximate decomposition of array ``a`` with accuracy ``eps``:
+    """The main class for working with vectors in the TT-format. It constructs
+    new TT-vector. When called with no arguments, creates dummy object which
+    can be filled from outside. When ``a`` is specified, computes approximate
+    decomposition of array ``a`` with accuracy ``eps``:
 
     :param a: A tensor to approximate.
     :type a: ndarray
@@ -380,7 +378,6 @@ class vector(object):
             return self
         return other + self
 
-    #@profile
     def round(self, eps=1e-14, rmax=1000000):
         """Applies TT rounding procedure to the TT-vector and **returns rounded tensor**.
 
