@@ -13,7 +13,7 @@ from .tools import ones, rand, linspace, sin, cos, delta, stepfun, unit, xfun
 
 # utility
 from . import utils
-
+from .tools import permute
 
 
 
