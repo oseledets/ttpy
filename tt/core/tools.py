@@ -241,8 +241,10 @@ def ones(n, d=None):
     return c
 
 
-def rand(n, d=None, r=2):
-    """Generate a random d-dimensional TT-vector with ranks ``r``."""
+def rand(n, d=None, r=2, samplefunc=_np.random.randn):
+    """Generate a random d-dimensional TT-vector with ranks ``r``.
+    Distribution to sample cores is provided by the samplefunc.
+    """
     n0 = _np.asanyarray(n, dtype=_np.int32)
     r0 = _np.asanyarray(r, dtype=_np.int32)
     if d is None:
@@ -258,7 +260,7 @@ def rand(n, d=None, r=2):
     c.n = n0
     c.r = r0
     c.get_ps()
-    c.core = _np.random.randn(c.ps[d] - 1)
+    c.core = samplefunc(c.ps[d] - 1)
     return c
 
 
