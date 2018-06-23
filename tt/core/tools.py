@@ -244,6 +244,7 @@ def ones(n, d=None):
 def rand(n, d=None, r=2, samplefunc=_np.random.randn):
     """Generate a random d-dimensional TT-vector with ranks ``r``.
     Distribution to sample cores is provided by the samplefunc.
+    Default is to sample from normal distribution.
     """
     n0 = _np.asanyarray(n, dtype=_np.int32)
     r0 = _np.asanyarray(r, dtype=_np.int32)
