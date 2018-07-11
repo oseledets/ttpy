@@ -9,10 +9,10 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
     """ Approximate linear system solution in the tensor-train (TT) format
         using Alternating minimal energy (AMEN approach)
 
+
     :References: Sergey Dolgov, Dmitry. Savostyanov
 
                  Paper 1: http://arxiv.org/abs/1301.6068
-
                  Paper 2: http://arxiv.org/abs/1304.1222
 
     :param A: Matrix in the TT-format
@@ -23,6 +23,14 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
     :type x0: tensor
     :param eps: Accuracy.
     :type eps: float
+    :param kickrank: compression rank of the residual Z, i.e. enrichment size [4]
+    :param nswp: maximal number of sweeps [50]
+    :param local_prec: local preconditioner: '' (no prec.), 'ljacobi', 'cjacobi', 'rjacobi' ['']
+    :param local_iters: dimension of local gmres [40]
+    :param local_restart: dimension of local gmres [40]
+    :param trunc_norm: truncate in either Frob. ('fro'), or residual norm ('residual') ['residual']
+    :param max_full_size: maximal size of the local matrix for the full solver [50]
+    :param verb: 0 -- no info output, 1 -- print info output
 
     :Example:
 
@@ -81,4 +89,4 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
         x.core = amen_f90.amen_f90.core.copy()
     amen_f90.amen_f90.deallocate_result()
     x.get_ps()
-    return x
+    return tt.vector.from_list(tt.tensor.to_list(x))
