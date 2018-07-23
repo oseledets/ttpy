@@ -13,6 +13,7 @@ from .utils import ind2sub as _ind2sub
 from .utils import gcd as _gcd
 from .utils import my_chop2 as _my_chop2
 
+
 # Some binary operations (put aside to wrap something in future)
 # TT-matrix by a TT-vector product
 
@@ -33,9 +34,9 @@ def matvec(a, b, compression=False):
             acrs[i],
             (a.tt.r[i],
              a.n[i],
-                a.m[i],
-                a.tt.r[
-                i + 1]),
+             a.m[i],
+             a.tt.r[
+                 i + 1]),
             order='F')
         acr = acr.transpose([3, 0, 1, 2])  # a(R_{i+1}, R_i, n_i, m_i)
         bcr = bcrs[i].transpose([1, 0, 2])  # b(m_i, r_i, r_{i+1})
@@ -51,7 +52,7 @@ def matvec(a, b, compression=False):
         v = _np.array([[1.0]])
         for i in xrange(d):
             ccr = get_core(i)
-            #print(str(ccr.shape) + " -> "),
+            # print(str(ccr.shape) + " -> "),
             # minimal loss compression
             ccr = _np.tensordot(v, ccr, (1, 0))
             rl, n, rr = ccr.shape
@@ -89,7 +90,7 @@ def matvec(a, b, compression=False):
                         (rl * n, rr), order='F'), full_matrices=False)
                 ss = _np.cumsum(s[::-1])[::-1]
                 newr = max(min([r for r in range(ss.size) if ss[
-                           r] <= compression] + [min(rl * n, rr)]), 1)
+                    r] <= compression] + [min(rl * n, rr)]), 1)
                 # print("Rank % 4d replaced by % 4d" % (rr, newr))
                 ccr = u[:, :newr].reshape((rl, n, newr), order='F')
                 v = _np.dot(_np.diag(s[:newr]), v[:newr, :])
@@ -181,6 +182,75 @@ def mkron(a, *args):
     return c
 
 
+def zkron(ttA, ttB):
+    """
+    Do kronecker product between cores of two matrices ttA and ttB.
+    Look about kronecker at: https://en.wikipedia.org/wiki/Kronecker_product
+    For details about operation refer: https://arxiv.org/abs/1802.02839
+    :param ttA: first TT-matrix;
+    :param ttB: second TT-matrix;
+    :return: TT-matrix in z-order
+    """
+    Al = _matrix.matrix.to_list(ttA)
+    Bl = _matrix.matrix.to_list(ttB)
+    Hl = [_np.kron(B, A) for (A, B) in zip(Al, Bl)]
+    return _matrix.matrix.from_list(Hl)
+
+
+def zkronv(ttA, ttB):
+    """
+    Do kronecker product between vectors ttA and ttB.
+    Look about kronecker at: https://en.wikipedia.org/wiki/Kronecker_product
+    For details about operation refer: https://arxiv.org/abs/1802.02839
+    :param ttA: first TT-vector;
+    :param ttB: second TT-vector;
+    :return: operation result in z-order
+    """
+    Al = _vector.vector.to_list(ttA)
+    Bl = _vector.vector.to_list(ttB)
+    Hl = [_np.kron(B, A) for (A, B) in zip(Al, Bl)]
+    return _vector.vector.from_list(Hl)
+
+
+def zmeshgrid(d):
+    """
+    Returns a meshgrid like np.meshgrid but in z-order
+    :param d: you'll get 4**d nodes in meshgrid
+    :return: xx, yy in z-order
+    """
+    lin = xfun(2, d)
+    one = ones(2, d)
+
+    xx = zkronv(lin, one)
+    yy = zkronv(one, lin)
+
+    return xx, yy
+
+
+def zaffine(c0, c1, c2, d):
+    """
+    Generate linear function c0 + c1 ex + c2 ey in z ordering with d cores in QTT
+    :param c0:
+    :param c1:
+    :param c2:
+    :param d:
+    :return:
+    """
+
+    xx, yy = zmeshgrid(d)
+    Hx, Hy = _vector.vector.to_list(xx), _vector.vector.to_list(yy)
+
+    Hs = _cp.deepcopy(Hx)
+    Hs[0][:, :, 0] = c1 * Hx[0][:, :, 0] + c2 * Hy[0][:, :, 0]
+    Hs[-1][1, :, :] = c1 * Hx[-1][1, :, :] + (c0 + c2 * Hy[-1][1, :, :])
+
+    d = len(Hs)
+    for k in range(1, d - 1):
+        Hs[k][1, :, 0] = c1 * Hx[k][1, :, 0] + c2 * Hy[k][1, :, 0]
+
+    return _vector.vector.from_list(Hs)
+
+
 def concatenate(*args):
     """Concatenates given TT-vectors.
 
@@ -197,7 +267,7 @@ def concatenate(*args):
     result = kron(_vector.vector(tmp), args[0])
     for i in range(1, len(args)):
         result += kron(_vector.vector(_np.array([[0] * i +
-                                         [1] + [0] * (len(args) - i - 1)])), args[i])
+                                                 [1] + [0] * (len(args) - i - 1)])), args[i])
     return result
 
 
@@ -222,6 +292,7 @@ def sum(a, axis=-1):
         crs.pop(ax)
         d -= 1
     return _vector.vector.from_list(crs)
+
 
 # Basic functions for the arrays creation
 
@@ -281,13 +352,14 @@ def eye(n, d=None):
     c.tt.alloc_core()
     for i in xrange(c.tt.d):
         c.tt.core[
-            c.tt.ps[i] -
-            1:c.tt.ps[
-                i +
-                1] -
-            1] = _np.eye(
+        c.tt.ps[i] -
+        1:c.tt.ps[
+              i +
+              1] -
+          1] = _np.eye(
             c.n[i]).flatten()
     return c
+
 
 # Arbitrary multilevel Toeplitz _matrix
 def Toeplitz(x, d=None, D=None, kind='F'):
@@ -608,9 +680,9 @@ def sin(d, alpha=1.0, phase=0.0):
         cur_core[0, 0, :] = [1.0, 0.0]
         cur_core[1, 0, :] = [0.0, 1.0]
         cur_core[
-            0,
-            1,
-            :] = [
+        0,
+        1,
+        :] = [
             _math.cos(
                 alpha *
                 2 ** i),
@@ -618,9 +690,9 @@ def sin(d, alpha=1.0, phase=0.0):
                 alpha *
                 2 ** i)]
         cur_core[1,
-                 1,
-                 :] = [-_math.sin(alpha * 2 ** i),
-                       _math.cos(alpha * 2 ** i)]
+        1,
+        :] = [-_math.sin(alpha * 2 ** i),
+              _math.cos(alpha * 2 ** i)]
         cr.append(cur_core)
     cur_core = _np.zeros([2, 2, 1], dtype=_np.float)
     cur_core[0, :, 0] = [0.0, _math.sin(alpha * 2 ** (d - 1))]
@@ -762,6 +834,7 @@ def qshift(d):
     for _ in xrange(1, d):
         x.append(_np.array([1.0, 0.0]).reshape((1, 2, 1)))
     return Toeplitz(_vector.vector.from_list(x), kind='L')
+
 
 ####### Recent update #######
 def unit(n, d=None, j=None, tt_instance=True):
@@ -949,7 +1022,7 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
                 tt1[i1 + 1] = _np.reshape(curcr12,
                                           (r1[i1 + 1],
                                            n1[i1 + 1],
-                                              r1[i1 + 2]),
+                                           r1[i1 + 2]),
                                           order='F')
             # Actually merge is here
             curcr1 = _np.reshape(
@@ -957,7 +1030,7 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
             curcr2 = _np.dot(curcr2, curcr1)  # size r21*nold, dn*r22
             if ismatrix:  # Permute if we are working with tt_matrix
                 curcr2 = _np.reshape(curcr2, (r2[i2], n2_n[i2], n2_m[i2], n1_n[
-                                     i1], n1_m[i1], r1[i1 + 1]), order='F')
+                    i1], n1_m[i1], r1[i1 + 1]), order='F')
                 curcr2 = _np.transpose(curcr2, [0, 1, 3, 2, 4, 5])
                 # Update the "matrix" sizes
                 n2_n[i2] = n2_n[i2] * n1_n[i1]
@@ -984,9 +1057,9 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
                                          (r1[i1],
                                           n12_n,
                                           n1_n[i1] // n12_n,
-                                             n12_m,
-                                             n1_m[i1] // n12_m,
-                                             r1[i1 + 1]),
+                                          n12_m,
+                                          n1_m[i1] // n12_m,
+                                          r1[i1 + 1]),
                                          order='F')
                     curcr1 = _np.transpose(curcr1, [0, 1, 3, 2, 4, 5])
                     # Update the _matrix sizes of tt2 and tt1
@@ -1000,7 +1073,7 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
                 curcr1 = _np.reshape(
                     curcr1, (r1[i1] * n12, (n1[i1] // n12) * r1[i1 + 1]), order='F')
                 [u, s, v] = _np.linalg.svd(curcr1, full_matrices=False)
-                r = _my_chop2(s, eps * _np.linalg.norm(s) / (d2 - 1)**0.5)
+                r = _my_chop2(s, eps * _np.linalg.norm(s) / (d2 - 1) ** 0.5)
                 u = u[:, :r]
                 v = v.T
                 v = v[:, :r] * s[:r]
@@ -1034,7 +1107,7 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
                     curcr1 = _np.dot(curcr1, cr1new)
                     if ismatrix:  # Permutes and _matrix size updates
                         curcr1 = _np.reshape(curcr1, (r1[i1], n1_n[i1], n1_m[i1], n1_n[
-                                             i1new], n1_m[i1new], r1[i1new + 1]), order='F')
+                            i1new], n1_m[i1new], r1[i1new + 1]), order='F')
                         curcr1 = _np.transpose(curcr1, [0, 1, 3, 2, 4, 5])
                         n1_n[i1] = n1_n[i1] * n1_n[i1new]
                         n1_m[i1] = n1_m[i1] * n1_m[i1new]
@@ -1087,47 +1160,48 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
     else:
         return tt2
 
+
 def permute(x, order, eps=None, return_cores=False):
     '''
     Permute dimensions (python translation of original matlab code)
        Y = permute(X, ORDER, EPS) permutes the dimensions of the TT-tensor X
        according to ORDER, delivering a result at relative accuracy EPS. This
-       function is equivalent to 
-          Y = tt_tensor(permute(reshape(full(X), X.n'),ORDER), EPS) 
+       function is equivalent to
+          Y = tt_tensor(permute(reshape(full(X), X.n'),ORDER), EPS)
        but avoids the conversion to the full format.
-    
-    
+
+
      Simon Etter, Summer 2015
      Seminar of Applied Mathematics, ETH Zurich
-    
-    
+
+
      TT-Toolbox 2.2, 2009-2012
-    
+
     This is TT Toolbox, written by Ivan Oseledets et al. Institute of
     Numerical Mathematics, Moscow, Russia webpage:
     http://spring.inm.ras.ru/osel
-    
+
     For all questions, bugs and suggestions please mail
-    ivan.oseledets@gmail.com 
+    ivan.oseledets@gmail.com
     ---------------------------
 
-     This code basically performs insertion sort on the TT dimensions: 
+     This code basically performs insertion sort on the TT dimensions:
       for k = 2:d
-         Bubble the kth dimension to the right (according to ORDER) position in the first 1:k dimensions. 
-    
+         Bubble the kth dimension to the right (according to ORDER) position in the first 1:k dimensions.
+
      The current code could be optimised at the following places:
-      - Instead of initially orthogonalising with respect to the first two vertices, 
-        orthogonalise directly with respect to the first inversion. 
-      - When performing the SVD, check on which side of the current position the 
+      - Instead of initially orthogonalising with respect to the first two vertices,
+        orthogonalise directly with respect to the first inversion.
+      - When performing the SVD, check on which side of the current position the
         next swap will occur and directly establish the appropriate orthogonality
-        (current implementation always assumes we move left). 
+        (current implementation always assumes we move left).
      Both changes reduce the number of QRs by at most O(d) and are therefore likely
-     to produce negligible speedup while rendering the code more complicated. 
+     to produce negligible speedup while rendering the code more complicated.
      '''
 
     def _reshape(tensor, shape):
         return _np.reshape(tensor, shape, order='F')
-    
+
     # Parse input
     if eps is None:
         eps = _np.spacing(1)
@@ -1138,62 +1212,63 @@ def permute(x, order, eps=None, return_cores=False):
 
     idx = _np.empty(len(order))
     idx[order] = _np.arange(len(order))
-    eps /= d**1.5 
+    eps /= d ** 1.5
     # ^Numerical evidence suggests that eps = eps/d may be sufficient, however I can only prove correctness
     #  for this choice of global-to-local conversion factor.
-    assert len(order) > d-1, 'ORDER must have at least D elements for a D-dimensional tensor'
+    assert len(order) > d - 1, 'ORDER must have at least D elements for a D-dimensional tensor'
 
     # RL-orthogonalise x
-    for kk in xrange(d-1, 1, -1): ##########################################
-        new_shape = [r[kk], n[kk]*r[kk+1]]
+    for kk in xrange(d - 1, 1, -1):  ##########################################
+        new_shape = [r[kk], n[kk] * r[kk + 1]]
         Q, R = _np.linalg.qr(_reshape(cores[kk], new_shape).T)
         tr = min(new_shape)
-        cores[kk] = _reshape(Q.T, [tr, n[kk], r[kk+1]])
-        tmp = _reshape(cores[kk-1], [r[kk-1]*n[kk-1], r[kk]])
+        cores[kk] = _reshape(Q.T, [tr, n[kk], r[kk + 1]])
+        tmp = _reshape(cores[kk - 1], [r[kk - 1] * n[kk - 1], r[kk]])
         tmp = _np.dot(tmp, R.T)
-        cores[kk-1] = _reshape(tmp, [r[kk-1], n[kk-1], tr])
+        cores[kk - 1] = _reshape(tmp, [r[kk - 1], n[kk - 1], tr])
         r[kk] = tr
     k = 0
     while (True):
         # Find next inversion
         nk = k
-        while (nk < d-1) and (idx[nk] < idx[nk+1]):
+        while (nk < d - 1) and (idx[nk] < idx[nk + 1]):
             nk += 1
-        if (nk == d-1):
+        if (nk == d - 1):
             break
 
         # Move orthogonal centre there
-        for kk in xrange(k, nk-1): #############
-            new_shape = [r[kk]*n[kk], r[kk+1]]
+        for kk in xrange(k, nk - 1):  #############
+            new_shape = [r[kk] * n[kk], r[kk + 1]]
             Q, R = _np.linalg.qr(_reshape(cores[kk], new_shape))
             tr = min(new_shape)
             new_shape = [r[kk], n[kk], tr]
             cores[kk] = _reshape(Q, new_shape)
-            tmp = _reshape(cores[kk+1], [r[kk+1], n[kk+1]*r[kk+2]])
+            tmp = _reshape(cores[kk + 1], [r[kk + 1], n[kk + 1] * r[kk + 2]])
             tmp = _np.dot(R, tmp)
-            cores[kk+1] = _reshape(tmp, [tr, n[kk+1], r[kk+2]])
-            r[kk+1] = tr
+            cores[kk + 1] = _reshape(tmp, [tr, n[kk + 1], r[kk + 2]])
+            r[kk + 1] = tr
         k = nk
 
         # Swap dimensions
-        tmp = _reshape(cores[k], [r[k]*n[k], r[k+1]])
-        tmp = _np.dot(tmp, _reshape(cores[k+1], [r[k+1], n[k+1]*r[k+2]]))
-        c = _reshape(tmp, [r[k], n[k], n[k+1], r[k+2]])
+        tmp = _reshape(cores[k], [r[k] * n[k], r[k + 1]])
+        tmp = _np.dot(tmp, _reshape(cores[k + 1], [r[k + 1], n[k + 1] * r[k + 2]]))
+        c = _reshape(tmp, [r[k], n[k], n[k + 1], r[k + 2]])
         c = _np.transpose(c, [0, 2, 1, 3])
-        tmp = _reshape(c, [r[k]*n[k+1], n[k]*r[k+2]])
+        tmp = _reshape(c, [r[k] * n[k + 1], n[k] * r[k + 2]])
         U, S, Vt = _np.linalg.svd(tmp, full_matrices=False)
-        r[k+1] = max(_my_chop2(S, _np.linalg.norm(S)*eps), 1)
+        r[k + 1] = max(_my_chop2(S, _np.linalg.norm(S) * eps), 1)
         lenS = len(S)
-        tmp = U[:, :lenS]*S # multiplication by diagonal matrix
-        cores[k] = _reshape(tmp[:, :r[k+1]], [r[k], n[k+1], r[k+1]])
-        cores[k+1] = _reshape(Vt[:r[k+1], :], [r[k+1], n[k], r[k+2]])
-        idx[[k, k+1]] = idx[[k+1, k]]
-        n[[k, k+1]] = n[[k+1, k]]
-        k = max(k-1, 0) ##################
+        tmp = U[:, :lenS] * S  # multiplication by diagonal matrix
+        cores[k] = _reshape(tmp[:, :r[k + 1]], [r[k], n[k + 1], r[k + 1]])
+        cores[k + 1] = _reshape(Vt[:r[k + 1], :], [r[k + 1], n[k], r[k + 2]])
+        idx[[k, k + 1]] = idx[[k + 1, k]]
+        n[[k, k + 1]] = n[[k + 1, k]]
+        k = max(k - 1, 0)  ##################
     # Parse output
     if return_cores:
         return cores
     return _vector.vector.from_list(cores)
-    
+
+
 if __name__ == '__main__':
     pass
