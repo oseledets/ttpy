@@ -7,13 +7,13 @@ import scipy.linalg as la
 # TT-GMRES
 
 
-def GMRES(A, x, b, eps=1e-6, maxit=100, m=20, _iteration=0, callback=None, verbose=0):
+def GMRES(A, u_0, b, eps=1e-6, maxit=100, m=20, _iteration=0, callback=None, verbose=0):
     """
     Flexible TT GMRES
     :param A: matvec(x[, eps])
-    :param x: initial vector
-    :param b: ansert
-    :param maxit: max numbr of iterations
+    :param u_0: initial vector
+    :param b: answer
+    :param maxit: max number of iterations
     :param eps: required accuracy
     :param m: number of iteration without restart
     :param _iteration: iteration counter
@@ -24,7 +24,7 @@ def GMRES(A, x, b, eps=1e-6, maxit=100, m=20, _iteration=0, callback=None, verbo
     >>> from tt import GMRES
     >>> def matvec(x, eps):
     >>>     return tt.matvec(S, x).round(eps)
-    >>> answer, res = GMRES(matvec, x_0, b, eps=1e-8)
+    >>> answer, res = GMRES(matvec, u_0, b, eps=1e-8)
     """
     maxitexceeded = False
     converged = False
@@ -36,7 +36,7 @@ def GMRES(A, x, b, eps=1e-6, maxit=100, m=20, _iteration=0, callback=None, verbo
     g = np.zeros(m)
     s = np.ones(m) * np.nan
     c = np.ones(m) * np.nan
-    v[0] = b - A(x, eps=eps)
+    v[0] = b - A(u_0, eps=eps)
     v[0] = v[0].round(eps)
     resnorm = v[0].norm()
     curr_beta = resnorm
@@ -83,13 +83,13 @@ def GMRES(A, x, b, eps=1e-6, maxit=100, m=20, _iteration=0, callback=None, verbo
 
     y = la.solve_triangular(R[:q, :q], g[:q], check_finite=False)
     for idx in range(q):
-        x += v[idx] * y[idx]
+        u_0 += v[idx] * y[idx]
 
-    x = x.round(eps)
+    u_0 = u_0.round(eps)
 
     if callback is not None:
-        callback(x)
+        callback(u_0)
 
     if converged or maxitexceeded:
-        return x, resnorm / bnorm
-    return GMRES(A, x, b, eps, maxit, m, _iteration, callback=callback, verbose=verbose)
+        return u_0, resnorm / bnorm
+    return GMRES(A, u_0, b, eps, maxit, m, _iteration, callback=callback, verbose=verbose)
