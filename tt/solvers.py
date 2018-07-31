@@ -7,10 +7,10 @@ import scipy.linalg as la
 # TT-GMRES
 
 
-def GMRES(A, x, b, eps, maxit=100, m=20, _iteration=0, callback=None, verbose=0):
+def GMRES(A, x, b, eps=1e-6, maxit=100, m=20, _iteration=0, callback=None, verbose=0):
     """
     Flexible TT GMRES
-    :param A: matvec(x, eps)
+    :param A: matvec(x[, eps])
     :param x: initial vector
     :param b: ansert
     :param maxit: max numbr of iterations
