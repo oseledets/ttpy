@@ -2,57 +2,94 @@ from __future__ import print_function, absolute_import, division
 import numpy as np
 import tt
 
+import scipy.linalg as la
+
 # TT-GMRES
 
 
-def GMRES(A, u_0, b, eps=1E-6, restart=20, verb=0):
-    """GMRES linear systems solver based on TT techniques.
-
-    A = A(x[, eps]) is a function that multiplies x by matrix.
+def GMRES(A, x, b, eps, maxit=100, m=20, _iteration=0, callback=None, verbose=0):
     """
-    do_restart = True
-    while do_restart:
-        r0 = b + A((-1) * u_0)
-        r0 = r0.round(eps)
-        beta = r0.norm()
-        bnorm = b.norm()
-        curr_beta = beta
-        if verb:
-            print("/ Initial  residual  norm: %lf; mean rank:" % beta, r0.rmean())
-        m = restart
-        V = np.zeros(m + 1, dtype=object)  # Krylov basis
-        V[0] = r0 * (1.0 / beta)
-        H = np.mat(np.zeros((m + 1, m), dtype=np.complex128, order='F'))
-        j = 0
-        while j < m and curr_beta / bnorm > eps:
-            delta = eps / (curr_beta / beta)
-            # print("Calculating new Krylov vector")
-            w = A(V[j], delta)
-            #w = w.round(delta)
-            for i in range(j + 1):
-                H[i, j] = tt.dot(w, V[i])
-                w = w + (-H[i, j]) * V[i]
-            w = w.round(delta)
-            if verb > 1:
-                print("|% 3d. New Krylov vector mean rank:" % (j + 1), w.rmean())
-            H[j + 1, j] = w.norm()
-            V[j + 1] = w * (1 / H[j + 1, j])
+    Flexible TT GMRES
+    :param A: matvec(x, eps)
+    :param x: initial vector
+    :param b: ansert
+    :param maxit: max numbr of iterations
+    :param eps: required accuracy
+    :param m: number of iteration without restart
+    :param _iteration: iteration counter
+    :param callback:
+    :param verbose: to print debug info or not
+    :return: answer, residual
 
-            Hj = H[:j + 2, :j + 1]
-            betae = np.zeros(j + 2, dtype=np.complex128)
-            betae[0] = beta
-            # solving Hj * y = beta e_1
-            y, curr_beta, rank, s = np.linalg.lstsq(Hj, betae)
-            curr_beta = curr_beta[0]
-            if verb:
-                print("|% 3d. LSTSQ residual norm:" % (j + 1), curr_beta)
-            j += 1
-        x = u_0
+    >>> from tt import GMRES
+    >>> def matvec(x, eps):
+    >>>     return tt.matvec(S, x).round(eps)
+    >>> answer, res = GMRES(matvec, x_0, b, eps=1e-8)
+    """
+    maxitexceeded = False
+    converged = False
+
+    if verbose:
+        print('GMRES(m=%d, _iteration=%d, maxit=%d)' % (m, _iteration, maxit))
+    v = np.ones((m + 1), dtype=object) * np.nan
+    R = np.ones((m, m)) * np.nan
+    g = np.zeros(m)
+    s = np.ones(m) * np.nan
+    c = np.ones(m) * np.nan
+    v[0] = b - A(x, eps=eps)
+    v[0] = v[0].round(eps)
+    resnorm = v[0].norm()
+    curr_beta = resnorm
+    bnorm = b.norm()
+    wlen = resnorm
+    q = m
+    for j in range(m):
+        _iteration += 1
+
+        delta = eps / (curr_beta / resnorm)
+
+        if verbose:
+            print("it = %d delta = " % _iteration, delta)
+
+        v[j] *= 1.0 / wlen
+        v[j + 1] = A(v[j], eps=delta)
+        for i in range(j + 1):
+            R[i, j] = tt.dot(v[j + 1], v[i])
+            v[j + 1] = v[j + 1] - R[i, j] * v[i]
+        v[j + 1] = v[j + 1].round(delta)
+
+        wlen = v[j + 1].norm()
         for i in range(j):
-            x = x + V[i] * y[i]
-        x = x.round(eps)
-        if verb:
-            print("\\ Solution mean rank:", x.rmean())
-        u_0 = x
-        do_restart = (curr_beta / bnorm > eps)
-    return x
+            r1 = R[i, j]
+            r2 = R[i + 1, j]
+            R[i, j] = c[i] * r1 - s[i] * r2
+            R[i + 1, j] = c[i] * r2 + s[i] * r1
+        denom = np.hypot(wlen, R[j, j])
+        s[j] = wlen / denom
+        c[j] = -R[j, j] / denom
+        R[j, j] = -denom
+
+        g[j] = c[j] * curr_beta
+        curr_beta *= s[j]
+
+        if verbose:
+            print("it = {}, ||r|| = {}".format(_iteration, curr_beta / bnorm))
+
+        converged = (curr_beta / bnorm) < eps or (curr_beta / resnorm) < eps
+        maxitexceeded = _iteration >= maxit
+        if converged or maxitexceeded:
+            q = j + 1
+            break
+
+    y = la.solve_triangular(R[:q, :q], g[:q], check_finite=False)
+    for idx in range(q):
+        x += v[idx] * y[idx]
+
+    x = x.round(eps)
+
+    if callback is not None:
+        callback(x)
+
+    if converged or maxitexceeded:
+        return x, resnorm / bnorm
+    return GMRES(A, x, b, eps, maxit, m, _iteration, callback=callback, verbose=verbose)
