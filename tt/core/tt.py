@@ -7,7 +7,7 @@ from .vector import vector, tensor
 
 
 # tools
-from .tools import matvec, col, kron, dot, mkron, concatenate, sum, reshape
+from .tools import matvec, col, kron, dot, mkron, concatenate, sum, reshape, permute
 from .tools import eye, diag, Toeplitz, qshift, qlaplace_dd, IpaS
 from .tools import ones, rand, linspace, sin, cos, delta, stepfun, unit, xfun
 
