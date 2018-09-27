@@ -577,10 +577,13 @@ class vector(object):
         r = 0.5 * (-b + _np.sqrt(D)) / a
         return r
 
-    def qtt_fft1(self,tol): 
+    def qtt_fft1(self,tol,bitReverse=True): 
         """ Compute 1D discrete Fourier Transform in the QTT format.
         :param tol: error tolerance.
         :type tol: float 
+        :param bitReverse: whether do the bit reversion or not. If this function is used as a subroutine for multi-dimensional qtt-fft, this option
+        need to be set False.
+        :type bitReverse: Boolean.
         :returns: QTT-vector of FFT coefficients. 
  
         This is a python translation of the Matlab function "qtt_fft1" in Ivan Oseledets' project TT-Toolbox(https://github.com/oseledets/TT-Toolbox)
@@ -591,7 +594,7 @@ class vector(object):
         """
     
         d = self.d 
-        r = self.r 
+        r = self.r.copy()
         y = self.to_list(self)   
         
         for i in range(d-1, 0, -1):
@@ -662,14 +665,16 @@ class vector(object):
         y[0]=_np.reshape(y[0],(2, r[0], r[1]),order='F')
         y[0]=_np.transpose(y[0],(1,0,2))
         
-        # Reverse the train
-        y2=[None]*d
-        for i in range(d):
-            y2[d-i-1]= _np.transpose(y[i],(2,1,0))
-        
-        y=self.from_list(y2)
-        
-        return y        
+        if bitReverse:
+            # Reverse the train
+            y2=[None]*d
+            for i in range(d):
+                y2[d-i-1]= _np.transpose(y[i],(2,1,0))
+            
+            y=self.from_list(y2)
+        else: # for multi-dimensional qtt_fft
+            y=self.from_list(y)
+        return y         
         
 def _hdm(a, b):
     c = vector()
