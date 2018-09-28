@@ -577,13 +577,18 @@ class vector(object):
         r = 0.5 * (-b + _np.sqrt(D)) / a
         return r
 
-    def qtt_fft1(self,tol,bitReverse=True): 
-        """ Compute 1D discrete Fourier Transform in the QTT format.
+    def qtt_fft1(self,tol,inverse=False, bitReverse=True): 
+        """ Compute 1D (inverse) discrete Fourier Transform in the QTT format.
         :param tol: error tolerance.
         :type tol: float 
+        
+        :param inverse: whether do an inverse FFT or not.
+        :type inverse: Boolean 
+        
         :param bitReverse: whether do the bit reversion or not. If this function is used as a subroutine for multi-dimensional qtt-fft, this option
         need to be set False.
         :type bitReverse: Boolean.
+        
         :returns: QTT-vector of FFT coefficients. 
  
         This is a python translation of the Matlab function "qtt_fft1" in Ivan Oseledets' project TT-Toolbox(https://github.com/oseledets/TT-Toolbox)
@@ -597,6 +602,11 @@ class vector(object):
         r = self.r.copy()
         y = self.to_list(self)   
         
+        if inverse:
+            twiddle =-1+1.22e-16j # exp(pi*1j)
+        else:
+            twiddle =-1-1.22e-16j # exp(-pi*1j)
+        
         for i in range(d-1, 0, -1):
             
             r1= y[i].shape[0]   # head r
@@ -604,7 +614,7 @@ class vector(object):
             crd2 = _np.zeros((r1, 2, r2), order='F',  dtype=complex) 
             # last block +-
             crd2[:,0,:]= (y[i][:,0,:] + y[i][:,1,:])/_np.sqrt(2)
-            crd2[:,1,:]= (y[i][:,0,:] - y[i][:,1,:])/_np.sqrt(2)
+            crd2[:,1,:]= (y[i][:,0,:] - y[i][:,1,:])/_np.sqrt(2)           
             # last block twiddles
             y[i]= _np.zeros((r1*2, 2, r2),order='F',dtype=complex) 
             y[i][0:r1,    0, 0:r2]= crd2[:,0,:]
@@ -623,14 +633,14 @@ class vector(object):
                     y[j] = _np.zeros((r[j], 2, r[j+1]),order='F',dtype=complex)
                     y[j][0:r1, :, 0:r2] = cr 
                     y[j][0:r1, 0, r2 :r[j+1]] = cr[:,0,:] 
-                    y[j][0:r1, 1, r2 :r[j+1]] = _np.exp(-2*_np.pi*1j/(2**(i-j+1)))*cr[:,1,:]
+                    y[j][0:r1, 1, r2 :r[j+1]] = twiddle**(1.0/(2**(i-j)))*cr[:,1,:]
                 else:
                     r[j]=r1*2
                     r[j+1] = r2*2
                     y[j] = _np.zeros((r[j], 2, r[j+1]),order='F',dtype=complex)
                     y[j][0:r1, :, 0:r2] = cr 
                     y[j][r1:r[j], 0, r2 :r[j+1]] = cr[:,0,:] 
-                    y[j][r1:r[j], 1, r2 :r[j+1]] = _np.exp(-2*_np.pi*1j/(2**(i-j+1)))*cr[:,1,:]
+                    y[j][r1:r[j], 1, r2 :r[j+1]] = twiddle**(1.0/(2**(i-j)))*cr[:,1,:]
                         
                     
                 y[j] = _np.reshape(y[j],( r[j], 2*r[j+1]),order='F')
@@ -674,7 +684,7 @@ class vector(object):
             y=self.from_list(y2)
         else: # for multi-dimensional qtt_fft
             y=self.from_list(y)
-        return y         
+        return y        
         
 def _hdm(a, b):
     c = vector()
