@@ -89,7 +89,7 @@ A pull request should satisfy the following requirements:
 - pull request for one fix or one feature(could be several commits);
 - try to keep the code style of the project;
 
-Current maintainer is [Ivan Oseledets](oseledets.github.io).
+Current maintainer is [Ivan Oseledets](http://oseledets.github.io/).
 
 
 
