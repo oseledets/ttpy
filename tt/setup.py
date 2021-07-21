@@ -10,6 +10,8 @@ from os.path import join
 
 import sys
 
+from tt.distutils import get_extra_fflags
+
 
 TTFORT_DIR = 'tt-fort'
 TTFORT_SRC = [
@@ -61,7 +63,9 @@ def configuration(parent_package='', top_path=None):
     )
 
     config.add_library('print_lib', sources=[join(PRINT_DIR, x) for x in PRINT_SRC])
-    config.add_library('mytt', sources=[join(TTFORT_DIR, x) for x in TTFORT_SRC])
+    config.add_library(name='mytt',
+                       sources=[join(TTFORT_DIR, x) for x in TTFORT_SRC],
+                       extra_f90_compile_args=get_extra_fflags())
 
     config.add_subpackage('core')
     config.add_subpackage('amen')

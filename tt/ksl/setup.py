@@ -5,6 +5,7 @@
 from __future__ import print_function, absolute_import
 from numpy.distutils.misc_util import Configuration
 from os.path import join
+from tt.distutils import get_extra_fflags
 
 
 TTFORT_DIR = '../tt-fort'
@@ -33,10 +34,14 @@ def configuration(parent_package='', top_path=None):
     ttksl_src = [join(TTFORT_DIR, x) for x in TTKSL_SRC]
     ttksl_src.append('tt_ksl.pyf')
 
+    fflags = get_extra_fflags()
+
     config = Configuration('ksl', parent_package, top_path)
     config.add_library(
         'expokit',
         sources=expokit_src,
+        extra_f77_compile_args=fflags,
+        extra_f90_compile_args=fflags,
     )
     config.add_extension(
         'dyn_tt',
@@ -51,6 +56,7 @@ def configuration(parent_package='', top_path=None):
             'expokit',
             'mytt',
         ],
+        extra_f90_compile_args=fflags,
     )
 
     return config

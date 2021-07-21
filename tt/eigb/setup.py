@@ -5,6 +5,7 @@
 from __future__ import print_function, absolute_import
 from numpy.distutils.misc_util import Configuration
 from os.path import join
+from tt.distutils import get_extra_fflags
 
 
 TTFORT_DIR = '../tt-fort/'
@@ -39,6 +40,7 @@ def configuration(parent_package='', top_path=None):
             'mytt',
             'print_lib',
         ],
+        extra_f90_compile_args=get_extra_fflags(),
     )
 
     return config
