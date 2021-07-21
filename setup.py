@@ -7,6 +7,8 @@ Several computational routines are done in Fortran (which can be used separatedl
 """
 
 import builtins
+import os
+import sys
 
 from numpy.distutils.core import setup
 from numpy.distutils.misc_util import Configuration
@@ -79,7 +81,18 @@ def setup_package():
         configuration=configuration,
     )
 
-    setup(**metadata)
+    # Move to source tree root, inject source tree root to python path, and
+    # reverse changes as soon as setup is done. The issue is that tt.distutils
+    # module should be in python path.
+    cur_dir = os.getcwd()
+    src_dir = os.path.abspath(os.path.dirname(__file__))
+    sys.path.insert(0, src_dir)
+    os.chdir(src_dir)
+    try:
+        setup(**metadata)
+    finally:
+        os.chdir(cur_dir)
+        sys.path.remove(src_dir)
 
 
 if __name__ == '__main__':
