@@ -5,6 +5,6 @@ def get_extra_fflags():
     fflags = []
     fcompiler = customized_fcompiler()
     if fcompiler.compiler_type in ('g95', 'gnu', 'gnu95'):
-        if fcompiler.get_version() >= '11.0':
+        if fcompiler.get_version() >= '11':
             fflags.append('-fallow-argument-mismatch')
     return fflags
