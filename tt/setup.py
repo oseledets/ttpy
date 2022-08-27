@@ -3,12 +3,12 @@
 #   See LICENSE for details
 
 from __future__ import print_function, absolute_import
-from distutils.util import get_platform
-from numpy.distutils.misc_util import Configuration, get_info
-from numpy.distutils.core import setup
-from os.path import join
 
-import sys
+from os.path import join
+from sys import version_info
+
+from distutils.util import get_platform
+from numpy.distutils.misc_util import Configuration
 
 from tt.distutils import get_extra_fflags
 
@@ -50,7 +50,8 @@ PRINT_SRC = [
 
 
 def configuration(parent_package='', top_path=None):
-    plat_specifier = ".%s-%s" % (get_platform(), sys.version[0:3])
+    py_version = '%d.%d' % (version_info.major, version_info.minor)
+    plat_specifier = '.%s-%s' % (get_platform(), py_version)
     inc_dir = ['build/temp%s' % plat_specifier]
 
     config = Configuration('tt', parent_package, top_path)
