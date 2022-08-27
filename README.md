@@ -2,6 +2,7 @@
 [![Coverage Status](https://img.shields.io/coveralls/oseledets/ttpy/master.svg?style=flat-square)](https://coveralls.io/r/oseledets/ttpy)
 [![PyPi](https://img.shields.io/pypi/pyversions/ttpy.svg?style=flat-square)](https://pypi.python.org/pypi/ttpy/)
 [![Downloads](https://img.shields.io/pypi/dm/ttpy.svg?style=flat-square)](https://pypi.python.org/pypi/ttpy/)
+[![Downloads](https://img.shields.io/docker/pulls/daskol/ttpy)](https://hub.docker.com/r/daskol/ttpy)
 
 ttpy
 ====
@@ -41,6 +42,24 @@ To update to the latest version (with all submodules) run
 ```
 git pull
 git submodule update --init --recursive *
+```
+
+## Pre-built Docker image
+
+The easiest way to play with TT Toolbox is through using the Docker (see
+[Docker Hub page](https://hub.docker.com/r/daskol/ttpy) for details).
+In order to use it one needs just pull an image and run a container as in
+snippet below.
+
+```shell
+$ docker pull daskol/ttpy
+    ...
+Status: Image is up to date for daskol/ttpy:latest
+docker.io/daskol/ttpy:latest
+$ docker run -it --rm -v "$PWD":/workspace daskol/ttpy
+Python 3.10.6 (main, Aug  3 2022, 10:13:24) [GCC 10.2.1 20210110] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import tt
 ```
 
 What those packages do
