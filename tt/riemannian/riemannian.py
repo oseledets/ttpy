@@ -3,11 +3,27 @@
 # tensor trains.
 
 from __future__ import print_function, absolute_import, division
+from functools import wraps
+from math import ceil
 from six.moves import xrange
+from warnings import warn
+
 import tt
 import numpy as np
-from math import ceil
-from numba import jit
+
+# We do not want to force users to use numba but we want to notify them about
+# this opportunity.
+try:
+    from numba import jit
+except (ImportError, ModuleNotFoundError):
+    def jit(*args, **kwargs):
+        def decorate(fn):
+            @wraps(fn)
+            def func(*args, **kwargs):
+                return fn(*args, **kwargs)
+            warn('Missing `numba` package.', ImportWarning)
+            return fn
+        return decorate
 
 
 def reshape(a, sz):
