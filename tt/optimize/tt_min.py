@@ -21,7 +21,7 @@ def mkron(a, b):
 def mysvd(a, full_matrices=False):
     try:
         return np.linalg.svd(a, full_matrices)
-    except:
+    except np.linalg.LinAlgError:
         return np.linalg.svd(a + np.max(np.abs(a).flatten()) * 1e-14 *
                              np.random.randn(a.shape[0], a.shape[1]), full_matrices)
 

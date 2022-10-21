@@ -190,7 +190,7 @@ def multifuncrs2(X, funs, eps=1e-6,
         if kickrank >= 0:
             try:
                 u, s, v = np.linalg.svd(newy, full_matrices=False)
-            except:
+            except np.linalg.LinAlgError:
                 tmp = np.array(
                     np.random.randn(
                         newy.shape[1],

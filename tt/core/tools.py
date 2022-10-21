@@ -321,9 +321,9 @@ def rand(n, d=None, r=2, samplefunc=_np.random.randn):
     r0 = _np.asanyarray(r, dtype=_np.int32)
     if d is None:
         d = n.size
-    if n0.size is 1:
+    if n0.size == 1:
         n0 = _np.ones((d,), dtype=_np.int32) * n0
-    if r0.size is 1:
+    if r0.size == 1:
         r0 = _np.ones((d + 1,), dtype=_np.int32) * r0
         r0[0] = 1
         r0[d] = 1
@@ -534,14 +534,14 @@ def qlaplace_dd(d):
     I = _np.eye(2)
     J = _np.array([[0, 1], [0, 0]])
     cr = []
-    if D is 1:
+    if D == 1:
         for k in xrange(1, d0[0] + 1):
-            if k is 1:
+            if k == 1:
                 cur_core = _np.zeros((1, 2, 2, 3))
                 cur_core[:, :, :, 0] = 2 * I - J - J.T
                 cur_core[:, :, :, 1] = -J
                 cur_core[:, :, :, 2] = -J.T
-            elif k is d0[0]:
+            elif k == d0[0]:
                 cur_core = _np.zeros((3, 2, 2, 1))
                 cur_core[0, :, :, 0] = I
                 cur_core[1, :, :, 0] = J.T
@@ -557,14 +557,14 @@ def qlaplace_dd(d):
     else:
         for k in xrange(D):
             for kappa in xrange(1, d0[k] + 1):
-                if kappa is 1:
-                    if k is 0:
+                if kappa == 1:
+                    if k == 0:
                         cur_core = _np.zeros((1, 2, 2, 4))
                         cur_core[:, :, :, 0] = 2 * I - J - J.T
                         cur_core[:, :, :, 1] = -J
                         cur_core[:, :, :, 2] = -J.T
                         cur_core[:, :, :, 3] = I
-                    elif k is D - 1:
+                    elif k == D - 1:
                         cur_core = _np.zeros((2, 2, 2, 3))
                         cur_core[0, :, :, 0] = 2 * I - J - J.T
                         cur_core[0, :, :, 1] = -J

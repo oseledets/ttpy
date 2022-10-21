@@ -45,7 +45,7 @@ class fun_qtt: #Only QTT is assumed, i.e. d is an array [d1,d2,d3,...,]
         # we have self.m 
     def __call__(self,ind):
         #We are given a QTT index ind, have to convert it to a TT index
-        if self.order is 'F':
+        if self.order == 'F':
             ind_tt=np.dot(self.sm,(np.array(ind,dtype=np.int32)-1))
         else:
             ind_tt=np.dot(self.sm,(np.array(ind,dtype=np.int32)))
@@ -61,7 +61,7 @@ class fun_ind: #No QTT is assumed, just convert index -> float
         self.a = np.array(a)
         self.h = (np.array(b)-self.a)/np.array((self.n-1),dtype=float)
     def __call__(self,ind):
-        if self.order is 'F':
+        if self.order == 'F':
             x = self.a + self.h*(np.array(ind,dtype=np.int32)-1)
         else:
             x = self.a + self.h*np.array(ind,dtype=np.int32)

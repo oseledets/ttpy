@@ -13,17 +13,17 @@ if __TTPY_SETUP__:
 else:
     try:
         from .core.tt import *
-    except:
+    except (ImportError, ModuleNotFoundError):
         import ctypes
         try:
             ctypes.CDLL("libmkl_rt.so", ctypes.RTLD_GLOBAL)
-        except:
+        except OSError:
             try:
                 if platform.startswith('linux'):
                     ctypes.CDLL("liblapack.so", ctypes.RTLD_GLOBAL)
                 elif platform.startswith('darwin'):
                     ctypes.CDLL("liblapack.dylib", ctypes.RTLD_GLOBAL)
-            except:
+            except OSError:
                 print("Did not find MKL or LAPACK library")
         from .core.tt import *
 

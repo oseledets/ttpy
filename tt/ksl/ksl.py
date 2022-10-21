@@ -66,7 +66,7 @@ def ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000, use_normest=1):
                             # to be no more than maximal reasonable.
                             # Fortran part doesn't  handle excessive ranks
     ry = y0.r.copy()
-    if scheme is 'symm':
+    if scheme == 'symm':
         tp = 2
     else:
         tp = 1
@@ -182,7 +182,7 @@ def diag_ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000):
                             # to be no more than maximal reasonable.
                             # Fortran part doesn't  handle excessive ranks
     ry = y0.r.copy()
-    if scheme is 'symm':
+    if scheme == 'symm':
         tp = 2
     else:
         tp = 1
