@@ -81,6 +81,50 @@ class vector(object):
             self.core = tt_f90.core.copy()
         tt_f90.tt_dealloc()
 
+    @property
+    def dtype(self):
+        """Data type of elements.
+        """
+        return self.core.dtype
+
+    @property
+    def size(self):
+        """Number of elements in array (tensor).
+        """
+        return np.prod(self.n)
+
+    @property
+    def ndim(self):
+        """Number of array dimensions.
+        """
+        return 1
+
+    @property
+    def shape(self):
+        """Shape of the array.
+        """
+        return (self.size, )
+
+    @property
+    def ranks(self):
+        """TT-ranks of the array.
+        """
+        return tuple(self.r.tolist())
+
+    @property
+    def cores(self):
+        """List of TT-cores. Each element in the list is a view on underlying
+        buffer.
+        """
+        offset = 0
+        cores = []
+        for core_shape in zip(self.ranks[:-1], self.n, self.ranks[1:]):
+            core_size = np.prod(core_shape)
+            core = self.core[offset:offset + core_size]
+            cores.append(core.reshape(core_shape, order='F'))
+            offset += core_size
+        return cores
+
     @staticmethod
     def from_list(a, order='F'):
         """Generate TT-vectorr object from given TT cores.

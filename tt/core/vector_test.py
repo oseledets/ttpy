@@ -1,10 +1,23 @@
 import numpy as np
 import tt
 
-from numpy.testing import assert_equal
+from numpy.testing import assert_array_equal, assert_equal
+from tt import vector
 
 
 class TestVector:
+
+    def test_sanity(self):
+        cores = [np.ones((1, 2, 2)), np.ones((2, 3, 2)), np.ones((2, 4, 1))]
+        tensor = vector.from_list(cores)
+        assert tensor.dtype == np.float64
+        assert tensor.ndim == 1
+        assert tensor.size == 24
+        assert tensor.shape == (24, )
+        assert tensor.ranks == (1, 2, 2, 1)
+        assert_array_equal(tensor.cores[0], cores[0])
+        assert_array_equal(tensor.cores[1], cores[1])
+        assert_array_equal(tensor.cores[2], cores[2])
 
     def test_qtt_vector(self, d=10, eps=1e-14):
         a = np.arange(2 ** d)

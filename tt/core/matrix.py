@@ -59,6 +59,52 @@ class matrix(object):
     def d(self):
         return self.tt.d
 
+    @property
+    def dtype(self):
+        """Data type of elements.
+        """
+        return self.tt.dtype
+
+    @property
+    def size(self):
+        """Number of elements in TT-matrix.
+        """
+        return self.tt.size
+
+    @property
+    def ndim(self):
+        """Number of matrix dimensions.
+        """
+        return 2
+
+    @property
+    def shape(self):
+        """Shape of the array.
+        """
+        norows = np.prod(self.n)
+        nocols = np.prod(self.m)
+        return (norows, nocols)
+
+    @property
+    def ranks(self):
+        """TT-ranks of the array.
+        """
+        return self.tt.ranks
+
+    @property
+    def cores(self):
+        """List of TT-cores. Each element in the list is a view on underlying
+        buffer.
+        """
+        offset = 0
+        cores = []
+        for core_shape in zip(self.ranks[:-1], self.n, self.m, self.ranks[1:]):
+            core_size = np.prod(core_shape)
+            core = self.tt.core[offset:offset + core_size]
+            cores.append(core.reshape(core_shape, order='F'))
+            offset += core_size
+        return cores
+
     @staticmethod
     def from_list(a):
         d = len(a)  # Number of cores
