@@ -186,7 +186,7 @@ def diag_ksl(A, y0, tau, verb=1, scheme='symm', space=8, rmax=2000):
         tp = 2
     else:
         tp = 1
-    
+
     # Check for dtype
     y = tt.vector()
     if np.iscomplex(A.core).any() or np.iscomplex(y0.core).any():

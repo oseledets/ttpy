@@ -24,7 +24,7 @@ TTCORE_SRC = [
 def configuration(parent_package='', top_path=None):
     ttcore_src = [join(TTFORT_DIR, x) for x in TTCORE_SRC]
     ttcore_src.append('core.pyf')
-    
+
     config = Configuration('core', parent_package, top_path)
     config.add_extension(
         'tt_f90',

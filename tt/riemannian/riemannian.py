@@ -459,13 +459,13 @@ def tt_qr(X, left_to_right=True):
             upper (lower) triangular matrix
 
     >>> import tt, numpy as np
-    >>> x = tt.rand(np.array([2, 3, 4, 5]), d=4) 
+    >>> x = tt.rand(np.array([2, 3, 4, 5]), d=4)
     >>> x_q, r = tt_qr(x, left_to_right=True)
     >>> np.allclose((rm[0][0]*x_q).norm(), x.norm())
     True
     >>> x_u, l = tt_qr(x, left_to_right=False)
     >>> np.allclose((l[0][0]*x_u).norm(), x.norm())
-    True        
+    True
     """
     # Get rid of redundant ranks (they cause technical difficulties).
     X = X.round(eps=0)

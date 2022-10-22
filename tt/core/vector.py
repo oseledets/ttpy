@@ -580,38 +580,38 @@ class vector(object):
         r = 0.5 * (-b + np.sqrt(D)) / a
         return r
 
-    def qtt_fft1(self,tol,inverse=False, bitReverse=True): 
+    def qtt_fft1(self,tol,inverse=False, bitReverse=True):
         """ Compute 1D (inverse) discrete Fourier Transform in the QTT format.
         :param tol: error tolerance.
-        :type tol: float 
-        
+        :type tol: float
+
         :param inverse: whether do an inverse FFT or not.
-        :type inverse: Boolean 
-        
+        :type inverse: Boolean
+
         :param bitReverse: whether do the bit reversion or not. If this function is used as a subroutine for multi-dimensional qtt-fft, this option
         need to be set False.
         :type bitReverse: Boolean.
-        
-        :returns: QTT-vector of FFT coefficients. 
- 
+
+        :returns: QTT-vector of FFT coefficients.
+
         This is a python translation of the Matlab function "qtt_fft1" in Ivan Oseledets' project TT-Toolbox(https://github.com/oseledets/TT-Toolbox)
-       
-        See S. Dolgov, B. Khoromskij, D. Savostyanov, 
+
+        See S. Dolgov, B. Khoromskij, D. Savostyanov,
         Superfast Fourier transform using QTT approximation,
         J. Fourier Anal. Appl., 18(5), 2012.
         """
-    
-        d = self.d 
+
+        d = self.d
         r = self.r.copy()
-        y = self.to_list(self)   
-        
+        y = self.to_list(self)
+
         if inverse:
             twiddle =-1+1.22e-16j # exp(pi*1j)
         else:
             twiddle =-1-1.22e-16j # exp(-pi*1j)
-        
+
         for i in range(d-1, 0, -1):
-            
+
             r1= y[i].shape[0]   # head r
             r2= y[i].shape[2]   # tail r
             crd2 = np.zeros((r1, 2, r2), order='F',  dtype=complex)
@@ -623,10 +623,10 @@ class vector(object):
             y[i][0:r1,    0, 0:r2]= crd2[:,0,:]
             y[i][r1:r1*2, 1, 0:r2]= crd2[:,1,:]
             #1..i-1 block twiddles and qr
-            rv=1; 
-            
+            rv=1;
+
             for j in range(0, i):
-            
+
                 cr=y[j]
                 r1= cr.shape[0]   # head r
                 r2= cr.shape[2]   # tail r
@@ -634,18 +634,18 @@ class vector(object):
                     r[j]=r1
                     r[j+1] = r2*2
                     y[j] = np.zeros((r[j], 2, r[j+1]),order='F',dtype=complex)
-                    y[j][0:r1, :, 0:r2] = cr 
-                    y[j][0:r1, 0, r2 :r[j+1]] = cr[:,0,:] 
+                    y[j][0:r1, :, 0:r2] = cr
+                    y[j][0:r1, 0, r2 :r[j+1]] = cr[:,0,:]
                     y[j][0:r1, 1, r2 :r[j+1]] = twiddle**(1.0/(2**(i-j)))*cr[:,1,:]
                 else:
                     r[j]=r1*2
                     r[j+1] = r2*2
                     y[j] = np.zeros((r[j], 2, r[j+1]),order='F',dtype=complex)
-                    y[j][0:r1, :, 0:r2] = cr 
-                    y[j][r1:r[j], 0, r2 :r[j+1]] = cr[:,0,:] 
+                    y[j][0:r1, :, 0:r2] = cr
+                    y[j][r1:r[j], 0, r2 :r[j+1]] = cr[:,0,:]
                     y[j][r1:r[j], 1, r2 :r[j+1]] = twiddle**(1.0/(2**(i-j)))*cr[:,1,:]
-                        
-                    
+
+
                 y[j] = np.reshape(y[j],( r[j], 2*r[j+1]),order='F')
                 y[j] = np.dot(rv,y[j])
                 r[j] = y[j].shape[0]
@@ -662,15 +662,15 @@ class vector(object):
                 u,s,v = np.linalg.svd(y[j], full_matrices=False)
                 rnew = my_chop2(s, np.linalg.norm(s)*tol/np.sqrt(i))
                 u=np.dot(u[:, 0:rnew], np.diag(s[0:rnew]))
-                v= v[0:rnew, :] 
+                v= v[0:rnew, :]
                 y[j] = np.reshape(v, (rnew, 2, r[j+1]),order='F' )
                 y[j-1] = np.reshape(y[j-1], (r[j-1]*2,r[j] ),order='F' )
                 y[j-1] = np.dot(y[j-1], u)
                 r[j] = rnew
                 y[j-1] = np.reshape(y[j-1], (r[j-1],r[j]*2 ),order='F' )
-                
+
             y[0] = np.reshape(y[0], (r[0],2, r[1]), order='F' )
-        
+
         # FFT on the first block
         y[0]=np.transpose(y[0],(1,0,2))
         y[0]=np.reshape(y[0],(2, r[0]*r[1]),order='F')
@@ -687,8 +687,8 @@ class vector(object):
             y=self.from_list(y2)
         else: # for multi-dimensional qtt_fft
             y=self.from_list(y)
-        return y        
-        
+        return y
+
 def _hdm(a, b):
     c = vector()
     c.d = a.d
