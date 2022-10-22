@@ -12,7 +12,7 @@ if __TTPY_SETUP__:
     stderr.write('Building from ttpy source directory.\n')
 else:
     try:
-        from .core.tt import *
+        from .core import *
     except (ImportError, ModuleNotFoundError):
         import ctypes
         try:
@@ -25,7 +25,7 @@ else:
                     ctypes.CDLL("liblapack.dylib", ctypes.RTLD_GLOBAL)
             except OSError:
                 print("Did not find MKL or LAPACK library")
-        from .core.tt import *
+        from .core import *
 
     from .multifuncrs import multifuncrs
     from .multifuncrs2 import multifuncrs2
