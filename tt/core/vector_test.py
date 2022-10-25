@@ -2,7 +2,7 @@ import numpy as np
 import tt
 
 from numpy.testing import assert_array_equal, assert_equal
-from tt import vector
+from tt.core.vector import TensorTrain, vector
 
 
 class TestVector:
@@ -54,3 +54,18 @@ class TestVector:
         b = np.arange(2 ** d)
         assert np.linalg.norm(a - b) < 1e-15, \
                'The approximation error is too large.'
+
+
+class TestTensorTrain:
+
+    def test_sanity(self):
+        cores = [np.ones((1, 2, 2)), np.ones((2, 3, 2)), np.ones((2, 4, 1))]
+        tensor = TensorTrain.from_list(cores)
+        assert tensor.dtype == np.float64
+        assert tensor.ndim == 3
+        assert tensor.size == 4 + 12 + 8
+        assert tensor.shape == (2, 3, 4)
+        assert tensor.ranks == (1, 2, 2, 1)
+        assert_array_equal(tensor.cores[0], cores[0])
+        assert_array_equal(tensor.cores[1], cores[1])
+        assert_array_equal(tensor.cores[2], cores[2])

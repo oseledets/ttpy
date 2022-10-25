@@ -774,3 +774,40 @@ class tensor(vector):  # For combatibility issues
         super(tensor, self).__init__(*args, **kwargs)
         warn('Type `tt.tensor` is deprecated, use `tt.vector` instead.',
              DeprecationWarning)
+
+
+class TensorTrain(vector):
+    """Class TensorTrain represents a tensor train itself as a tuple of
+    3-tensors with some basic operations and properties.
+    """
+
+    @property
+    def dtype(self):
+        """Data type of elements.
+        """
+        return self.core.dtype
+
+    @property
+    def size(self):
+        """Number of elements in tensor train.
+        """
+        core_shapes = zip(self.ranks[:-1], self.shape, self.ranks[1:])
+        return sum([np.prod(core_shape) for core_shape in core_shapes])
+
+    @property
+    def ndim(self):
+        """Number of dimensions of tensor train.
+        """
+        return self.n.size
+
+    @property
+    def shape(self):
+        """Shape of tensor train.
+        """
+        return tuple(self.n)
+
+    @property
+    def ranks(self):
+        """TT-ranks of tensor train.
+        """
+        return tuple(self.r.tolist())
