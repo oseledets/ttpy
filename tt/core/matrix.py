@@ -105,30 +105,30 @@ class matrix(object):
             offset += core_size
         return cores
 
-    @staticmethod
-    def from_list(a):
-        d = len(a)  # Number of cores
-        res = matrix()
-        n = np.zeros(d, dtype=np.int32)
-        r = np.zeros(d + 1, dtype=np.int32)
-        m = np.zeros(d, dtype=np.int32)
-        cr = np.array([])
-        for i in xrange(d):
-            cr = np.concatenate((cr, a[i].flatten('F')))
-            r[i] = a[i].shape[0]
-            r[i + 1] = a[i].shape[3]
-            n[i] = a[i].shape[1]
-            m[i] = a[i].shape[2]
-        res.n = n
-        res.m = m
-        tt = vector()
-        tt.n = n * m
-        tt.core = cr
-        tt.r = r
-        tt.d = d
-        tt.get_ps()
-        res.tt = tt
-        return res
+    @classmethod
+    def from_list(cls, cores, order='F'):
+        # Validate input list of tensors on conformance to representation of
+        # TT-matrix. The rest of checks we delegate to TT-array creation
+        # routine.
+        if not cores:
+            raise ValueError('Exepected non empty list of cores.')
+        shapes = np.empty((2, len(cores)), np.int32)
+        for i, core in enumerate(cores):
+            if core.ndim != 4:
+                raise ValueError('Core of TT-matrix should have exactly '
+                'four dimensions.')
+            shapes[:, i] = core.shape[1:3]
+
+        # Flatten internal dimensions (1 and 2) in order to create tensor train.
+        cores = [core.reshape((core.shape[0], -1, core.shape[-1]), order=order)
+                 for core in cores]
+
+        # Finally, create an instance of TT-matrix.
+        mat = cls()
+        mat.n = shapes[0, :]  # Row shapes.
+        mat.m = shapes[1, :]  # Column shapes.
+        mat.tt = vector.from_list(cores, order)
+        return mat
 
     @staticmethod
     def to_list(ttmat):

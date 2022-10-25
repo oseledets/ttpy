@@ -125,31 +125,48 @@ class vector(object):
             offset += core_size
         return cores
 
-    @staticmethod
-    def from_list(a, order='F'):
-        """Generate TT-vectorr object from given TT cores.
 
-        :param a: List of TT cores.
-        :type a: list
-        :returns: vector -- TT-vector constructed from the given cores.
+    @classmethod
+    def from_list(cls, cores, order='F'):
+        """Construct  TT-vector from a list of TT-cores.
 
+        :param cores: List of TT cores.
+        :type cores: list
+        :returns: TT-vector constructed from the given cores.
         """
-        d = len(a)  # Number of cores
-        res = vector()
-        n = np.zeros(d, dtype=np.int32)
-        r = np.zeros(d+1, dtype=np.int32)
-        cr = np.array([])
-        for i in xrange(d):
-            cr = np.concatenate((cr, a[i].flatten(order)))
-            r[i] = a[i].shape[0]
-            r[i+1] = a[i].shape[2]
-            n[i] = a[i].shape[1]
-        res.d = d
-        res.n = n
-        res.r = r
-        res.core = cr
-        res.get_ps()
-        return res
+        # Validate input list of tensors on conformance to TT-representation.
+        if not cores:
+            raise ValueError('Exepected non empty list of cores.')
+        shape = np.empty(len(cores), np.int32)
+        ranks = np.empty(len(cores) + 1, np.int32)
+        for i, core in enumerate(cores):
+            if core.ndim != 3:
+                raise ValueError('Core should have exactly three dimensions.')
+            prev, size, next_ = core.shape
+            shape[i] = size
+            ranks[i + 1] = next_
+            if i == 0:
+                ranks[i] = prev
+                continue
+            if ranks[i] != prev:
+                msg = 'Rank mismatch for cores #{} and #{}.'.format(i, i + 1)
+                raise ValueError(msg)
+        if ranks[0] != 1:
+            raise ValueError('Shape of the first core should be (1, n, r).')
+        if ranks[-1] != 1:
+            raise ValueError('Shape of the last core should be (r, n, 1).')
+
+        # Currently, tensor train represented as a single buffer for all cores.
+        buffer = np.concatenate([np.asarray(x).flatten(order) for x in cores])
+
+        # Finally, we can create a TT-vector instance.
+        vec = cls()
+        vec.d = shape.size
+        vec.n = shape
+        vec.r = ranks
+        vec.core = buffer
+        vec.get_ps()
+        return vec
 
     @staticmethod
     def to_list(tt):
