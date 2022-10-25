@@ -35,6 +35,14 @@ def multifuncrs2(X, funs, eps=1e-6,
                  y0=None,
                  do_qr=False,
                  restart_it=0):
+    """Calculate element-wise function in TT-format from a list of tensors
+    which are in TT-representation as well.
+    """
+    if not len(X):
+        raise ValueError('Expected non-empty list of TT-tensors.')
+
+    if not callable(funs):
+        raise ValueError('Expected callable.')
 
     dtype = np.float64
     if len([x for x in X if x.is_complex]) > 0:
