@@ -93,8 +93,8 @@ class matrix(object):
 
     @property
     def cores(self):
-        """List of TT-cores. Each element in the list is a view on underlying
-        buffer.
+        """Tuple of views on TT-cores. Each element in the list is a view on
+        underlying buffer.
         """
         offset = 0
         cores = []
@@ -103,7 +103,7 @@ class matrix(object):
             core = self.tt.core[offset:offset + core_size]
             cores.append(core.reshape(core_shape, order='F'))
             offset += core_size
-        return cores
+        return tuple(cores)
 
     @classmethod
     def from_list(cls, cores, order='F'):
@@ -116,7 +116,7 @@ class matrix(object):
         for i, core in enumerate(cores):
             if core.ndim != 4:
                 raise ValueError('Core of TT-matrix should have exactly '
-                'four dimensions.')
+                                 'four dimensions.')
             shapes[:, i] = core.shape[1:3]
 
         # Flatten internal dimensions (1 and 2) in order to create tensor train.
@@ -128,6 +128,45 @@ class matrix(object):
         mat.n = shapes[0, :]  # Row shapes.
         mat.m = shapes[1, :]  # Column shapes.
         mat.tt = vector.from_list(cores, order)
+        return mat
+
+    @classmethod
+    def from_train(cls, train, shapes, *, copy=True):
+        """Create TT-matrix from a tensor train.
+
+        >>> cores = [np.ones((1, size * size, 1)) for size in (2, 3, 4)]
+        >>> train = TensorTrain.from_list(cores)
+        >>> matrix.from_train(train, ((2, 2), (3, 3), (4, 4)))
+        This is a 3-dimensional matrix
+        r(0)=1, n(0)=2, m(0)=2
+        r(1)=1, n(1)=3, m(1)=3
+        r(2)=1, n(2)=4, m(2)=4
+        r(3)=1
+        """
+        if not copy:
+            raise NotImplementedError('Constructor of TT-matrix forces '
+                                      'copying at the moment.')
+
+        if train.ndim != len(shapes):
+            raise ValueError('Length of`shapes` does not match the number '
+                             'of tensor train dimensions: '
+                             f'{train.ndim} != {len(shapes)}.')
+
+        # Verify number of that modes of tensor train have enough elements.
+        row_sizes, col_sizes = zip(*shapes)
+        for i, sizes in enumerate(zip(train.shape, row_sizes, col_sizes)):
+            size, norows, nocols = sizes
+            if size != norows * nocols:
+                raise ValueError(f'Mode {i} has no enough elements to '
+                                 'represent a matrix of shape '
+                                 f'({norows}, {nocols}).')
+
+        # TODO: We should rework class init-method in order to avoid manual
+        # object creation and validation.
+        mat = cls()
+        mat.n = np.array(row_sizes, np.int32)  # Row shapes.
+        mat.m = np.array(col_sizes, np.int32)  # Column shapes.
+        mat.tt = vector.from_train(train, copy=copy)  # TODO: We need views!
         return mat
 
     @staticmethod
@@ -281,6 +320,10 @@ class matrix(object):
         Multiplication of two TT-matrices
         """
         from . import tools as _tools
+        # TODO: This is a shortcut for evaluation matvec of TT-matrix and
+        # TT-vector. We need rework this later.
+        if isinstance(other, vector):
+            return _tools.matvec(self, other)
         diff = len(self.n) - len(other.m)
         L = self if diff >= 0 else _tools.kron(self, matrix(_tools.ones(1, abs(diff))))
         R = other if diff <= 0 else _tools.kron(other, matrix(_tools.ones(1, abs(diff))))

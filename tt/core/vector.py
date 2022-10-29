@@ -113,8 +113,8 @@ class vector(object):
 
     @property
     def cores(self):
-        """List of TT-cores. Each element in the list is a view on underlying
-        buffer.
+        """Tuple of views on TT-cores. Each element in the list is a view on
+        underlying buffer.
         """
         offset = 0
         cores = []
@@ -123,7 +123,7 @@ class vector(object):
             core = self.core[offset:offset + core_size]
             cores.append(core.reshape(core_shape, order='F'))
             offset += core_size
-        return cores
+        return tuple(cores)
 
 
     @classmethod
@@ -167,6 +167,24 @@ class vector(object):
         vec.core = buffer
         vec.get_ps()
         return vec
+
+    @classmethod
+    def from_train(cls, train, *, copy=True):
+        """Create TT-vector from a tensor train.
+
+        >>> cores = [np.ones((1, size, 1)) for size in (2, 3, 4)]
+        >>> train = TensorTrain.from_list(cores)
+        >>> vector.from_train(train)
+        This is a 3-dimensional tensor
+        r(0)=1, n(0)=2
+        r(1)=1, n(1)=3
+        r(2)=1, n(2)=4
+        r(3)=1
+        """
+        if not copy:
+            raise NotImplementedError('Constructor of TT-vector forces '
+                                      'copying at the moment.')
+        return cls.from_list(train.cores)
 
     @staticmethod
     def to_list(tt):
@@ -780,6 +798,14 @@ class TensorTrain(vector):
     """Class TensorTrain represents a tensor train itself as a tuple of
     3-tensors with some basic operations and properties.
     """
+
+    def __repr__(self):
+        args = ', '.join([
+            f'ndim={self.ndim}',
+            f'shape={self.shape}',
+            f'ranks={self.ranks}',
+        ])
+        return f'{self.__class__.__name__}({args})'
 
     @property
     def dtype(self):

@@ -20,6 +20,13 @@ from .vector import vector
 
 def matvec(a, b, compression=False):
     """Matrix-vector product in TT format."""
+    if not isinstance(a, matrix):
+        raise ValueError('The first operand expected to be TT-matrix but '
+                         f'given {type(a)}.')
+    if not isinstance(b, vector):
+        raise ValueError('The second operand expected to be TT-vector but '
+                         f'given {type(a)}.')
+
     acrs = vector.to_list(a.tt)
     bcrs = vector.to_list(b)
     ccrs = []

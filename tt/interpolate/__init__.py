@@ -2,4 +2,5 @@
 interpolation and to work with it.
 """
 
-from .chebyshev import Chebfun, chebder, chebfit, chebint  # noqa: F401
+from .chebyshev import (Chebfun, Chebop, chebder, chebdiff,  # noqa: F401
+                        chebfit, chebint)
