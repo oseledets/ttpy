@@ -3,4 +3,4 @@ interpolation and to work with it.
 """
 
 from .chebyshev import (Chebfun, Chebop, chebder, chebdiff,  # noqa: F401
-                        chebfit, chebint)
+                        chebfit, chebgrid, chebint)

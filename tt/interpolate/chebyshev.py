@@ -22,6 +22,8 @@ class Chebfun:
 
     weights: TensorTrain
 
+    values: Optional[TensorTrain] = None
+
     grid: Optional[TensorTrain] = None
 
     @property
@@ -84,7 +86,15 @@ class Chebfun:
         Args:
             key: Batch or a single d-dimensional index of a node.
         """
-        raise NotImplementedError
+        if key is not Ellipsis:
+            raise NotImplementedError
+        return self.values
+
+    def trim(self, tol: float = 1e-14, max_rank: int = 1000000):
+        """Apply TT-round procedure to underlying tensor train.
+        """
+        weights = self.weights.round(tol, max_rank)
+        return Chebfun(weights, self.values, self.grid)
 
 
 @dataclass
@@ -123,7 +133,7 @@ class Chebop:
             vec = vector.from_train(other.weights)
             res = mat @ vec
             weights = TensorTrain.from_list(res.cores)
-            return Chebfun(weights, other.grid)
+            return Chebfun(weights, other.values, other.grid)
         else:
             return NotImplemented
 
@@ -210,7 +220,7 @@ def chebder(fn: Chebfun, order: int = 1) -> Chebfun:
         cores.append(np.moveaxis(core, 0, 1))
 
     weights = TensorTrain.from_list(cores)
-    return Chebfun(weights, fn.grid)
+    return Chebfun(weights, fn.values, fn.grid)
 
 
 def chebfit(fn, grid: ArrayLike, tol: float = 1e-6, **kwargs) -> Chebfun:
@@ -239,7 +249,7 @@ def chebfit(fn, grid: ArrayLike, tol: float = 1e-6, **kwargs) -> Chebfun:
     elif isinstance(grid, TensorTrain):
         # Assume that grid specified as a tensor train whose cores are one
         # dimensional grids and tensor train is just a tensor product.
-        grid_cores = chebgrid(grid).cores
+        grid_cores = grid.cores
     else:
         raise NotImplementedError('Either grid represented as rank-1 tensor '
                                   'train or a sequence of number of Chebyshev '
@@ -265,7 +275,7 @@ def chebfit(fn, grid: ArrayLike, tol: float = 1e-6, **kwargs) -> Chebfun:
             core[:, -1, :] = -core[:, -1, :]
 
     # Apply Dicrete Cosine Transform to a tensor of values on the grid.
-    return Chebfun(weights)
+    return Chebfun(weights, values)
 
 
 def chebint():
