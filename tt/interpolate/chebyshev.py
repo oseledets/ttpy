@@ -12,6 +12,7 @@ from tt.core.matrix import matrix
 from tt.core.vector import TensorTrain, vector
 from tt.interpolate.fft import idct
 from tt.multifuncrs2 import multifuncrs2
+from tt.interpolate.util import normalize_cheb_domain
 
 
 @dataclass
@@ -31,6 +32,14 @@ class Chebfun:
         """Number of arguments which the function accepts.
         """
         return self.weights.ndim
+
+    @property
+    def domain(self) -> ArrayLike:
+        domain = np.empty((self.arity, 2))
+        for i, core in enumerate(self.grid.cores):
+            domain[i, 0] = core[0, -1, 0]
+            domain[i, 1] = core[0, 0, 0]
+        return domain
 
     def __post_init__(self):
         if self.grid is None:
@@ -65,8 +74,14 @@ class Chebfun:
         # Evaluate Chebyshev polynomial basis on the fly and contract it with
         # coefficients in TT-representation from left-to-right.
         zs = np.ones((1, nosamples))
-        for core, xs, size in zip(self.weights.cores, batch.T,
-                                  self.weights.shape):
+        for core, xs, size, domain in zip(self.weights.cores, batch.T,
+                                          self.weights.shape, self.domain):
+            # Map points to standard domain.
+            add = domain[1] + domain[0]
+            sub = domain[1] - domain[0]
+            alpha = 2 / sub
+            xs = alpha * xs + add / sub
+
             # Apply Horner's method for Chebyshev polynomial evaluation.
             ys = np.empty((size, xs.size))
             ys[0] = np.ones_like(xs)
@@ -89,6 +104,16 @@ class Chebfun:
         if key is not Ellipsis:
             raise NotImplementedError
         return self.values
+
+    def __itruediv__(self, other):
+        if isinstance(other, (float, int)):
+            # TODO: Define __itruediv__ for tensor train.
+            self.weights.cores[0] /= other
+            if self.values:
+                self.values.cores[0] /= other
+            return self
+        else:
+            return NotImplemented
 
     def trim(self, tol: float = 1e-14, max_rank: int = 1000000):
         """Apply TT-round procedure to underlying tensor train.
@@ -223,7 +248,8 @@ def chebder(fn: Chebfun, order: int = 1) -> Chebfun:
     return Chebfun(weights, fn.values, fn.grid)
 
 
-def chebfit(fn, grid: ArrayLike, tol: float = 1e-6, **kwargs) -> Chebfun:
+def chebfit(fn, grid: ArrayLike | TensorTrain, domain=None, tol: float = 1e-6,
+            **kwargs) -> Chebfun:
     """Approximate function `fn` on multi-dimensional Chebyshev grid `grid`
     with specified precision `tol`. The function leverages cross-approximation
     methods building grid function.
@@ -231,6 +257,29 @@ def chebfit(fn, grid: ArrayLike, tol: float = 1e-6, **kwargs) -> Chebfun:
     kwargs['eps_exit'] = tol
     if 'verb' not in kwargs:
         kwargs['verb'] = False
+
+    if isinstance(grid, (list, tuple)):
+        # Validate domain an generate transformations.
+        domain = normalize_cheb_domain(domain, len(grid))
+
+        # Generate and adjust cores to domain.
+        grid_cores = []
+        alphas = (domain[:, 1] - domain[:, 0]) / 2
+        betas = (domain[:, 0] + domain[:, 1]) / 2
+        for nonodes, alpha, beta in zip(grid, alphas, betas):
+            grid_core = chebnodes(nonodes)[None, :, None]
+            grid_cores.append(alpha * grid_core + beta)
+    elif isinstance(grid, TensorTrain):
+        if domain is not None:
+            raise ValueError('Domain should not be specified if grid has '
+                             'already specified as a tensor train.')
+        # Assume that grid specified as a tensor train whose cores are one
+        # dimensional grids and tensor train is just a tensor product.
+        grid_cores = grid.cores
+    else:
+        raise NotImplementedError('Either grid represented as rank-1 tensor '
+                                  'train or a sequence of number of Chebyshev '
+                                  'nodes are supported.')
 
     @wraps(fn)
     def fn_safe(xs: np.ndarray) -> np.ndarray:
@@ -243,17 +292,6 @@ def chebfit(fn, grid: ArrayLike, tol: float = 1e-6, **kwargs) -> Chebfun:
                'Number of samples differ for input and returned tensor: ' \
                f'{ys.size} != {xs.shape[0]}.'
         return ys
-
-    if isinstance(grid, (list, tuple)):
-        grid_cores = [chebnodes(nonodes)[None, :, None] for nonodes in grid]
-    elif isinstance(grid, TensorTrain):
-        # Assume that grid specified as a tensor train whose cores are one
-        # dimensional grids and tensor train is just a tensor product.
-        grid_cores = grid.cores
-    else:
-        raise NotImplementedError('Either grid represented as rank-1 tensor '
-                                  'train or a sequence of number of Chebyshev '
-                                  'nodes are supported.')
 
     # Since grid is a tensor product of one-dimensional grids, we can decompose
     # them and compose tensor trains to evaluate function in the spirit of
@@ -275,8 +313,18 @@ def chebfit(fn, grid: ArrayLike, tol: float = 1e-6, **kwargs) -> Chebfun:
             core[:, -1, :] = -core[:, -1, :]
 
     # Apply Dicrete Cosine Transform to a tensor of values on the grid.
-    return Chebfun(weights, values)
+    grid = TensorTrain.from_list(grid_cores)
+    return Chebfun(weights, values, grid)
 
 
-def chebint():
-    pass
+def chebint(grid_fn: Chebfun) -> float:
+    """Integrate Chebfun according to Clenshaw–Curtis quadrature rule.
+    """
+    acc = np.ones(1)
+    cores = grid_fn.weights.cores
+    shape = grid_fn.weights.shape
+    for core, size, domain in zip(cores, shape, grid_fn.domain):
+        weights = np.zeros(size)
+        weights[::2] = (domain[1] - domain[0]) / (1 - np.arange(0, size, 2)**2)
+        acc = np.einsum('i,j,ijk->k', acc, weights, core)
+    return acc.item()

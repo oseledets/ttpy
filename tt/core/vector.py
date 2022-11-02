@@ -123,7 +123,7 @@ class vector(object):
             core = self.core[offset:offset + core_size]
             cores.append(core.reshape(core_shape, order='F'))
             offset += core_size
-        return tuple(cores)
+        return cores
 
 
     @classmethod
@@ -837,3 +837,13 @@ class TensorTrain(vector):
         """TT-ranks of tensor train.
         """
         return tuple(self.r.tolist())
+
+    def round(self, *args, **kwargs):
+        vec = super().round(*args, **kwargs)
+        train = TensorTrain()
+        train.core = vec.core
+        train.d = vec.d
+        train.n = vec.n
+        train.r = vec.r
+        train.ps = vec.ps
+        return train

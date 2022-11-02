@@ -103,7 +103,7 @@ class matrix(object):
             core = self.tt.core[offset:offset + core_size]
             cores.append(core.reshape(core_shape, order='F'))
             offset += core_size
-        return tuple(cores)
+        return cores
 
     @classmethod
     def from_list(cls, cores, order='F'):

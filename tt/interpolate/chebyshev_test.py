@@ -8,7 +8,7 @@ from pytest import approx
 
 from tt.core.vector import TensorTrain
 from tt.interpolate.chebyshev import (Chebop, chebder, chebdiff, chebfit,
-                                      chebgrid, chebnodes)
+                                      chebgrid, chebint, chebnodes)
 
 
 def fn(xs, std=1.0):
@@ -149,5 +149,11 @@ def test_chebfit(ndim: int):
     assert lhs == approx(rhs, 1e-17)
 
 
-def test_chebint():
-    raise NotImplementedError
+@pytest.mark.parametrize('ndim', [1])
+def test_chebint(ndim: int):
+    np.random.seed(42)
+    grid_spec = (10, ) * ndim
+    grid_fn = chebfit(fn, grid_spec)
+    lhs = chebint(grid_fn)
+    rhs = sp.stats.norm.cdf(1) - sp.stats.norm.cdf(-1)
+    assert lhs, rhs
