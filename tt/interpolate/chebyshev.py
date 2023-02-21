@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from functools import wraps
 from math import comb, factorial
 from typing import Optional
 
@@ -11,7 +10,7 @@ from numpy.typing import ArrayLike
 from tt.core.matrix import matrix
 from tt.core.vector import TensorTrain, vector
 from tt.interpolate.fft import idct
-from tt.multifuncrs2 import multifuncrs2
+from tt.interpolate.grid import gridfit
 from tt.interpolate.util import normalize_cheb_domain
 
 
@@ -254,10 +253,6 @@ def chebfit(fn, grid: ArrayLike | TensorTrain, domain=None, tol: float = 1e-6,
     with specified precision `tol`. The function leverages cross-approximation
     methods building grid function.
     """
-    kwargs['eps_exit'] = tol
-    if 'verb' not in kwargs:
-        kwargs['verb'] = False
-
     if isinstance(grid, (list, tuple)):
         # Validate domain an generate transformations.
         domain = normalize_cheb_domain(domain, len(grid))
@@ -269,42 +264,20 @@ def chebfit(fn, grid: ArrayLike | TensorTrain, domain=None, tol: float = 1e-6,
         for nonodes, alpha, beta in zip(grid, alphas, betas):
             grid_core = chebnodes(nonodes)[None, :, None]
             grid_cores.append(alpha * grid_core + beta)
+
+        # Finally, build a grid and remove domain.
+        grid = TensorTrain.from_list(grid_cores)
+        domain = None
     elif isinstance(grid, TensorTrain):
-        if domain is not None:
-            raise ValueError('Domain should not be specified if grid has '
-                             'already specified as a tensor train.')
-        # Assume that grid specified as a tensor train whose cores are one
-        # dimensional grids and tensor train is just a tensor product.
-        grid_cores = grid.cores
+        pass  # OK. Do nothing.
     else:
         raise NotImplementedError('Either grid represented as rank-1 tensor '
                                   'train or a sequence of number of Chebyshev '
                                   'nodes are supported.')
 
-    @wraps(fn)
-    def fn_safe(xs: np.ndarray) -> np.ndarray:
-        assert xs.ndim == 2, \
-               f'Expected 2-tensor <n x d> but given {xs.ndim}-tensor.'
-        ys = fn(xs)
-        assert ys.ndim == 1, \
-               f'Expected 1-tensor on output but returned {xs.ndim}-tensor.'
-        assert ys.size == xs.shape[0], \
-               'Number of samples differ for input and returned tensor: ' \
-               f'{ys.size} != {xs.shape[0]}.'
-        return ys
-
-    # Since grid is a tensor product of one-dimensional grids, we can decompose
-    # them and compose tensor trains to evaluate function in the spirit of
-    # numpy.meshgrid.
-    ones = [np.ones_like(grid) for grid in grid_cores]
-    args = []
-    for k, grid in enumerate(grid_cores):
-        cores = ones[:k] + [grid] + ones[k + 1:]
-        args.append(TensorTrain.from_list(cores))
-
     # Evaluate target function on a Chebyshev grid for further interpolation.
-    values = multifuncrs2(args, fn_safe, **kwargs)
-    weights = idct(values, type=1)
+    grid_fn = gridfit(fn, grid, domain, tol, **kwargs)
+    weights = idct(grid_fn.values, type=1)
 
     # Adjust coefficients to IDCT-1.
     for core, size in zip(weights.cores, weights.shape):
@@ -313,8 +286,7 @@ def chebfit(fn, grid: ArrayLike | TensorTrain, domain=None, tol: float = 1e-6,
             core[:, -1, :] = -core[:, -1, :]
 
     # Apply Dicrete Cosine Transform to a tensor of values on the grid.
-    grid = TensorTrain.from_list(grid_cores)
-    return Chebfun(weights, values, grid)
+    return Chebfun(weights, grid_fn.values, grid)
 
 
 def chebint(grid_fn: Chebfun) -> float:
