@@ -9,7 +9,7 @@ from numpy.typing import ArrayLike
 
 from tt.core.matrix import matrix
 from tt.core.vector import TensorTrain, vector
-from tt.interpolate.fft import idct
+from tt.fft import idctn
 from tt.interpolate.grid import gridfit
 from tt.interpolate.util import normalize_cheb_domain
 
@@ -277,7 +277,7 @@ def chebfit(fn, grid: ArrayLike | TensorTrain, domain=None, tol: float = 1e-6,
 
     # Evaluate target function on a Chebyshev grid for further interpolation.
     grid_fn = gridfit(fn, grid, domain, tol, **kwargs)
-    weights = idct(grid_fn.values, type=1)
+    weights = idctn(grid_fn.values, type=1)
 
     # Adjust coefficients to IDCT-1.
     for core, size in zip(weights.cores, weights.shape):

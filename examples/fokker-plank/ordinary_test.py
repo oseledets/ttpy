@@ -8,9 +8,9 @@ from numpy.testing import assert_almost_equal, assert_array_almost_equal
 
 from tt.core.matrix import matrix
 from tt.core.vector import TensorTrain
+from tt.fft import idctn
 from tt.interpolate import (Chebfun, Chebop, chebfit, chebgrid, chebint,
                             normalize_cheb_domain)
-from tt.interpolate.fft import idct  # TODO
 
 RK4_RESULT_RULE = np.array([1 / 6, 1 / 3, 1 / 3, 1 / 6])
 
@@ -109,7 +109,7 @@ class Laplace(Chebop):
             # Now, use values to build Chebyshev interpolant. In fact, we could
             # use tt.interpolate.chebyshev.chebfit but it requires grid instead
             # of indicies. So, we have no choice but to repeat once agian.
-            weights = idct(values, type=1)
+            weights = idctn(values, type=1)
 
             # Adjust coefficients of Chebyshev series to IDCT-1.
             for core, size in zip(weights.cores, weights.shape):
