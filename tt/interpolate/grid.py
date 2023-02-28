@@ -60,10 +60,12 @@ class GridFun:
         Args:
             points: A single or a batch of d-dimensional points.
         """
-        batch = np.asarray(points)
-        if batch.ndim == 1:
-            batch = batch[None, :]
-        elif batch.ndim != 2:
+        points = np.asarray(points)
+        if points.ndim == 1:
+            batch = points[None, :]
+        elif points.ndim == 2:
+            batch = points
+        else:
             raise ValueError('Exepected one or two dimensional array but '
                              f'actual number of dimensions is {batch.ndim}.')
 

@@ -7,7 +7,7 @@ from numpy.typing import ArrayLike
 from scipy.interpolate import make_interp_spline
 
 from tt.core.vector import TensorTrain
-from tt.interpolate.grid import gridfit
+from tt.interpolate.grid import GridFun, gridfit
 
 # Type variables for functional transformations on BSpline object.
 Carry = TypeVar('Carry')
@@ -52,10 +52,12 @@ class BSpline:
         return f'{self.__class__.__name__}({args})'
 
     def __call__(self, points: np.ndarray) -> np.ndarray:
-        batch = np.asarray(points)
-        if batch.ndim == 1:
-            batch = batch[None, :]
-        elif batch.ndim != 2:
+        points = np.asarray(points)
+        if points.ndim == 1:
+            batch = points[None, :]
+        elif points.ndim == 2:
+            batch = points
+        else:
             raise ValueError('Exepected one or two dimensional array but '
                              f'actual number of dimensions is {batch.ndim}.')
 
@@ -113,13 +115,19 @@ class BSpline:
         return carry, items
 
 
-def bsplfit(fn: Callable[..., np.ndarray], grid, domain=None, order: int = 3,
-            bc_type=None, tol: float = 1e-6, **kwargs) -> BSpline:
+def bsplfit(fn: Callable[..., np.ndarray] | GridFun, grid, domain=None,
+            order: int = 3, bc_type=None, tol: float = 1e-6,
+            **kwargs) -> BSpline:
     """Build multi-variate B-spline interpolant for a function :fn: with
     interpolation coefficients represented as a tensor train.
     """
-    # Evaluate target function on a grid for further interpolation.
-    grid_fn = gridfit(fn, grid, domain, tol, **kwargs)
+    if callable(fn):
+        # Evaluate target function on a grid for further interpolation.
+        grid_fn = gridfit(fn, grid, domain, tol, **kwargs)
+    elif isinstance(fn, GridFun):
+        grid_fn = fn
+    else:
+        raise ValueError('Expected either callable or grid function.')
 
     # Build interpolant over external dim for each core of grid function.
     knots_cores = []
