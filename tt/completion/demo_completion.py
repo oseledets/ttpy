@@ -36,7 +36,7 @@ def demo_completion():
     P = int(np.floor(gamma*d*n*(R**2)))
     Pb = 100
 
-    # random choice 
+    # random choice
     indices = np.random.choice(n, [P, d])
     indicesB = np.random.choice(n, [Pb, d])
     # making list of tupled stings [indices]
@@ -78,7 +78,7 @@ def demo_completion():
                         tol=1e-8,
                         alpha = 1e-3
     )
-                       
+
 
     # Restore original, initial and approximation into full-format (do not try it in higher dimensions!)
     xf1 = X1.full() # approximation ALS
@@ -94,8 +94,8 @@ def demo_completion():
     nRow = n
     nCol = 3
     fig = plt.figure(figsize=(5*nCol, nRow*5))
-    gs = gridspec.GridSpec(nRow, nCol, wspace=0., hspace=1e-2, right=1-0.5/nCol)#top=1 - 0.5/nRow, 
-        #bottom=0.5/nRow, left=0.5/nCol, right=1 - 0.5/nCol)
+    gs = gridspec.GridSpec(nRow, nCol, wspace=0., hspace=1e-2, right=1-0.5/nCol)#top=1 - 0.5/nRow,
+    #bottom=0.5/nRow, left=0.5/nCol, right=1 - 0.5/nCol)
 
     for k in xrange(nRow):
         vmin = [x[k, :, :].min() for x in M]
@@ -115,8 +115,8 @@ def demo_completion():
                 ax.set_position([box.x0*1.05, box.y0, box.width, box.height])
                 axColor = plt.axes([box.x0*1.05 + box.width * 1.05, box.y0, 0.01, box.height])
                 fig.colorbar(im, cax = axColor)
-                
-        
+
+
     #fig.subplots_adjust(right = 0.5)
     #cbar_ax = fig.add_axes([0.55, 0.45, 0.005, 0.11])
     #fig.colorbar(im, cax=cbar_ax)
@@ -134,6 +134,6 @@ def demo_completion():
     plt.legend()
     plt.title('Funval ALS')
     plt.savefig('demo_completion_fitplot.pdf', dpi=300)
-    
+
 if __name__ == '__main__':
     demo_completion()

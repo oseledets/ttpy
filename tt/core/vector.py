@@ -1,14 +1,17 @@
-from __future__ import print_function, absolute_import, division
+from __future__ import absolute_import, division, print_function
+
+from numbers import Number
+from warnings import warn
+
+import numpy as np
 from six.moves import xrange
-import numpy as _np
-from numbers import Number as _Number
-from . import tt_f90 as _tt_f90
-from tt.core.utils import my_chop2
-import warnings
+
+from .tt_f90 import tt_f90
+from .utils import my_chop2
 
 
 class vector(object):
-    """The main class for working with vectors in the TT-format. It constructs
+    r"""The main class for working with vectors in the TT-format. It constructs
     new TT-vector. When called with no arguments, creates dummy object which
     can be filled from outside. When ``a`` is specified, computes approximate
     decomposition of array ``a`` with accuracy ``eps``:
@@ -50,59 +53,138 @@ class vector(object):
 
     def __init__(self, a=None, eps=1e-14, rmax=100000):
         if a is None:
-            self.core = _np.array([0.0])
+            self.core = np.array([0.0])
             self.d = 0
-            self.n = _np.array([0], dtype=_np.int32)
-            self.r = _np.array([1], dtype=_np.int32)
-            self.ps = _np.array([0], dtype=_np.int32)
+            self.n = np.array([0], dtype=np.int32)
+            self.r = np.array([1], dtype=np.int32)
+            self.ps = np.array([0], dtype=np.int32)
             return
         self.d = a.ndim
-        self.n = _np.array(a.shape, dtype=_np.int32)
-        r = _np.zeros((self.d + 1,), dtype=_np.int32)
-        ps = _np.zeros((self.d + 1,), dtype=_np.int32)
-        if (_np.iscomplex(a).any()):
+        self.n = np.array(a.shape, dtype=np.int32)
+        r = np.zeros((self.d + 1,), dtype=np.int32)
+        ps = np.zeros((self.d + 1,), dtype=np.int32)
+        if (np.iscomplex(a).any()):
             if rmax is not None:
-                self.r, self.ps = _tt_f90.tt_f90.zfull_to_tt(
+                self.r, self.ps = tt_f90.zfull_to_tt(
                     a.flatten('F'), self.n, self.d, eps, rmax)
             else:
-                self.r, self.ps = _tt_f90.tt_f90.zfull_to_tt(
+                self.r, self.ps = tt_f90.zfull_to_tt(
                     a.flatten('F'), self.n, self.d, eps)
-            self.core = _tt_f90.tt_f90.zcore.copy()
+            self.core = tt_f90.zcore.copy()
         else:
             if rmax is not None:
-                self.r, self.ps = _tt_f90.tt_f90.dfull_to_tt(
-                    _np.real(a).flatten('F'), self.n, self.d, eps, rmax)
+                self.r, self.ps = tt_f90.dfull_to_tt(
+                    np.real(a).flatten('F'), self.n, self.d, eps, rmax)
             else:
-                self.r, self.ps = _tt_f90.tt_f90.dfull_to_tt(
-                    _np.real(a).flatten('F'), self.n, self.d, eps)
-            self.core = _tt_f90.tt_f90.core.copy()
-        _tt_f90.tt_f90.tt_dealloc()
+                self.r, self.ps = tt_f90.dfull_to_tt(
+                    np.real(a).flatten('F'), self.n, self.d, eps)
+            self.core = tt_f90.core.copy()
+        tt_f90.tt_dealloc()
 
-    @staticmethod
-    def from_list(a, order='F'):
-        """Generate TT-vectorr object from given TT cores.
-
-        :param a: List of TT cores.
-        :type a: list
-        :returns: vector -- TT-vector constructed from the given cores.
-
+    @property
+    def dtype(self):
+        """Data type of elements.
         """
-        d = len(a)  # Number of cores
-        res = vector()
-        n = _np.zeros(d, dtype=_np.int32)
-        r = _np.zeros(d+1, dtype=_np.int32)
-        cr = _np.array([])
-        for i in xrange(d):
-            cr = _np.concatenate((cr, a[i].flatten(order)))
-            r[i] = a[i].shape[0]
-            r[i+1] = a[i].shape[2]
-            n[i] = a[i].shape[1]
-        res.d = d
-        res.n = n
-        res.r = r
-        res.core = cr
-        res.get_ps()
-        return res
+        return self.core.dtype
+
+    @property
+    def size(self):
+        """Number of elements in array (tensor).
+        """
+        return np.prod(self.n)
+
+    @property
+    def ndim(self):
+        """Number of array dimensions.
+        """
+        return 1
+
+    @property
+    def shape(self):
+        """Shape of the array.
+        """
+        return (self.size, )
+
+    @property
+    def ranks(self):
+        """TT-ranks of the array.
+        """
+        return tuple(self.r.tolist())
+
+    @property
+    def cores(self):
+        """Tuple of views on TT-cores. Each element in the list is a view on
+        underlying buffer.
+        """
+        offset = 0
+        cores = []
+        for core_shape in zip(self.ranks[:-1], self.n, self.ranks[1:]):
+            core_size = np.prod(core_shape)
+            core = self.core[offset:offset + core_size]
+            cores.append(core.reshape(core_shape, order='F'))
+            offset += core_size
+        return cores
+
+
+    @classmethod
+    def from_list(cls, cores, order='F'):
+        """Construct  TT-vector from a list of TT-cores.
+
+        :param cores: List of TT cores.
+        :type cores: list
+        :returns: TT-vector constructed from the given cores.
+        """
+        # Validate input list of tensors on conformance to TT-representation.
+        if not cores:
+            raise ValueError('Exepected non empty list of cores.')
+        shape = np.empty(len(cores), np.int32)
+        ranks = np.empty(len(cores) + 1, np.int32)
+        for i, core in enumerate(cores):
+            if core.ndim != 3:
+                raise ValueError('Core should have exactly three dimensions.')
+            prev, size, next_ = core.shape
+            shape[i] = size
+            ranks[i + 1] = next_
+            if i == 0:
+                ranks[i] = prev
+                continue
+            if ranks[i] != prev:
+                msg = 'Rank mismatch for cores #{} and #{}.'.format(i, i + 1)
+                raise ValueError(msg)
+        if ranks[0] != 1:
+            raise ValueError('Shape of the first core should be (1, n, r).')
+        if ranks[-1] != 1:
+            raise ValueError('Shape of the last core should be (r, n, 1).')
+
+        # Currently, tensor train represented as a single buffer for all cores.
+        buffer = np.concatenate([np.asarray(x).flatten(order) for x in cores])
+
+        # Finally, we can create a TT-vector instance.
+        vec = cls()
+        vec.d = shape.size
+        vec.n = shape
+        vec.r = ranks
+        vec.core = buffer
+        vec.get_ps()
+        return vec
+
+    @classmethod
+    def from_train(cls, train, *, copy=True):
+        """Create TT-vector from a tensor train.
+
+        >>> cores = [np.ones((1, size, 1)) for size in (2, 3, 4)]
+        >>> train = TensorTrain.from_list(cores)
+        >>> vector.from_train(train)
+        This is a 3-dimensional tensor
+        r(0)=1, n(0)=2
+        r(1)=1, n(1)=3
+        r(2)=1, n(2)=4
+        r(3)=1
+        """
+        if not copy:
+            raise NotImplementedError('Constructor of TT-vector forces '
+                                      'copying at the moment.')
+        return cls.from_list(train.cores)
 
     @staticmethod
     def to_list(tt):
@@ -132,16 +214,16 @@ class vector(object):
         if d <= 1:
             er = 0e0
         else:
-            sz = _np.dot(n * r[0:d], r[1:])
+            sz = np.dot(n * r[0:d], r[1:])
             if sz == 0:
                 er = 0e0
             else:
                 b = r[0] * n[0] + n[d - 1] * r[d]
-                if d is 2:
+                if d == 2:
                     er = sz * 1.0 / b
                 else:
-                    a = _np.sum(n[1:d - 1])
-                    er = (_np.sqrt(b * b + 4 * a * sz) - b) / (2 * a)
+                    a = np.sum(n[1:d - 1])
+                    er = (np.sqrt(b * b + 4 * a * sz) - b) / (2 * a)
         return er
 
     def __getitem__(self, index):
@@ -176,7 +258,7 @@ class vector(object):
                 cur_core = cur_core.copy()
             else:
                 new_r0 = running_fact.shape[0]
-                cur_core = _np.dot(running_fact, cur_core)
+                cur_core = np.dot(running_fact, cur_core)
             cur_core = cur_core.reshape((new_r0, -1, self.r[i + 1]), order='F')
             if cur_core.shape[1] == 1:
                 running_fact = cur_core.reshape((new_r0, -1), order='F')
@@ -186,12 +268,12 @@ class vector(object):
         if len(answ_cores) == 0:
             return running_fact[0, 0]
         if running_fact is not None:
-            answ_cores[-1] = _np.dot(answ_cores[-1], running_fact)
+            answ_cores[-1] = np.dot(answ_cores[-1], running_fact)
         return self.from_list(answ_cores)
 
     @property
     def is_complex(self):
-        return _np.iscomplexobj(self.core)
+        return np.iscomplexobj(self.core)
 
     def _matrix__complex_op(self, op):
         return self.__complex_op(op)
@@ -201,49 +283,49 @@ class vector(object):
         newcrs = []
         cr = crs[0]
         rl, n, rr = cr.shape
-        newcr = _np.zeros((rl, n, rr * 2), dtype=_np.float)
-        newcr[:, :, :rr] = _np.real(cr)
-        newcr[:, :, rr:] = _np.imag(cr)
+        newcr = np.zeros((rl, n, rr * 2), dtype=np.float64)
+        newcr[:, :, :rr] = np.real(cr)
+        newcr[:, :, rr:] = np.imag(cr)
         newcrs.append(newcr)
         for i in xrange(1, self.d - 1):
             cr = crs[i]
             rl, n, rr = cr.shape
-            newcr = _np.zeros((rl * 2, n, rr * 2), dtype=_np.float)
-            newcr[:rl, :, :rr] = newcr[rl:, :, rr:] = _np.real(cr)
-            newcr[:rl, :, rr:] = _np.imag(cr)
-            newcr[rl:, :, :rr] = -_np.imag(cr)
+            newcr = np.zeros((rl * 2, n, rr * 2), dtype=np.float64)
+            newcr[:rl, :, :rr] = newcr[rl:, :, rr:] = np.real(cr)
+            newcr[:rl, :, rr:] = np.imag(cr)
+            newcr[rl:, :, :rr] = -np.imag(cr)
             newcrs.append(newcr)
         cr = crs[-1]
         rl, n, rr = cr.shape
         if op in ['R', 'r', 'Re']:
             # get real part
-            newcr = _np.zeros((rl * 2, n, rr), dtype=_np.float)
-            newcr[:rl, :, :] = _np.real(cr)
-            newcr[rl:, :, :] = -_np.imag(cr)
+            newcr = np.zeros((rl * 2, n, rr), dtype=np.float64)
+            newcr[:rl, :, :] = np.real(cr)
+            newcr[rl:, :, :] = -np.imag(cr)
         elif op in ['I', 'i', 'Im']:
             # get imaginary part
-            newcr = _np.zeros((rl * 2, n, rr), dtype=_np.float)
-            newcr[:rl, :, :] = _np.imag(cr)
-            newcr[rl:, :, :] = _np.real(cr)
+            newcr = np.zeros((rl * 2, n, rr), dtype=np.float64)
+            newcr[:rl, :, :] = np.imag(cr)
+            newcr[rl:, :, :] = np.real(cr)
         elif op in ['A', 'B', 'all', 'both']:
             # get both parts (increase dimensionality)
-            newcr = _np.zeros((rl * 2, n, 2 * rr), dtype=_np.float)
-            newcr[:rl, :, :rr] = _np.real(cr)
-            newcr[rl:, :, :rr] = -_np.imag(cr)
-            newcr[:rl, :, rr:] = _np.imag(cr)
-            newcr[rl:, :, rr:] = _np.real(cr)
+            newcr = np.zeros((rl * 2, n, 2 * rr), dtype=np.float64)
+            newcr[:rl, :, :rr] = np.real(cr)
+            newcr[rl:, :, :rr] = -np.imag(cr)
+            newcr[:rl, :, rr:] = np.imag(cr)
+            newcr[rl:, :, rr:] = np.real(cr)
             newcrs.append(newcr)
-            newcr = _np.zeros((rr * 2, 2, 1), dtype=_np.float)
+            newcr = np.zeros((rr * 2, 2, 1), dtype=np.float64)
             newcr[:rr, 0, :] = newcr[rr:, 1, :] = 1.0
         elif op in ['M']:
             # get matrix modificated for real-arithm. solver
-            newcr = _np.zeros((rl * 2, n, 2 * rr), dtype=_np.float)
-            newcr[:rl, :, :rr] = _np.real(cr)
-            newcr[rl:, :, :rr] = -_np.imag(cr)
-            newcr[:rl, :, rr:] = _np.imag(cr)
-            newcr[rl:, :, rr:] = _np.real(cr)
+            newcr = np.zeros((rl * 2, n, 2 * rr), dtype=np.float64)
+            newcr[:rl, :, :rr] = np.real(cr)
+            newcr[rl:, :, :rr] = -np.imag(cr)
+            newcr[:rl, :, rr:] = np.imag(cr)
+            newcr[rl:, :, rr:] = np.real(cr)
             newcrs.append(newcr)
-            newcr = _np.zeros((rr * 2, 4, 1), dtype=_np.float)
+            newcr = np.zeros((rr * 2, 4, 1), dtype=np.float64)
             newcr[:rr, [0, 3], :] = 1.0
             newcr[rr:, 1, :] = 1.0
             newcr[rr:, 2, :] = -1.0
@@ -293,7 +375,7 @@ class vector(object):
 
         """
         tmp = self.copy()
-        newcore = _np.array(tmp.core, dtype=_np.complex)
+        newcore = np.array(tmp.core, dtype=np.complex128)
         cr = newcore[tmp.ps[-2] - 1:tmp.ps[-1] - 1]
         cr = cr.reshape((tmp.r[-2], tmp.n[-1], tmp.r[-1]), order='F')
         cr[:, 1, :] *= 1j
@@ -315,12 +397,12 @@ class vector(object):
         return res
 
     def write(self, fname):
-        if _np.iscomplexobj(self.core):
-            _tt_f90.tt_f90.ztt_write_wrapper(
+        if np.iscomplexobj(self.core):
+            tt_f90.ztt_write_wrapper(
                 self.n, self.r, self.ps, self.core, fname)
         else:
-            _tt_f90.tt_f90.dtt_write_wrapper(
-                self.n, self.r, self.ps, _np.real(
+            tt_f90.dtt_write_wrapper(
+                self.n, self.r, self.ps, np.real(
                     self.core), fname)
 
     def full(self, asvector=False):
@@ -336,16 +418,16 @@ class vector(object):
         # Generate correct size vector
         sz = self.n.copy()
         if self.r[0] > 1:
-            sz = _np.concatenate(([self.r[0]], sz))
+            sz = np.concatenate(([self.r[0]], sz))
         if self.r[self.d] > 1:
-            sz = _np.concatenate(([self.r[self.d]], sz))
-        if (_np.iscomplex(self.core).any()):
-            a = _tt_f90.tt_f90.ztt_to_full(
-                self.n, self.r, self.ps, self.core, _np.prod(sz))
+            sz = np.concatenate(([self.r[self.d]], sz))
+        if (np.iscomplex(self.core).any()):
+            a = tt_f90.ztt_to_full(
+                self.n, self.r, self.ps, self.core, np.prod(sz))
         else:
-            a = _tt_f90.tt_f90.dtt_to_full(
-                self.n, self.r, self.ps, _np.real(
-                    self.core), _np.prod(sz))
+            a = tt_f90.dtt_to_full(
+                self.n, self.r, self.ps, np.real(
+                    self.core), np.prod(sz))
         a = a.reshape(sz, order='F')
         if asvector:
             a=a.flatten(order='F')
@@ -355,22 +437,22 @@ class vector(object):
         if other is None:
             return self
         c = vector()
-        c.r = _np.zeros((self.d + 1,), dtype=_np.int32)
-        c.ps = _np.zeros((self.d + 1,), dtype=_np.int32)
+        c.r = np.zeros((self.d + 1,), dtype=np.int32)
+        c.ps = np.zeros((self.d + 1,), dtype=np.int32)
         c.n = self.n
         c.d = self.d
-        if (_np.iscomplex(self.core).any() or _np.iscomplex(other.core).any()):
-            c.r, c.ps = _tt_f90.tt_f90.ztt_add(
+        if (np.iscomplex(self.core).any() or np.iscomplex(other.core).any()):
+            c.r, c.ps = tt_f90.ztt_add(
                 self.n, self.r, other.r, self.ps, other.ps, self.core + 0j, other.core + 0j)
-            c.core = _tt_f90.tt_f90.zcore.copy()
+            c.core = tt_f90.zcore.copy()
         else:
             # This could be a real fix in the case we fell to the real world
-            c.r, c.ps = _tt_f90.tt_f90.dtt_add(
-                self.n, self.r, other.r, self.ps, other.ps, _np.real(
-                    self.core), _np.real(
+            c.r, c.ps = tt_f90.dtt_add(
+                self.n, self.r, other.r, self.ps, other.ps, np.real(
+                    self.core), np.real(
                     other.core))
-            c.core = _tt_f90.tt_f90.core.copy()
-        _tt_f90.tt_f90.tt_dealloc()
+            c.core = tt_f90.core.copy()
+        tt_f90.tt_dealloc()
         return c
 
     def __radd__(self, other):
@@ -399,38 +481,38 @@ class vector(object):
 
         """
         c = vector()
-        c.n = _np.copy(self.n)
+        c.n = np.copy(self.n)
         c.d = self.d
-        c.r = _np.copy(self.r)
-        c.ps = _np.copy(self.ps)
-        if (_np.iscomplex(self.core).any()):
-            _tt_f90.tt_f90.ztt_compr2(c.n, c.r, c.ps, self.core, eps, rmax)
-            c.core = _tt_f90.tt_f90.zcore.copy()
+        c.r = np.copy(self.r)
+        c.ps = np.copy(self.ps)
+        if (np.iscomplex(self.core).any()):
+            tt_f90.ztt_compr2(c.n, c.r, c.ps, self.core, eps, rmax)
+            c.core = tt_f90.zcore.copy()
         else:
-            _tt_f90.tt_f90.dtt_compr2(c.n, c.r, c.ps, self.core, eps, rmax)
-            c.core = _tt_f90.tt_f90.core.copy()
-        _tt_f90.tt_f90.tt_dealloc()
+            tt_f90.dtt_compr2(c.n, c.r, c.ps, self.core, eps, rmax)
+            c.core = tt_f90.core.copy()
+        tt_f90.tt_dealloc()
         return c
 
     def norm(self):
-        if (_np.iscomplex(self.core).any()):
-            nrm = _tt_f90.tt_f90.ztt_nrm(self.n, self.r, self.ps, self.core)
+        if (np.iscomplex(self.core).any()):
+            nrm = tt_f90.ztt_nrm(self.n, self.r, self.ps, self.core)
         else:
-            nrm = _tt_f90.tt_f90.dtt_nrm(
-                self.n, self.r, self.ps, _np.real(self.core))
+            nrm = tt_f90.dtt_nrm(
+                self.n, self.r, self.ps, np.real(self.core))
         return nrm
 
     def __rmul__(self, other):
         c = vector()
         c.d = self.d
         c.n = self.n
-        if isinstance(other, _Number):
+        if isinstance(other, Number):
             c.r = self.r.copy()
             c.ps = self.ps.copy()
             c.core = self.core.copy()
             new_core = c.core[c.ps[0] - 1:c.ps[1] - 1]
             new_core = new_core * other
-            c.core = _np.array(c.core, dtype=new_core.dtype)
+            c.core = np.array(c.core, dtype=new_core.dtype)
             c.core[c.ps[0] - 1:c.ps[1] - 1] = new_core
         else:
             c = _hdm(self, other)
@@ -440,13 +522,13 @@ class vector(object):
         c = vector()
         c.d = self.d
         c.n = self.n
-        if isinstance(other, _Number):
+        if isinstance(other, Number):
             c.r = self.r.copy()
             c.ps = self.ps.copy()
             c.core = self.core.copy()
             new_core = c.core[c.ps[0] - 1:c.ps[1] - 1]
             new_core = new_core * other
-            c.core = _np.array(c.core, dtype=new_core.dtype)
+            c.core = np.array(c.core, dtype=new_core.dtype)
             c.core[c.ps[0] - 1:c.ps[1] - 1] = new_core
         else:
             c = _hdm(other, self)
@@ -463,19 +545,19 @@ class vector(object):
         b = other
         c = vector()
         c.d = a.d + b.d
-        c.n = _np.concatenate((a.n, b.n))
-        c.r = _np.concatenate((a.r[0:a.d], b.r[0:b.d + 1]))
+        c.n = np.concatenate((a.n, b.n))
+        c.r = np.concatenate((a.r[0:a.d], b.r[0:b.d + 1]))
         c.get_ps()
-        c.core = _np.concatenate((a.core, b.core))
+        c.core = np.concatenate((a.core, b.core))
         return c
 
     def __dot__(self, other):
         r1 = self.r
         r2 = other.r
         d = self.d
-        if (_np.iscomplex(self.core).any() or _np.iscomplex(other.core).any()):
-            dt = _np.zeros(r1[0] * r2[0] * r1[d] * r2[d], dtype=_np.complex)
-            dt = _tt_f90.tt_f90.ztt_dotprod(
+        if (np.iscomplex(self.core).any() or np.iscomplex(other.core).any()):
+            dt = np.zeros(r1[0] * r2[0] * r1[d] * r2[d], dtype=np.complex128)
+            dt = tt_f90.ztt_dotprod(
                 self.n,
                 r1,
                 r2,
@@ -485,12 +567,12 @@ class vector(object):
                 other.core + 0j,
                 dt.size)
         else:
-            dt = _np.zeros(r1[0] * r2[0] * r1[d] * r2[d])
-            dt = _tt_f90.tt_f90.dtt_dotprod(
-                self.n, r1, r2, self.ps, other.ps, _np.real(
-                    self.core), _np.real(
+            dt = np.zeros(r1[0] * r2[0] * r1[d] * r2[d])
+            dt = tt_f90.dtt_dotprod(
+                self.n, r1, r2, self.ps, other.ps, np.real(
+                    self.core), np.real(
                     other.core), dt.size)
-        if dt.size is 1:
+        if dt.size == 1:
             dt = dt[0]
         return dt
 
@@ -506,7 +588,7 @@ class vector(object):
         last_core = last_core[:, k]
         try:
             r[d] = len(k)
-        except:
+        except TypeError:
             r[d] = 1
         ps[d] = ps[d - 1] + r[d - 1] * n[d - 1] * r[d]
         core[ps[d - 1] - 1:ps[d] - 1] = last_core.flatten('F')
@@ -527,11 +609,11 @@ class vector(object):
         dtype = self.core.dtype
         for i in xrange(d):
             cur_core = cl[i]
-            res_core = _np.zeros((r[i], n[i], n[i], r[i + 1]), dtype=dtype)
+            res_core = np.zeros((r[i], n[i], n[i], r[i + 1]), dtype=dtype)
             for s1 in xrange(r[i]):
                 for s2 in xrange(r[i + 1]):
                     res_core[
-                        s1, :, :, s2] = _np.diag(
+                        s1, :, :, s2] = np.diag(
                         cur_core[
                             s1, :, s2].reshape(
                             n[i], order='F'))
@@ -542,8 +624,8 @@ class vector(object):
         return self * (-1)
 
     def get_ps(self):
-        self.ps = _np.cumsum(
-            _np.concatenate(
+        self.ps = np.cumsum(
+            np.concatenate(
                 ([1],
                  self.n *
                  self.r[
@@ -551,10 +633,10 @@ class vector(object):
                     self.r[
                     1:self.d +
                     1]))).astype(
-            _np.int32)
+            np.int32)
 
     def alloc_core(self):
-        self.core = _np.zeros((self.ps[self.d] - 1,), dtype=_np.float)
+        self.core = np.zeros((self.ps[self.d] - 1, ), dtype=np.float64)
 
     def copy(self):
         c = vector()
@@ -567,146 +649,201 @@ class vector(object):
 
     def rmean(self):
         """ Calculates the mean rank of a TT-vector."""
-        if not _np.all(self.n):
+        if not np.all(self.n):
             return 0
         # Solving quadratic equation ar^2 + br + c = 0;
-        a = _np.sum(self.n[1:-1])
+        a = np.sum(self.n[1:-1])
         b = self.n[0] + self.n[-1]
-        c = - _np.sum(self.n * self.r[1:] * self.r[:-1])
+        c = - np.sum(self.n * self.r[1:] * self.r[:-1])
         D = b ** 2 - 4 * a * c
-        r = 0.5 * (-b + _np.sqrt(D)) / a
+        r = 0.5 * (-b + np.sqrt(D)) / a
         return r
 
-    def qtt_fft1(self,tol,inverse=False, bitReverse=True): 
+    def qtt_fft1(self,tol,inverse=False, bitReverse=True):
         """ Compute 1D (inverse) discrete Fourier Transform in the QTT format.
         :param tol: error tolerance.
-        :type tol: float 
-        
+        :type tol: float
+
         :param inverse: whether do an inverse FFT or not.
-        :type inverse: Boolean 
-        
+        :type inverse: Boolean
+
         :param bitReverse: whether do the bit reversion or not. If this function is used as a subroutine for multi-dimensional qtt-fft, this option
         need to be set False.
         :type bitReverse: Boolean.
-        
-        :returns: QTT-vector of FFT coefficients. 
- 
+
+        :returns: QTT-vector of FFT coefficients.
+
         This is a python translation of the Matlab function "qtt_fft1" in Ivan Oseledets' project TT-Toolbox(https://github.com/oseledets/TT-Toolbox)
-       
-        See S. Dolgov, B. Khoromskij, D. Savostyanov, 
+
+        See S. Dolgov, B. Khoromskij, D. Savostyanov,
         Superfast Fourier transform using QTT approximation,
         J. Fourier Anal. Appl., 18(5), 2012.
         """
-    
-        d = self.d 
+
+        d = self.d
         r = self.r.copy()
-        y = self.to_list(self)   
-        
+        y = self.to_list(self)
+
         if inverse:
             twiddle =-1+1.22e-16j # exp(pi*1j)
         else:
             twiddle =-1-1.22e-16j # exp(-pi*1j)
-        
+
         for i in range(d-1, 0, -1):
-            
+
             r1= y[i].shape[0]   # head r
             r2= y[i].shape[2]   # tail r
-            crd2 = _np.zeros((r1, 2, r2), order='F',  dtype=complex) 
+            crd2 = np.zeros((r1, 2, r2), order='F',  dtype=complex)
             # last block +-
-            crd2[:,0,:]= (y[i][:,0,:] + y[i][:,1,:])/_np.sqrt(2)
-            crd2[:,1,:]= (y[i][:,0,:] - y[i][:,1,:])/_np.sqrt(2)           
+            crd2[:,0,:]= (y[i][:,0,:] + y[i][:,1,:])/np.sqrt(2)
+            crd2[:,1,:]= (y[i][:,0,:] - y[i][:,1,:])/np.sqrt(2)
             # last block twiddles
-            y[i]= _np.zeros((r1*2, 2, r2),order='F',dtype=complex) 
+            y[i]= np.zeros((r1*2, 2, r2),order='F',dtype=complex)
             y[i][0:r1,    0, 0:r2]= crd2[:,0,:]
             y[i][r1:r1*2, 1, 0:r2]= crd2[:,1,:]
             #1..i-1 block twiddles and qr
-            rv=1; 
-            
+            rv=1;
+
             for j in range(0, i):
-            
+
                 cr=y[j]
                 r1= cr.shape[0]   # head r
                 r2= cr.shape[2]   # tail r
                 if j==0:
                     r[j]=r1
                     r[j+1] = r2*2
-                    y[j] = _np.zeros((r[j], 2, r[j+1]),order='F',dtype=complex)
-                    y[j][0:r1, :, 0:r2] = cr 
-                    y[j][0:r1, 0, r2 :r[j+1]] = cr[:,0,:] 
+                    y[j] = np.zeros((r[j], 2, r[j+1]),order='F',dtype=complex)
+                    y[j][0:r1, :, 0:r2] = cr
+                    y[j][0:r1, 0, r2 :r[j+1]] = cr[:,0,:]
                     y[j][0:r1, 1, r2 :r[j+1]] = twiddle**(1.0/(2**(i-j)))*cr[:,1,:]
                 else:
                     r[j]=r1*2
                     r[j+1] = r2*2
-                    y[j] = _np.zeros((r[j], 2, r[j+1]),order='F',dtype=complex)
-                    y[j][0:r1, :, 0:r2] = cr 
-                    y[j][r1:r[j], 0, r2 :r[j+1]] = cr[:,0,:] 
+                    y[j] = np.zeros((r[j], 2, r[j+1]),order='F',dtype=complex)
+                    y[j][0:r1, :, 0:r2] = cr
+                    y[j][r1:r[j], 0, r2 :r[j+1]] = cr[:,0,:]
                     y[j][r1:r[j], 1, r2 :r[j+1]] = twiddle**(1.0/(2**(i-j)))*cr[:,1,:]
-                        
-                    
-                y[j] = _np.reshape(y[j],( r[j], 2*r[j+1]),order='F')
-                y[j] = _np.dot(rv,y[j])
+
+
+                y[j] = np.reshape(y[j],( r[j], 2*r[j+1]),order='F')
+                y[j] = np.dot(rv,y[j])
                 r[j] = y[j].shape[0]
-                y[j] = _np.reshape(y[j],( 2*r[j],  r[j+1]),order='F')
-                
-                y[j], rv = _np.linalg.qr(y[j])
-                y[j] = _np.reshape(y[j], (r[j], 2, rv.shape[0]),order='F')
-            
-            y[i] = _np.reshape(y[i], (r[i], 2*r[i+1]),order='F')  
-            y[i] = _np.dot(rv,y[i])
+                y[j] = np.reshape(y[j],( 2*r[j],  r[j+1]),order='F')
+
+                y[j], rv = np.linalg.qr(y[j])
+                y[j] = np.reshape(y[j], (r[j], 2, rv.shape[0]),order='F')
+
+            y[i] = np.reshape(y[i], (r[i], 2*r[i+1]),order='F')
+            y[i] = np.dot(rv,y[i])
             r[i] = rv.shape[0]
             # backward svd
             for j in range(i, 0,-1):
-                u,s,v = _np.linalg.svd(y[j], full_matrices=False)
-                rnew = my_chop2(s, _np.linalg.norm(s)*tol/_np.sqrt(i))
-                u=_np.dot(u[:, 0:rnew], _np.diag(s[0:rnew]))
-                v= v[0:rnew, :] 
-                y[j] = _np.reshape(v, (rnew, 2, r[j+1]),order='F' )
-                y[j-1] = _np.reshape(y[j-1], (r[j-1]*2,r[j] ),order='F' )
-                y[j-1] = _np.dot(y[j-1], u)
+                u,s,v = np.linalg.svd(y[j], full_matrices=False)
+                rnew = my_chop2(s, np.linalg.norm(s)*tol/np.sqrt(i))
+                u=np.dot(u[:, 0:rnew], np.diag(s[0:rnew]))
+                v= v[0:rnew, :]
+                y[j] = np.reshape(v, (rnew, 2, r[j+1]),order='F' )
+                y[j-1] = np.reshape(y[j-1], (r[j-1]*2,r[j] ),order='F' )
+                y[j-1] = np.dot(y[j-1], u)
                 r[j] = rnew
-                y[j-1] = _np.reshape(y[j-1], (r[j-1],r[j]*2 ),order='F' )
-                
-            y[0] = _np.reshape(y[0], (r[0],2, r[1]), order='F' )
-        
+                y[j-1] = np.reshape(y[j-1], (r[j-1],r[j]*2 ),order='F' )
+
+            y[0] = np.reshape(y[0], (r[0],2, r[1]), order='F' )
+
         # FFT on the first block
-        y[0]=_np.transpose(y[0],(1,0,2))
-        y[0]=_np.reshape(y[0],(2, r[0]*r[1]),order='F')
-        y[0]= _np.dot( _np.array([[1,1],[1,-1]]), y[0])/_np.sqrt(2)
-        y[0]=_np.reshape(y[0],(2, r[0], r[1]),order='F')
-        y[0]=_np.transpose(y[0],(1,0,2))
-        
+        y[0]=np.transpose(y[0],(1,0,2))
+        y[0]=np.reshape(y[0],(2, r[0]*r[1]),order='F')
+        y[0]= np.dot( np.array([[1,1],[1,-1]]), y[0])/np.sqrt(2)
+        y[0]=np.reshape(y[0],(2, r[0], r[1]),order='F')
+        y[0]=np.transpose(y[0],(1,0,2))
+
         if bitReverse:
             # Reverse the train
             y2=[None]*d
             for i in range(d):
-                y2[d-i-1]= _np.transpose(y[i],(2,1,0))
-            
+                y2[d-i-1]= np.transpose(y[i],(2,1,0))
+
             y=self.from_list(y2)
         else: # for multi-dimensional qtt_fft
             y=self.from_list(y)
-        return y        
-        
+        return y
+
 def _hdm(a, b):
     c = vector()
     c.d = a.d
     c.n = a.n
-    c.r = _np.zeros((a.d + 1, 1), dtype=_np.int32)
-    c.ps = _np.zeros((a.d + 1, 1), dtype=_np.int32)
-    if _np.iscomplexobj(a.core) or _np.iscomplexobj(b.core):
-        c.r, c.ps = _tt_f90.tt_f90.ztt_hdm(
+    c.r = np.zeros((a.d + 1, 1), dtype=np.int32)
+    c.ps = np.zeros((a.d + 1, 1), dtype=np.int32)
+    if np.iscomplexobj(a.core) or np.iscomplexobj(b.core):
+        c.r, c.ps = tt_f90.ztt_hdm(
             a.n, a.r, b.r, a.ps, b.ps, a.core, b.core)
-        c.core = _tt_f90.tt_f90.zcore.copy()
+        c.core = tt_f90.zcore.copy()
     else:
-        c.r, c.ps = _tt_f90.tt_f90.dtt_hdm(
+        c.r, c.ps = tt_f90.dtt_hdm(
             a.n, a.r, b.r, a.ps, b.ps, a.core, b.core)
-        c.core = _tt_f90.tt_f90.core.copy()
-    _tt_f90.tt_f90.tt_dealloc()
+        c.core = tt_f90.core.copy()
+    tt_f90.tt_dealloc()
     return c
-        
+
+
 class tensor(vector):  # For combatibility issues
 
     def __init__(self, *args, **kwargs):
         super(tensor, self).__init__(*args, **kwargs)
-        warnings.warn(
-            "tt.tensor is deprecated, use tt.vector instead",
-            DeprecationWarning)
+        warn('Type `tt.tensor` is deprecated, use `tt.vector` instead.',
+             DeprecationWarning)
+
+
+class TensorTrain(vector):
+    """Class TensorTrain represents a tensor train itself as a tuple of
+    3-tensors with some basic operations and properties.
+    """
+
+    def __repr__(self):
+        args = ', '.join([
+            f'ndim={self.ndim}',
+            f'shape={self.shape}',
+            f'ranks={self.ranks}',
+        ])
+        return f'{self.__class__.__name__}({args})'
+
+    @property
+    def dtype(self):
+        """Data type of elements.
+        """
+        return self.core.dtype
+
+    @property
+    def size(self):
+        """Number of elements in tensor train.
+        """
+        core_shapes = zip(self.ranks[:-1], self.shape, self.ranks[1:])
+        return sum([np.prod(core_shape) for core_shape in core_shapes])
+
+    @property
+    def ndim(self):
+        """Number of dimensions of tensor train.
+        """
+        return self.n.size
+
+    @property
+    def shape(self):
+        """Shape of tensor train.
+        """
+        return tuple(self.n)
+
+    @property
+    def ranks(self):
+        """TT-ranks of tensor train.
+        """
+        return tuple(self.r.tolist())
+
+    def round(self, *args, **kwargs):
+        vec = super().round(*args, **kwargs)
+        train = TensorTrain()
+        train.core = vec.core
+        train.d = vec.d
+        train.n = vec.n
+        train.r = vec.r
+        train.ps = vec.ps
+        return train

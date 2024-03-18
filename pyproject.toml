@@ -1,3 +1,12 @@
 [build-system]
 requires = ["setuptools >= 40.6.0", "wheel", "numpy", "Cython"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q -m 'not slow'"
+testpaths = ["examples", "tt"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+

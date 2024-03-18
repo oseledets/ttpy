@@ -11,7 +11,7 @@ import copy
 def reshape(x, shape):
     '''
     Reshape given numpy.array into new shape with Fortran-ordering
- 
+
     Parameters:
         :np.array: x
             given numpy array
@@ -25,7 +25,7 @@ def getRow(leftU, rightV, jVec):
     Compute X_{\geq \mu}^T \otimes X_{leq \mu}
     X_{\geq \mu} = V_{\mu+1}(j_{\mu}) \ldots V_{d} (j_{d}) [left interface matrix]
     X_{\leq \mu} = U_{1} (j_{1}) \ldots U_{\mu-1}(j_{\mu-1}) [right interface matrix]
-    
+
     Parameters:
         :list of numpy.arrays: leftU
             left-orthogonal cores from 1 to \mu-1
@@ -44,21 +44,21 @@ def getRow(leftU, rightV, jVec):
         jLeft = jVec[:len(leftU)]
     if len(rightV) > 0:
         jRight = jVec[-len(rightV):]
-    
+
     multU = np.ones([1,1])
     for k in xrange(len(leftU)):
         multU = np.dot(multU, leftU[k][:, jLeft[k], :])
     multV= np.ones([1,1])
     for k in xrange(len(rightV)-1, -1, -1):
         multV = np.dot(rightV[k][:, jRight[k], :], multV)
-    
+
     result = np.kron(multV.T, multU)
     return result
-    
+
 def orthLRFull(coreList, mu, splitResult = True):
     '''
     Orthogonalize list of TT-cores.
-    
+
     Parameters:
         :list: coreList
             list of TT-cores (stored as numpy arrays)
@@ -69,7 +69,7 @@ def orthLRFull(coreList, mu, splitResult = True):
         :boolean: splitResult = True
             Controls whether outut should be splitted into left-, non-, right-orthogonal
             parts or not.
-    
+
     Returns:
         :list: resultU
             left-orthogonal cores with indices from 1 to \mu-1
@@ -124,7 +124,7 @@ def computeFunctional(x, cooP):
     where P is projector into index subspace of known elements,
           X is our approximation,
           A is original tensor.
-          
+
     Parameters:
         :tt.vector: x
             current approximation [X]
@@ -135,17 +135,17 @@ def computeFunctional(x, cooP):
                 each string is an index of one element.
                 - 'values': numpy array of size P,
                 contains P known values.
-    
+
     Returns:
         :float: result
             value of functional
     '''
     indices = cooP['indices']
     values = cooP['values']
-    
+
     [P, d] = indices.shape
     assert P == len(values)
-    
+
     result = 0
     for p in xrange(P):
         index = tuple(indices[p, :])
@@ -157,7 +157,7 @@ def computeFunctional(x, cooP):
 def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20, verbose=True, alpha=1e-2):
     '''
     TT completion via Alternating Least Squares algorithm.
-    
+
     Parameters:
         :dict: cooP
             dictionary with two records
@@ -165,7 +165,7 @@ def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20, verbose
                 contains index subspace of P known elements;
                 each string is an index of one element.
                 - 'values': numpy array of size P,
-                contains P known values.   
+                contains P known values.
         :list, numpy.array: shape
             full-format shape of tensor to be completed [dimensions]
         :tt.vector: x0 = None
@@ -183,7 +183,7 @@ def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20, verbose
         :float: alpha: = 1e-2
             regularizer of least squares problem for each slice of current TT core.
             [rcond parameter for np.linalg.lstsq]
-            
+
     Returns:
         :tt.vector: xNew
             completed TT vector
@@ -192,10 +192,10 @@ def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20, verbose
     '''
     indices = cooP['indices']
     values = cooP['values']
-    
+
     [P, d] = indices.shape
     assert P == len(values)
-    
+
     timeVal = time.clock()
     if x0 is None:
         x = tt.rand(shape, r = ttRank)
@@ -210,16 +210,16 @@ def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20, verbose
     fitList = []
     sweepTimeList = []
     initTime = time.clock() - timeVal
-    
+
     timeVal = time.clock()
     coreList = tt.vector.to_list(x)
     #coreList = orthLRFull(coreList, mu = d, splitResult = False)
     # orthTime = time.clock() - timeVal
-    
+
     if verbose:
         print("Initialization time: %.3f seconds (proc.time)" % (initTime))
         # print "Orthogonalizing time: %.3f seconds (proc.time)" % (orthTime)
-    
+
     for sweep in xrange(maxnsweeps):
         sweepStart = time.clock()
         # list left + right
@@ -240,7 +240,7 @@ def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20, verbose
             if k > 0:
                 leftU = coreList[:k]
             if k < d-1:
-                rightV = coreList[k+1:] 
+                rightV = coreList[k+1:]
             for i in xrange(n):
                 thetaI = np.where(indices[:, k] == i)[0]
                 if len(thetaI) > 0:
@@ -269,7 +269,7 @@ def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20, verbose
                     core = reshape(Q.T, [rnew, n, r2])
                     coreList[k-1] = np.einsum('ijk,lk->ijl', coreList[k-1], R)
             '''
-            
+
         xNew = tt.vector.from_list(coreList)
         fit = computeFunctional(xNew, cooP)
         fitList.append(fit)
@@ -286,5 +286,5 @@ def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20, verbose
     info = {'fit': fitList, 'initTime': initTime,  'sweepTime': sweepTimeList} # 'orthTime': orthTime,
     xNew *= normP
     values *= normP
-    
+
     return xNew, info

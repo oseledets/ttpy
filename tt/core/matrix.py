@@ -1,26 +1,28 @@
-from __future__ import print_function, absolute_import, division
+from __future__ import absolute_import, division, print_function
+
+from numbers import Number
+
+import numpy as np
 from six.moves import xrange
-import numpy as _np
-from numbers import Number as _Number
-from . import core_f90 as _core_f90
-from . import vector as _vector
+
+from .core_f90 import core as core_f90
+from .vector import vector
 
 
 class matrix(object):
 
     def __init__(self, a=None, eps=1e-14, n=None, m=None, rmax=100000):
-
         self.n = 0
         self.m = 0
-        self.tt = _vector.vector()
+        self.tt = vector()
 
-        if isinstance(a, _vector.vector):  # Convert from a tt.vector
+        if isinstance(a, vector):
             if (n is None or m is None):
-                n1 = _np.sqrt(a.n).astype(_np.int32)
-                m1 = _np.sqrt(a.n).astype(_np.int32)
+                n1 = np.sqrt(a.n).astype(np.int32)
+                m1 = np.sqrt(a.n).astype(np.int32)
             else:
-                n1 = _np.array(n, dtype=_np.int32)
-                m1 = _np.array(m, dtype=_np.int32)
+                n1 = np.array(n, dtype=np.int32)
+                m1 = np.array(m, dtype=np.int32)
             self.n = n1
             self.m = m1
             self.tt.core = a.core.copy()
@@ -30,18 +32,18 @@ class matrix(object):
             self.tt.d = self.tt.n.size
             return
 
-        if isinstance(a, _np.ndarray):
+        if isinstance(a, np.ndarray):
             d = a.ndim // 2
             p = a.shape
-            self.n = _np.array(p[:d], dtype=_np.int32)
-            self.m = _np.array(p[d:], dtype=_np.int32)
-            prm = _np.arange(2 * d)
+            self.n = np.array(p[:d], dtype=np.int32)
+            self.m = np.array(p[d:], dtype=np.int32)
+            prm = np.arange(2 * d)
             prm = prm.reshape((d, 2), order='F')
             prm = prm.T
             prm = prm.flatten('F')
             sz = self.n * self.m
             b = a.transpose(prm).reshape(sz, order='F')
-            self.tt = _vector.vector(b, eps, rmax)
+            self.tt = vector(b, eps, rmax)
             return
 
         if isinstance(a, matrix):
@@ -52,35 +54,120 @@ class matrix(object):
     @property
     def r(self):
         return self.tt.r
-    
+
     @property
     def d(self):
         return self.tt.d
-    
-    @staticmethod
-    def from_list(a):
-        d = len(a)  # Number of cores
-        res = matrix()
-        n = _np.zeros(d, dtype=_np.int32)
-        r = _np.zeros(d + 1, dtype=_np.int32)
-        m = _np.zeros(d, dtype=_np.int32)
-        cr = _np.array([])
-        for i in xrange(d):
-            cr = _np.concatenate((cr, a[i].flatten('F')))
-            r[i] = a[i].shape[0]
-            r[i + 1] = a[i].shape[3]
-            n[i] = a[i].shape[1]
-            m[i] = a[i].shape[2]
-        res.n = n
-        res.m = m
-        tt = _vector.vector()
-        tt.n = n * m
-        tt.core = cr
-        tt.r = r
-        tt.d = d
-        tt.get_ps()
-        res.tt = tt
-        return res
+
+    @property
+    def dtype(self):
+        """Data type of elements.
+        """
+        return self.tt.dtype
+
+    @property
+    def size(self):
+        """Number of elements in TT-matrix.
+        """
+        return self.tt.size
+
+    @property
+    def ndim(self):
+        """Number of matrix dimensions.
+        """
+        return 2
+
+    @property
+    def shape(self):
+        """Shape of the array.
+        """
+        norows = np.prod(self.n)
+        nocols = np.prod(self.m)
+        return (norows, nocols)
+
+    @property
+    def ranks(self):
+        """TT-ranks of the array.
+        """
+        return self.tt.ranks
+
+    @property
+    def cores(self):
+        """Tuple of views on TT-cores. Each element in the list is a view on
+        underlying buffer.
+        """
+        offset = 0
+        cores = []
+        for core_shape in zip(self.ranks[:-1], self.n, self.m, self.ranks[1:]):
+            core_size = np.prod(core_shape)
+            core = self.tt.core[offset:offset + core_size]
+            cores.append(core.reshape(core_shape, order='F'))
+            offset += core_size
+        return cores
+
+    @classmethod
+    def from_list(cls, cores, order='F'):
+        # Validate input list of tensors on conformance to representation of
+        # TT-matrix. The rest of checks we delegate to TT-array creation
+        # routine.
+        if not cores:
+            raise ValueError('Exepected non empty list of cores.')
+        shapes = np.empty((2, len(cores)), np.int32)
+        for i, core in enumerate(cores):
+            if core.ndim != 4:
+                raise ValueError('Core of TT-matrix should have exactly '
+                                 'four dimensions.')
+            shapes[:, i] = core.shape[1:3]
+
+        # Flatten internal dimensions (1 and 2) in order to create tensor train.
+        cores = [core.reshape((core.shape[0], -1, core.shape[-1]), order=order)
+                 for core in cores]
+
+        # Finally, create an instance of TT-matrix.
+        mat = cls()
+        mat.n = shapes[0, :]  # Row shapes.
+        mat.m = shapes[1, :]  # Column shapes.
+        mat.tt = vector.from_list(cores, order)
+        return mat
+
+    @classmethod
+    def from_train(cls, train, shapes, *, copy=True):
+        """Create TT-matrix from a tensor train.
+
+        >>> cores = [np.ones((1, size * size, 1)) for size in (2, 3, 4)]
+        >>> train = TensorTrain.from_list(cores)
+        >>> matrix.from_train(train, ((2, 2), (3, 3), (4, 4)))
+        This is a 3-dimensional matrix
+        r(0)=1, n(0)=2, m(0)=2
+        r(1)=1, n(1)=3, m(1)=3
+        r(2)=1, n(2)=4, m(2)=4
+        r(3)=1
+        """
+        if not copy:
+            raise NotImplementedError('Constructor of TT-matrix forces '
+                                      'copying at the moment.')
+
+        if train.ndim != len(shapes):
+            raise ValueError('Length of`shapes` does not match the number '
+                             'of tensor train dimensions: '
+                             f'{train.ndim} != {len(shapes)}.')
+
+        # Verify number of that modes of tensor train have enough elements.
+        row_sizes, col_sizes = zip(*shapes)
+        for i, sizes in enumerate(zip(train.shape, row_sizes, col_sizes)):
+            size, norows, nocols = sizes
+            if size != norows * nocols:
+                raise ValueError(f'Mode {i} has no enough elements to '
+                                 'represent a matrix of shape '
+                                 f'({norows}, {nocols}).')
+
+        # TODO: We should rework class init-method in order to avoid manual
+        # object creation and validation.
+        mat = cls()
+        mat.n = np.array(row_sizes, np.int32)  # Row shapes.
+        mat.m = np.array(col_sizes, np.int32)  # Column shapes.
+        mat.tt = vector.from_train(train, copy=copy)  # TODO: We need views!
+        return mat
 
     @staticmethod
     def to_list(ttmat):
@@ -128,7 +215,7 @@ class matrix(object):
         mycrs = matrix.to_list(self)
         trans_crs = []
         for cr in mycrs:
-            trans_crs.append(_np.transpose(cr, [0, 2, 1, 3]))
+            trans_crs.append(np.transpose(cr, [0, 2, 1, 3]))
         return matrix.from_list(trans_crs)
 
     def real(self):
@@ -155,8 +242,8 @@ class matrix(object):
            \\begin{bmatrix}\\Re B \\\\ \\Im B\\end{bmatrix}.
 
         """
-        return matrix(a=self.tt.__complex_op('M'), n=_np.concatenate(
-            (self.n, [2])), m=_np.concatenate((self.m, [2])))
+        return matrix(a=self.tt.__complex_op('M'), n=np.concatenate(
+            (self.n, [2])), m=np.concatenate((self.m, [2])))
 
     def r2c(self):
         """Get complex matrix from real one made by ``matrix.c2r()``.
@@ -168,7 +255,7 @@ class matrix(object):
 
         """
         tmp = self.tt.copy()
-        newcore = _np.array(tmp.core, dtype=_np.complex)
+        newcore = np.array(tmp.core, dtype=np.complex128)
         cr = newcore[tmp.ps[-2] - 1:tmp.ps[-1] - 1]
         cr = cr.reshape((tmp.r[-2], tmp.n[-1], tmp.r[-1]), order='F')
         cr[:, 1, :] *= 1j
@@ -187,7 +274,7 @@ class matrix(object):
                 for i in xrange(self.tt.d):
                     crs.append(mycrs[i][:, row % self.n[i], :, :].copy())
                     row //= self.n[i]
-                return _vector.vector.from_list(crs)
+                return vector.from_list(crs)
             elif isinstance(index[1], int) and index[0] == slice(None):
                 # col requested
                 col = index[1]
@@ -196,7 +283,7 @@ class matrix(object):
                 for i in xrange(self.tt.d):
                     crs.append(mycrs[i][:, :, col % self.m[i], :].copy())
                     col //= self.m[i]
-                return _vector.vector.from_list(crs)
+                return vector.from_list(crs)
             elif isinstance(index[0], int) and isinstance(index[1], int):
                 # element requested
                 pass
@@ -209,8 +296,8 @@ class matrix(object):
             return self
         c = matrix()
         c.tt = self.tt + other.tt
-        c.n = _np.asanyarray(self.n, dtype=_np.int32).copy()
-        c.m = _np.asanyarray(self.m, dtype=_np.int32).copy()
+        c.n = np.asanyarray(self.n, dtype=np.int32).copy()
+        c.m = np.asanyarray(self.m, dtype=np.int32).copy()
         return c
 
     def __radd__(self, other):
@@ -221,8 +308,8 @@ class matrix(object):
     def __sub__(self, other):
         c = matrix()
         c.tt = self.tt - other.tt
-        c.n = _np.asanyarray(self.n, dtype=_np.int32).copy()
-        c.m = _np.asanyarray(self.m, dtype=_np.int32).copy()
+        c.n = np.asanyarray(self.n, dtype=np.int32).copy()
+        c.m = np.asanyarray(self.m, dtype=np.int32).copy()
         return c
 
     def __neg__(self):
@@ -233,34 +320,38 @@ class matrix(object):
         Multiplication of two TT-matrices
         """
         from . import tools as _tools
+        # TODO: This is a shortcut for evaluation matvec of TT-matrix and
+        # TT-vector. We need rework this later.
+        if isinstance(other, vector):
+            return _tools.matvec(self, other)
         diff = len(self.n) - len(other.m)
         L = self if diff >= 0 else _tools.kron(self, matrix(_tools.ones(1, abs(diff))))
         R = other if diff <= 0 else _tools.kron(other, matrix(_tools.ones(1, abs(diff))))
         c = matrix()
         c.n = L.n.copy()
         c.m = R.m.copy()
-        res = _vector.vector()
+        res = vector()
         res.d = L.tt.d
         res.n = c.n * c.m
         if L.is_complex or R.is_complex:
-            res.r = _core_f90.core.zmat_mat(
-                L.n, L.m, R.m, _np.array(
-                    L.tt.core, dtype=_np.complex), _np.array(
-                    R.tt.core, dtype=_np.complex), L.tt.r, R.tt.r)
-            res.core = _core_f90.core.zresult_core.copy()
+            res.r = core_f90.zmat_mat(L.n, L.m, R.m,
+                L.n, L.m, R.m, np.array(
+                    L.tt.core, dtype=np.complex128), np.array(
+                    R.tt.core, dtype=np.complex128), L.tt.r, R.tt.r)
+            res.core = core_f90.zresult_core.copy()
         else:
-            res.r = _core_f90.core.dmat_mat(
-                L.n, L.m, R.m, _np.real(
-                    L.tt.core), _np.real(
+            res.r = core_f90.dmat_mat(
+                L.n, L.m, R.m, np.real(
+                    L.tt.core), np.real(
                     R.tt.core), L.tt.r, R.tt.r)
-            res.core = _core_f90.core.result_core.copy()
-        _core_f90.core.dealloc()
+            res.core = core_f90.result_core.copy()
+        core_f90.dealloc()
         res.get_ps()
         c.tt = res
         return c
 
     def __rmul__(self, other):
-        if hasattr(other, '__matmul__') and not isinstance(other, _np.ndarray):
+        if hasattr(other, '__matmul__') and not isinstance(other, np.ndarray):
             return other.__matmul__(self)
         else:
             c = matrix()
@@ -270,32 +361,32 @@ class matrix(object):
             return c
 
     def __mul__(self, other):
-        if hasattr(other, '__matmul__') and not isinstance(other, _np.ndarray):
+        if hasattr(other, '__matmul__') and not isinstance(other, np.ndarray):
             return self.__matmul__(other)
-        elif isinstance(other, (_vector.vector, _Number)):
+        elif isinstance(other, (vector, Number)):
             c = matrix()
             c.tt = self.tt * other
             c.n = self.n
             c.m = self.m
             return c
         else:
-            x = _np.asanyarray(other).flatten(order='F')
-            N = _np.prod(self.m)
+            x = np.asanyarray(other).flatten(order='F')
+            N = np.prod(self.m)
             if N != x.size:
                 raise ValueError
-            x = _np.reshape(x, _np.concatenate(([1], self.m)), order='F')
-            cores = _vector.vector.to_list(self.tt)
+            x = np.reshape(x, np.concatenate(([1], self.m)), order='F')
+            cores = vector.to_list(self.tt)
             curr = x.copy()
             for i in range(len(cores)):
                 core = cores[i]
-                core = _np.reshape(
+                core = np.reshape(
                     core, [
                         self.tt.r[i], self.n[i], self.m[i], self.tt.r[
                             i + 1]], order='F')
                 # print(curr.shape, core.shape)
-                curr = _np.tensordot(curr, core, axes=([0, 1], [0, 2]))
-                curr = _np.rollaxis(curr, -1)
-            curr = _np.sum(curr, axis=0)
+                curr = np.tensordot(curr, core, axes=([0, 1], [0, 2]))
+                curr = np.rollaxis(curr, -1)
+            curr = np.sum(curr, axis=0)
             return curr.flatten(order='F')
 
     def __kron__(self, other):
@@ -306,8 +397,8 @@ class matrix(object):
         a = self
         b = other
         c = matrix()
-        c.n = _np.concatenate((a.n, b.n))
-        c.m = _np.concatenate((a.m, b.m))
+        c.n = np.concatenate((a.n, b.n))
+        c.m = np.concatenate((a.m, b.m))
         c.tt = _tools.kron(a.tt, b.tt)
         return c
 
@@ -334,7 +425,7 @@ class matrix(object):
 
     def __diag__(self):
         """ Computes the diagonal of the TT-matrix"""
-        c = _vector.vector()
+        c = vector()
         c.n = self.n.copy()
         c.r = self.tt.r.copy()
         c.d = self.tt.d  # Number are NOT referenced
@@ -342,7 +433,7 @@ class matrix(object):
         c.alloc_core()
         # Actually copy the data
         for i in xrange(c.d):
-            cur_core1 = _np.zeros((c.r[i], c.n[i], c.r[i + 1]))
+            cur_core1 = np.zeros((c.r[i], c.n[i], c.r[i + 1]))
             cur_core = self.tt.core[self.tt.ps[i] - 1:self.tt.ps[i + 1] - 1]
             cur_core = cur_core.reshape(
                 c.r[i], self.n[i], self.m[i], c.r[
@@ -358,10 +449,10 @@ class matrix(object):
         M = self.m.prod()
         a = self.tt.full()
         d = self.tt.d
-        sz = _np.vstack((self.n, self.m)).flatten('F')
+        sz = np.vstack((self.n, self.m)).flatten('F')
         a = a.reshape(sz, order='F')
         # Design a permutation
-        prm = _np.arange(2 * d)
+        prm = np.arange(2 * d)
         prm = prm.reshape((d, 2), order='F')
         prm = prm.transpose()
         prm = prm.flatten('F')

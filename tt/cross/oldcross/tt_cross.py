@@ -24,7 +24,7 @@ class black_box_tensor:
         tt.ps = ps.copy()
         self.tt = tt
 #This class will receive a 3d function a grid (i.e., f is an f(x,y,z))
-class fun_qtt: #Only QTT is assumed, i.e. d is an array [d1,d2,d3,...,] 
+class fun_qtt: #Only QTT is assumed, i.e. d is an array [d1,d2,d3,...,]
     def __init__(self,f,d,a,b,order='F'):
         self.f = f
         self.d = np.array(d,dtype=np.int32)
@@ -42,15 +42,15 @@ class fun_qtt: #Only QTT is assumed, i.e. d is an array [d1,d2,d3,...,]
             start = start + self.d[i]
         # ind_tt1 = (i1) + (i2-1)*2 + (i3-1)*4 + ...
         # ind_tt2 = (i2) + (i2-1)*2  +
-        # we have self.m 
+        # we have self.m
     def __call__(self,ind):
         #We are given a QTT index ind, have to convert it to a TT index
-        if self.order is 'F':
+        if self.order == 'F':
             ind_tt=np.dot(self.sm,(np.array(ind,dtype=np.int32)-1))
         else:
             ind_tt=np.dot(self.sm,(np.array(ind,dtype=np.int32)))
 
-        x = self.a + self.h*ind_tt 
+        x = self.a + self.h*ind_tt
         return self.f(x)
 
 class fun_ind: #No QTT is assumed, just convert index -> float
@@ -61,8 +61,8 @@ class fun_ind: #No QTT is assumed, just convert index -> float
         self.a = np.array(a)
         self.h = (np.array(b)-self.a)/np.array((self.n-1),dtype=float)
     def __call__(self,ind):
-        if self.order is 'F':
+        if self.order == 'F':
             x = self.a + self.h*(np.array(ind,dtype=np.int32)-1)
         else:
             x = self.a + self.h*np.array(ind,dtype=np.int32)
-        return self.f(x)        
+        return self.f(x)

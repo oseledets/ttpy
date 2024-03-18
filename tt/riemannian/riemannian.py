@@ -3,11 +3,27 @@
 # tensor trains.
 
 from __future__ import print_function, absolute_import, division
+from functools import wraps
+from math import ceil
 from six.moves import xrange
+from warnings import warn
+
 import tt
 import numpy as np
-from math import ceil
-from numba import jit
+
+# We do not want to force users to use numba but we want to notify them about
+# this opportunity.
+try:
+    from numba import jit
+except (ImportError, ModuleNotFoundError):
+    def jit(*args, **kwargs):
+        def decorate(fn):
+            @wraps(fn)
+            def func(*args, **kwargs):
+                return fn(*args, **kwargs)
+            warn('Missing `numba` package.', ImportWarning)
+            return fn
+        return decorate
 
 
 def reshape(a, sz):
@@ -443,13 +459,13 @@ def tt_qr(X, left_to_right=True):
             upper (lower) triangular matrix
 
     >>> import tt, numpy as np
-    >>> x = tt.rand(np.array([2, 3, 4, 5]), d=4) 
+    >>> x = tt.rand(np.array([2, 3, 4, 5]), d=4)
     >>> x_q, r = tt_qr(x, left_to_right=True)
     >>> np.allclose((rm[0][0]*x_q).norm(), x.norm())
     True
     >>> x_u, l = tt_qr(x, left_to_right=False)
     >>> np.allclose((l[0][0]*x_u).norm(), x.norm())
-    True        
+    True
     """
     # Get rid of redundant ranks (they cause technical difficulties).
     X = X.round(eps=0)

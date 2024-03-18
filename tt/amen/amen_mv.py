@@ -113,7 +113,7 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4,
     ********
     '''
 
-    if renorm is 'gram':
+    if renorm == 'gram':
         print("Not implemented yet. Renorm is switched to 'direct'")
         renorm = 'direct'
 
@@ -199,7 +199,7 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4,
     for i in range(d - 1):
         if init_qr:
             cr = _reshape(y[i], (ry[i] * n[i], ry[i + 1]))
-            if (renorm is 'gram') and (ry[i] * n[i] > 5 * ry[i + 1]):
+            if (renorm == 'gram') and (ry[i] * n[i] > 5 * ry[i + 1]):
                 [cr, s, R] = _svdgram(cr)
             else:
                 [cr, R] = _np.linalg.qr(cr)

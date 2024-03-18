@@ -81,8 +81,9 @@ Documentation and examples
 ==========================
 
 The package provides Sphinx-generated documentation. To build HTML version, just do
-```
-cd tt/doc
+
+```shell
+cd doc
 make html
 ```
 

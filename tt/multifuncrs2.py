@@ -35,6 +35,14 @@ def multifuncrs2(X, funs, eps=1e-6,
                  y0=None,
                  do_qr=False,
                  restart_it=0):
+    """Calculate element-wise function in TT-format from a list of tensors
+    which are in TT-representation as well.
+    """
+    if not len(X):
+        raise ValueError('Expected non-empty list of TT-tensors.')
+
+    if not callable(funs):
+        raise ValueError('Expected callable.')
 
     dtype = np.float64
     if len([x for x in X if x.is_complex]) > 0:
@@ -46,10 +54,10 @@ def multifuncrs2(X, funs, eps=1e-6,
     d = X[0].d
     n = X[0].n
     rx = np.transpose(np.array([ttx.r for ttx in X]))
-    crx = np.empty((nx, d), dtype=np.object)
+    crx = np.empty((nx, d), dtype=object)
     i = 0
     for ttx in X:
-        v = tt.tensor.to_list(ttx)
+        v = tt.vector.to_list(ttx)
         j = 0
         for w in v:
             crx[i, j] = w
@@ -68,24 +76,24 @@ def multifuncrs2(X, funs, eps=1e-6,
     # Error vector
     z = tt.rand(n, d, kickrank)
     rz = z.r
-    z = tt.tensor.to_list(z)
+    z = tt.vector.to_list(z)
     ry = y.r
-    cry = tt.tensor.to_list(y)
+    cry = tt.vector.to_list(y)
     # Interface matrices - for solution
     one_arr = np.ones((1, 1), dtype=dtype)
-    Ry = np.zeros((d + 1, ), dtype=np.object)
+    Ry = np.zeros((d + 1, ), dtype=object)
     Ry[0] = one_arr
     Ry[d] = one_arr
-    Rx = np.zeros((d + 1, nx), dtype=np.object)
+    Rx = np.zeros((d + 1, nx), dtype=object)
     Rx[0, :] = np.ones(nx, dtype=dtype)
     Rx[d, :] = np.ones(nx, dtype=dtype)
-    Ryz = np.zeros((d + 1, ), dtype=np.object)
+    Ryz = np.zeros((d + 1, ), dtype=object)
     Ryz[0] = one_arr
     Ryz[d] = one_arr
-    Rz = np.zeros((d + 1, ), dtype=np.object)
+    Rz = np.zeros((d + 1, ), dtype=object)
     Rz[0] = one_arr
     Rz[d] = one_arr
-    Rxz = np.zeros((d + 1, nx), dtype=np.object)
+    Rxz = np.zeros((d + 1, nx), dtype=object)
     Rxz[0, :] = np.ones(nx, dtype=dtype)
     Rxz[d, :] = np.ones(nx, dtype=dtype)
     block_order = [+d, -d]
@@ -190,7 +198,7 @@ def multifuncrs2(X, funs, eps=1e-6,
         if kickrank >= 0:
             try:
                 u, s, v = np.linalg.svd(newy, full_matrices=False)
-            except:
+            except np.linalg.LinAlgError:
                 tmp = np.array(
                     np.random.randn(
                         newy.shape[1],
@@ -484,5 +492,5 @@ def multifuncrs2(X, funs, eps=1e-6,
             dirn = int(math.copysign(1, cur_order[order_index]))
             i = i + dirn
     cry[d - 1] = np.transpose(cry[d - 1][:, :, :, 0], [1, 2, 0])
-    y = tt.tensor.from_list(cry)
+    y = tt.vector.from_list(cry)
     return y
