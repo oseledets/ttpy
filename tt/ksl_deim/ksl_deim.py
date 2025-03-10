@@ -8,7 +8,7 @@ import numpy as np
 def ksl_deim(A, Nf, y0, tau):
     """ Dynamical tensor-train approximation based on interpolatory projector splitting (1st order). 
         This function performs one step of dynamical tensor-train approximation
-        for the equation.
+        for the equation
 
         .. math ::
             \\frac{dy}{dt} = A y + Nf(y), \\quad y(0) = y_0
