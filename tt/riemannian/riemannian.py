@@ -13,7 +13,6 @@ from numba import jit
 def reshape(a, sz):
     return np.reshape(a, sz, order="F")
 
-
 def cores_orthogonalization_step(coresX, dim, left_to_right=True):
     """TT-Tensor X orthogonalization step.
 
@@ -431,3 +430,54 @@ def projector_splitting_add(Y, delta, debug=False):
                 assert(np.allclose(explicit, np.dot(lhs, rhs[dim+1])))
 
     return tt.tensor.from_list(coresY)
+
+
+def tt_qr(X, left_to_right=True):
+    """
+    Orthogonalizes a TT tensor from left to right or
+    from right to left.
+    :param: X - thensor to orthogonalise
+    :param: direction - direction. May be 'lr/LR' or 'rl/RL'
+            for left/right orthogonalization
+    :return: X_orth, R - orthogonal tensor and right (left)
+            upper (lower) triangular matrix
+
+    >>> import tt, numpy as np
+    >>> x = tt.rand(np.array([2, 3, 4, 5]), d=4) 
+    >>> x_q, r = tt_qr(x, left_to_right=True)
+    >>> np.allclose((rm[0][0]*x_q).norm(), x.norm())
+    True
+    >>> x_u, l = tt_qr(x, left_to_right=False)
+    >>> np.allclose((l[0][0]*x_u).norm(), x.norm())
+    True        
+    """
+    # Get rid of redundant ranks (they cause technical difficulties).
+    X = X.round(eps=0)
+    numDims = X.d
+    coresX = tt.tensor.to_list(X)
+
+    if left_to_right:
+        # Left to right orthogonalization of the X cores.
+        for dim in xrange(0, numDims-1):
+            coresX = cores_orthogonalization_step(
+                coresX, dim, left_to_right=left_to_right)
+        last_core = coresX[numDims-1]
+        r1, n, r2 = last_core.shape
+        last_core, rr = np.linalg.qr(reshape(last_core, (-1, r2)))
+        coresX[numDims-1] = reshape(last_core, (r1, n, -1))
+    else:
+        # Right to left orthogonalization of X cores
+        for dim in xrange(numDims-1, 0, -1):
+            coresX = cores_orthogonalization_step(
+                coresX, dim, left_to_right=left_to_right)
+        last_core = coresX[0]
+        r1, n, r2 = last_core.shape
+        last_core, rr = np.linalg.qr(
+            np.transpose(reshape(last_core, (r1, -1)))
+        )
+        coresX[0] = reshape(
+            np.transpose(last_core),
+            (-1, n, r2))
+        rr = np.transpose(rr)
+
+    return tt.tensor.from_list(coresX), rr

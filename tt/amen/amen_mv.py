@@ -1,5 +1,5 @@
 from __future__ import print_function, absolute_import, division
-from six.moves import xrange
+from six.moves import xrange 
 import tt as _tt
 import numpy as _np
 from scipy.sparse import spdiags as _spdiags

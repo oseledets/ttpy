@@ -7,7 +7,7 @@ from . import vector as _vector
 
 
 class matrix(object):
-
+    
     def __init__(self, a=None, eps=1e-14, n=None, m=None, rmax=100000):
 
         self.n = 0

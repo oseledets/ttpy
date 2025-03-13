@@ -6,8 +6,17 @@ TT-format in Python. It is able to do TT-interpolation, solve linear systems, ei
 Several computational routines are done in Fortran (which can be used separatedly), and are wrapped with the f2py tool.
 """
 
+import builtins
+import os
+import sys
+
 from numpy.distutils.core import setup
 from numpy.distutils.misc_util import Configuration
+
+# This is a hack to build ttpy from source tree. We set the variable in order
+# to avoid loading of modules which are not built yet. The same work around is
+# used in NumPy.
+builtins.__TTPY_SETUP__ = True
 
 DOCLINES = (__doc__ or '').split('\n')
 
@@ -72,8 +81,21 @@ def setup_package():
         configuration=configuration,
     )
 
-    setup(**metadata)
+    # Move to source tree root, inject source tree root to python path, and
+    # reverse changes as soon as setup is done. The issue is that tt.distutils
+    # module should be in python path.
+    cur_dir = os.getcwd()
+    src_dir = os.path.abspath(os.path.dirname(__file__))
+    sys.path.insert(0, src_dir)
+    os.chdir(src_dir)
+    try:
+        setup(**metadata)
+    finally:
+        os.chdir(cur_dir)
+        sys.path.remove(src_dir)
 
 
 if __name__ == '__main__':
     setup_package()
+    # Remove flag to avoid potential problems.
+    del builtins.__TTPY_SETUP__
