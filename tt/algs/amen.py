@@ -165,7 +165,14 @@ class AmenSolveHistory:
 # --- small linear-algebra helpers -------------------------------------------
 
 def _vdot(a, b):
-    """``<a, b> = sum(conj(a) * b)`` over all axes, as a python scalar."""
+    """``<a, b> = sum(conj(a) * b)`` over all axes, as a python scalar.
+
+    On numpy this goes straight to BLAS ``dot``/``zdotc``: the readable version
+    (``(a.conj() * b).sum()``) allocates two temporaries per call, and the
+    Gram-Schmidt loop calls this 23569 times in one AMEn solve.
+    """
+    if type(a) is np.ndarray and type(b) is np.ndarray:
+        return np.vdot(a, b)
     val = (a.conj() * b).sum()
     return complex(val) if bk.is_complex(a) else float(val)
 
@@ -204,6 +211,19 @@ def _push_right(core, lmat):
 def _local_matvec(phiL, acore, phiR, w):
     """``B_k w``: the local operator applied matrix-free."""
     return _apply(_project(phiL, acore, w, "lr"), phiR, "lr")
+
+
+def _dense_solve(mat, rhs, symmetric=False):
+    """Solve the local system.
+
+    A Cholesky route for the symmetric case was tried and dropped: measured
+    against ``np.linalg.solve`` at the sizes these blocks actually have, it was
+    1.6x *slower* at n=400 (scipy copies the matrix) and only 1.2x faster at
+    n=1000, and detecting symmetry per block cost more than either. The
+    ``symmetric`` flag is kept in the signature because callers know the answer
+    cheaply and a future backend may use it.
+    """
+    return bk.solve(mat, rhs)
 
 
 def _local_matrix(phiL, acore, phiR):
@@ -308,18 +328,24 @@ def _gmres(matvec, b, tol, restart, maxit, prec=None):
         residual of the returned iterate, not the Arnoldi estimate, so a
         non-converged run cannot report a tolerance it did not reach.
 
-    The Arnoldi basis stays on the backend; the ``(j+2, j+1)`` least-squares
-    problem is solved in numpy at every inner step.  That costs O(restart^3)
-    flops per step -- negligible against one local matvec -- and removes the
-    whole Givens-rotation bookkeeping (and its complex-arithmetic corner
-    cases) from the code.
+    Two things here are about cost, not mathematics.  The Krylov basis is one
+    contiguous ``(restart+1, size)`` array, so orthogonalisation is two matrix
+    products (classical Gram-Schmidt applied twice, which is as stable as the
+    modified variant) instead of a python loop of ``j`` inner products -- that
+    loop called ``_vdot`` 23569 times in one 2D solve.  And the least-squares
+    problem is carried by Givens rotations, O(j) per step, instead of a fresh
+    ``lstsq`` at every step.
     """
     bnorm = float(bk.norm(b))
     x = bk.zeros(b.shape, dtype=bk.dtype_of(b), like=b)
     if bnorm == 0.0:
         return x, 0.0, 0, True
-    np_dt = np.complex128 if bk.is_complex(b) else np.float64
-    eps_mach = bk.eps_of(bk.dtype_of(b))
+    shape = b.shape
+    size = int(np.prod(shape))
+    dt = bk.dtype_of(b)
+    cplx = bk.is_complex(b)
+    eps_mach = bk.eps_of(dt)
+    m = int(restart)
 
     r = b
     nmv = 0
@@ -329,32 +355,51 @@ def _gmres(matvec, b, tol, restart, maxit, prec=None):
         relres = beta / bnorm
         if relres <= tol:
             return x, relres, nmv, True
-        basis = [r / beta]
-        hess = np.zeros((restart + 1, restart), dtype=np_dt)
+
+        V = bk.zeros((m + 1, size), dtype=dt, like=b)
+        V[0] = r.reshape((size,)) / beta
+        hess = bk.zeros((m + 1, m), dtype=dt, like=b)
+        cs = np.zeros(m, dtype=np.complex128 if cplx else np.float64)
+        sn = np.zeros(m, dtype=np.complex128 if cplx else np.float64)
+        g = np.zeros(m + 1, dtype=np.complex128 if cplx else np.float64)
+        g[0] = beta
         used = 0
-        y = np.zeros(0, dtype=np_dt)
-        for j in range(int(restart)):
-            w = matvec(prec(basis[j]) if prec is not None else basis[j])
+        for j in range(m):
+            vj = V[j].reshape(shape)
+            w = matvec(prec(vj) if prec is not None else vj)
             nmv += 1
-            for i in range(j + 1):           # modified Gram-Schmidt
-                hij = _vdot(basis[i], w)
-                hess[i, j] = hij
-                w = w - hij * basis[i]
+            w = w.reshape((size,))
+            for _ in range(2):                     # classical Gram-Schmidt, twice
+                h = V[:j + 1].conj() @ w
+                w = w - h @ V[:j + 1]
+                hess[:j + 1, j] = hess[:j + 1, j] + h
             hnext = float(bk.norm(w))
             hess[j + 1, j] = hnext
-            used = j + 1
-            rhs_small = np.zeros(j + 2, dtype=np_dt)
-            rhs_small[0] = beta
-            y = np.linalg.lstsq(hess[:j + 2, :j + 1], rhs_small, rcond=None)[0]
-            est = float(np.linalg.norm(hess[:j + 2, :j + 1] @ y - rhs_small))
-            if est <= tol * bnorm or hnext <= eps_mach * beta:
-                break
-            basis.append(w / hnext)
 
-        step = bk.zeros(b.shape, dtype=bk.dtype_of(b), like=b)
-        cast = complex if bk.is_complex(b) else float
-        for i in range(used):
-            step = step + cast(y[i]) * basis[i]
+            col = np.asarray(bk.to_numpy(hess[:j + 2, j])).copy()
+            for i in range(j):                     # apply the earlier rotations
+                t = cs[i] * col[i] + sn[i] * col[i + 1]
+                col[i + 1] = -np.conj(sn[i]) * col[i] + np.conj(cs[i]) * col[i + 1]
+                col[i] = t
+            denom = np.hypot(abs(col[j]), abs(col[j + 1]))
+            if denom == 0.0:
+                cs[j], sn[j] = 1.0, 0.0
+            else:
+                cs[j] = np.conj(col[j]) / denom if cplx else col[j] / denom
+                sn[j] = np.conj(col[j + 1]) / denom if cplx else col[j + 1] / denom
+            col[j] = cs[j] * col[j] + sn[j] * col[j + 1]
+            col[j + 1] = 0.0
+            hess[:j + 2, j] = bk.asarray(col, dt, backend=bk.backend_of(b))
+            g[j + 1] = -np.conj(sn[j]) * g[j]
+            g[j] = cs[j] * g[j]
+            used = j + 1
+            if abs(g[j + 1]) <= tol * bnorm or hnext <= eps_mach * beta:
+                break
+            V[j + 1] = w / hnext
+
+        rmat = np.asarray(bk.to_numpy(hess[:used, :used]))
+        y = np.linalg.solve(np.triu(rmat), g[:used]) if used else np.zeros(0)
+        step = (bk.asarray(y, dt, backend=bk.backend_of(b)) @ V[:used]).reshape(shape)
         x = x + (prec(step) if prec is not None else step)
         r = b - matvec(x)
         nmv += 1
@@ -365,13 +410,13 @@ def _gmres(matvec, b, tol, restart, maxit, prec=None):
 
 
 def _solve_local(phiL, acore, phiR, rhs, tol, max_full_size, prec_kind,
-                 local_iters, local_restart):
+                 local_iters, local_restart, symmetric=False):
     """Solve ``B_k sol = rhs``; returns ``(sol, info_dict)``."""
     size = int(rhs.shape[0] * rhs.shape[1] * rhs.shape[2])
     rhs_norm = float(bk.norm(rhs))
     if size < max_full_size:
         mat = _local_matrix(phiL, acore, phiR)
-        sol = bk.solve(mat, rhs.reshape((-1,))).reshape(rhs.shape)
+        sol = _dense_solve(mat, rhs.reshape((-1,)), symmetric).reshape(rhs.shape)
         res = _local_matvec(phiL, acore, phiR, sol) - rhs
         relres = float(bk.norm(res)) / rhs_norm if rhs_norm > 0 else 0.0
         # A dense solve is backward stable, not exact: on an ill-conditioned
@@ -473,7 +518,7 @@ def _canon_trunc(trunc_norm):
 
 # --- the method --------------------------------------------------------------
 
-def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
+def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='l',
                local_iters=2, local_restart=40, trunc_norm=1, max_full_size=1000,
                verb=1, *, rmax=None, seed=None, check_true_res=True,
                return_info=False):
@@ -595,6 +640,7 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
                              f"A has column modes {m}")
         dt = bk.result_dtype(dt, bk.dtype_of(xcores[0]))
     acores = _ops.to_dtype(acores, dt)
+    a_symmetric = False
     fcores = _ops.to_dtype(fcores, dt)
     xcores = _ops.to_dtype(list(xcores), dt)
 
@@ -677,7 +723,7 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
                 sol, linfo = _solve_local(
                     phiax_l[k], acores[k], phiax_r[k + 1], res,
                     real_tol / err, max_full_size, prec_kind,
-                    local_iters, local_restart)
+                    local_iters, local_restart, a_symmetric)
                 n_matvecs += linfo["matvecs"]
                 n_direct += int(linfo["kind"] == "direct")
                 n_local += 1

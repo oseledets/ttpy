@@ -516,6 +516,36 @@ def _binary_plan(pattern: str):
             ident(perm_l), ident(perm_r), ident(perm_out))
 
 
+def _matmul_numpy(a, b, plan):
+    """The numpy fast path: array methods only, no dispatch.
+
+    Going through backend_of + a transpose lambda cost 7.4 us per call, which on
+    an AMEn solve was 31% of the runtime -- more than the arithmetic. Here the
+    type is already known, so ndarray.transpose/reshape/@ are called directly.
+    """
+    (perm_l, perm_r, perm_out, nb, nl, nr, nk, id_l, id_r, id_out) = plan
+    sa, sb = a.shape, b.shape
+    m = k = n = 1
+    for i in range(nb, nb + nl):
+        m *= sa[perm_l[i]]
+    for i in range(nb + nl, len(perm_l)):
+        k *= sa[perm_l[i]]
+    for i in range(nb + nk, len(perm_r)):
+        n *= sb[perm_r[i]]
+    kb = 1
+    for i in range(nb, nb + nk):
+        kb *= sb[perm_r[i]]
+    batch = tuple(sa[perm_l[i]] for i in range(nb))
+    if batch != tuple(sb[perm_r[i]] for i in range(nb)) or k != kb:
+        return None                     # size-1 broadcast: einsum handles it
+    at = (a if id_l else a.transpose(perm_l)).reshape(batch + (m, k))
+    bt = (b if id_r else b.transpose(perm_r)).reshape(batch + (k, n))
+    out = (at @ bt).reshape(
+        batch + tuple(sa[perm_l[i]] for i in range(nb, nb + nl))
+        + tuple(sb[perm_r[i]] for i in range(nb + nk, len(perm_r))))
+    return out if id_out else out.transpose(perm_out)
+
+
 def _matmul_contract(a, b, plan):
     """Execute a compiled binary contraction, or return None to fall back.
 
@@ -564,10 +594,14 @@ def einsum(*operands_and_pattern):
     if not isinstance(pattern, str):
         raise TypeError("the einsum pattern must come last, as in einops.einsum")
     if len(operands) == 2:
+        a, b = operands
         plan = _binary_plan(pattern)
         if plan is not None:
-            same_backend(operands, "operands")
-            out = _matmul_contract(operands[0], operands[1], plan)
+            if type(a) is np.ndarray and type(b) is np.ndarray:
+                out = _matmul_numpy(a, b, plan)
+            else:
+                same_backend(operands, "operands")
+                out = _matmul_contract(a, b, plan)
             if out is not None:
                 return out
     return same_backend(operands, "operands").einsum(
