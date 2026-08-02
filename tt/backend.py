@@ -16,6 +16,8 @@ Mixing backends inside one TT tensor is an error, not a silent conversion.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import numpy as np
 
 __all__ = [
@@ -40,10 +42,11 @@ _COMPLEX_OF = {"float32": "complex64", "float64": "complex128",
 _WIDTH = {"float32": 1, "complex64": 1, "float64": 2, "complex128": 2}
 
 
-def canon_dtype(dtype) -> str:
-    """Map anything dtype-ish to one of the four canonical names."""
-    if dtype is None:
-        return None
+_COMPLEX_NAMES = frozenset({"complex64", "complex128"})
+
+
+@lru_cache(maxsize=None)
+def _canon_cached(dtype) -> str:
     if isinstance(dtype, str):
         name = dtype
     else:
@@ -54,6 +57,23 @@ def canon_dtype(dtype) -> str:
             f"unsupported dtype {dtype!r}; ttpy2 works with "
             "float32/float64/complex64/complex128")
     return name
+
+
+def canon_dtype(dtype) -> str:
+    """Map anything dtype-ish to one of the four canonical names.
+
+    Cached: this sits in the inner loop of every algorithm (an AMEn solve called
+    it 80k times, 30% of the runtime, all of it string bookkeeping on eight
+    distinct dtype objects).
+    """
+    if dtype is None:
+        return None
+    try:
+        return _canon_cached(dtype)
+    except TypeError as exc:
+        if "unhashable" not in str(exc):
+            raise
+        return _canon_cached(str(dtype))
 
 
 class Backend:
@@ -421,7 +441,7 @@ def device_of(a) -> str:
 
 
 def is_complex(a) -> bool:
-    return dtype_of(a).startswith("complex")
+    return dtype_of(a) in _COMPLEX_NAMES
 
 
 def real_dtype(dtype) -> str:
