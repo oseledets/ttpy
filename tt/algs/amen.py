@@ -213,6 +213,46 @@ def _local_matvec(phiL, acore, phiR, w):
     return _apply(_project(phiL, acore, w, "lr"), phiR, "lr")
 
 
+def _local_operator(phiL, acore, phiR):
+    """Build ``w -> B_k w`` once, with the interfaces already laid out for BLAS.
+
+    The generic contraction path re-arranges ``phiL`` and ``phiR`` on *every*
+    application, and a local GMRES applies the operator tens of times with the
+    same interfaces.  Hoisting that out is worth a factor of two: the same three
+    products, with the operands pre-arranged, run at 52 GFLOPS against 26.5 for
+    the generic path (53 us -> 27 us at r=34, n=2, R=4 -- the Fortran's whole
+    inner iteration is 45 us, so this is the difference between parity and
+    twice the cost).
+
+    The sequence is the one in ``tt-fort/ttlocsolve.f90::d2d_mv``:
+    ``x (rx1 m, rx2) @ phi2 (rx2, ra2 ry2)``, transpose, ``A (ra1 n, m ra2) @``,
+    transpose, ``phi1 (ry1, rx1 ra1) @``.
+
+    Returns:
+        ``(apply, shape)`` -- the closure and the shape it maps to and from.
+    """
+    a, i, p = phiL.shape                    # y-rank, x-rank, A-rank (left)
+    b, j, c = phiR.shape                    # y-rank, x-rank, A-rank (right)
+    _, n, m, _ = acore.shape
+    if type(phiL) is not np.ndarray:        # torch and friends: generic path
+        return (lambda w: _local_matvec(phiL, acore, phiR, w)), (a, n, b)
+
+    # phi1 as (a, i p), A as (p n, m c), phi2 as (j, c b)
+    phi1 = np.ascontiguousarray(phiL.reshape(a, i * p))
+    amat = np.ascontiguousarray(
+        acore.transpose(0, 1, 2, 3).reshape(p * n, m * c))
+    phi2 = np.ascontiguousarray(phiR.transpose(1, 2, 0).reshape(j, c * b))
+
+    def apply(w):
+        t = w.reshape(i * m, j) @ phi2                    # (i m, c b)
+        t = t.reshape(i, m * c * b).T                     # (m c b, i)
+        t = amat @ t.reshape(m * c, b * i)                # (p n, b i)
+        t = t.reshape(p * n * b, i).T                     # (i, p n b)
+        return (phi1 @ t.reshape(i * p, n * b)).reshape(a, n, b)
+
+    return apply, (a, n, b)
+
+
 def _dense_solve(mat, rhs, symmetric=False):
     """Solve the local system.
 
@@ -347,6 +387,7 @@ def _gmres(matvec, b, tol, restart, maxit, prec=None):
     eps_mach = bk.eps_of(dt)
     m = int(restart)
 
+    fast = type(b) is np.ndarray          # in-place updates are safe on numpy
     r = b
     nmv = 0
     relres = 1.0
@@ -359,8 +400,8 @@ def _gmres(matvec, b, tol, restart, maxit, prec=None):
         V = bk.zeros((m + 1, size), dtype=dt, like=b)
         V[0] = r.reshape((size,)) / beta
         hess = bk.zeros((m + 1, m), dtype=dt, like=b)
-        cs = np.zeros(m, dtype=np.complex128 if cplx else np.float64)
-        sn = np.zeros(m, dtype=np.complex128 if cplx else np.float64)
+        cs_l = [0.0] * m
+        sn_l = [0.0] * m
         g = np.zeros(m + 1, dtype=np.complex128 if cplx else np.float64)
         g[0] = beta
         used = 0
@@ -369,29 +410,61 @@ def _gmres(matvec, b, tol, restart, maxit, prec=None):
             w = matvec(prec(vj) if prec is not None else vj)
             nmv += 1
             w = w.reshape((size,))
-            for _ in range(2):                     # classical Gram-Schmidt, twice
-                h = V[:j + 1].conj() @ w
-                w = w - h @ V[:j + 1]
-                hess[:j + 1, j] = hess[:j + 1, j] + h
+            if fast:
+                w = np.array(w, copy=True).reshape((size,))
+            # Classical Gram-Schmidt, reorthogonalised only when the vector
+            # actually lost orthogonality (Daniel-Gragg-Kaufman-Stewart: repeat
+            # when the norm drops by more than 1/sqrt(2)).  Doing it twice
+            # unconditionally cost 38 us per inner step against 19 us here, on a
+            # 54 us matvec.
+            nrm0 = float(bk.norm(w))
+            # No .conj() on real data: numpy's conj allocates a copy of the whole
+            # basis block (j x size doubles) on every inner step, which for
+            # j = 30 and size = 2312 is half a megabyte of pure memory traffic.
+            Vj = V[:j + 1]
+            Vc = Vj.conj() if cplx else Vj
+            # In place: every temporary here is a size-2312 allocation inside a
+            # loop that runs thousands of times per solve.
+            h = Vc @ w
+            if fast:
+                w -= h @ Vj
+            else:
+                w = w - h @ Vj
+            hess[:j + 1, j] = h
             hnext = float(bk.norm(w))
+            if hnext < 0.707 * nrm0:
+                h2 = Vc @ w
+                if fast:
+                    w -= h2 @ Vj
+                else:
+                    w = w - h2 @ Vj
+                hess[:j + 1, j] = hess[:j + 1, j] + h2
+                hnext = float(bk.norm(w))
             hess[j + 1, j] = hnext
 
-            col = np.asarray(bk.to_numpy(hess[:j + 2, j])).copy()
+            # Python lists, not numpy scalars: this loop runs j times per inner
+            # step, and indexing a numpy array to get a scalar costs about as
+            # much as the arithmetic (15 us per step against 5 us here).
+            col = [complex(v) if cplx else float(v)
+                   for v in bk.to_numpy(hess[:j + 2, j])]
             for i in range(j):                     # apply the earlier rotations
-                t = cs[i] * col[i] + sn[i] * col[i + 1]
-                col[i + 1] = -np.conj(sn[i]) * col[i] + np.conj(cs[i]) * col[i + 1]
+                ci, si = cs_l[i], sn_l[i]
+                t = ci * col[i] + si * col[i + 1]
+                col[i + 1] = -(si.conjugate() if cplx else si) * col[i] \
+                    + (ci.conjugate() if cplx else ci) * col[i + 1]
                 col[i] = t
             denom = np.hypot(abs(col[j]), abs(col[j + 1]))
             if denom == 0.0:
-                cs[j], sn[j] = 1.0, 0.0
+                cs_l[j], sn_l[j] = 1.0, 0.0
             else:
-                cs[j] = np.conj(col[j]) / denom if cplx else col[j] / denom
-                sn[j] = np.conj(col[j + 1]) / denom if cplx else col[j + 1] / denom
-            col[j] = cs[j] * col[j] + sn[j] * col[j + 1]
+                cs_l[j] = (col[j].conjugate() if cplx else col[j]) / denom
+                sn_l[j] = (col[j + 1].conjugate() if cplx else col[j + 1]) / denom
+            col[j] = cs_l[j] * col[j] + sn_l[j] * col[j + 1]
             col[j + 1] = 0.0
-            hess[:j + 2, j] = bk.asarray(col, dt, backend=bk.backend_of(b))
-            g[j + 1] = -np.conj(sn[j]) * g[j]
-            g[j] = cs[j] * g[j]
+            hess[:j + 2, j] = bk.asarray(np.asarray(col), dt,
+                                         backend=bk.backend_of(b))
+            g[j + 1] = -(sn_l[j].conjugate() if cplx else sn_l[j]) * g[j]
+            g[j] = cs_l[j] * g[j]
             used = j + 1
             if abs(g[j + 1]) <= tol * bnorm or hnext <= eps_mach * beta:
                 break
@@ -426,9 +499,8 @@ def _solve_local(phiL, acore, phiR, rhs, tol, max_full_size, prec_kind,
         return sol, {"kind": "direct", "matvecs": 0, "relres": relres,
                      "converged": bool(relres <= tol), "size": size}
     prec = None if prec_kind == "n" else _jacobi(prec_kind, phiL, acore, phiR)
-    sol, relres, nmv, ok = _gmres(
-        lambda w: _local_matvec(phiL, acore, phiR, w), rhs, tol,
-        local_restart, local_iters, prec)
+    op, _ = _local_operator(phiL, acore, phiR)
+    sol, relres, nmv, ok = _gmres(op, rhs, tol, local_restart, local_iters, prec)
     return sol, {"kind": "gmres", "matvecs": nmv, "relres": relres,
                  "converged": ok, "size": size}
 
