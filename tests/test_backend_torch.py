@@ -141,3 +141,26 @@ def test_copy_works_on_torch_tensors():
     single = tt.vector.from_list([bk.TorchBackend("cuda").asarray(
         np.arange(6.0).reshape(1, 6, 1))])
     assert rel(single.round(1e-12).full(), single.full()) < 1e-14
+
+
+def test_seeded_randn_is_reproducible_and_matches_numpy():
+    """A seed that reaches the backend must mean something on both backends.
+
+    It used to be dropped on the floor by TorchBackend.randn, which made every
+    documented seed= a silent no-op there.
+    """
+    shape = (3, 4, 2)
+    g = bk.TorchBackend("cuda", "float64")
+    a = g.randn(shape, rng=np.random.default_rng(7))
+    b = g.randn(shape, rng=np.random.default_rng(7))
+    assert rel(a, b) == 0.0, "same seed must give the same numbers"
+
+    c = bk.NumpyBackend("float64").randn(shape, rng=np.random.default_rng(7))
+    assert rel(a, c) == 0.0, "and the same numbers as the numpy backend"
+
+    d = g.randn(shape, rng=np.random.default_rng(8))
+    assert rel(a, d) > 1e-3, "different seeds must differ"
+
+    # unseeded still works and is not constant
+    assert rel(g.randn(shape), g.randn(shape)) > 1e-3
+    assert bk.dtype_of(g.randn(shape, "complex128")) == "complex128"

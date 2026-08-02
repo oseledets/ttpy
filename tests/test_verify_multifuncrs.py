@@ -302,17 +302,20 @@ def test_verb0_is_silent_even_when_the_engine_complains(capsys):
     assert np.isfinite(y.history.err_rel)
 
 
-def test_d1_documents_that_err_check_is_not_measured():
-    """d=1 returns the exact tensor and the engine skips the held-out check.
+def test_d1_measures_an_exactly_zero_held_out_error():
+    """d=1 evaluates the whole tensor, so the held-out check must be exact.
 
-    The docstring says so; this pins code and documentation together.  If the
-    engine ever starts measuring it, the docstring must be updated with it.
+    The docstring says ``0.0``; this pins code and documentation together.  (It
+    said "stays None" until the engine's d=1 shortcut was made to go through the
+    common tail -- exactly the kind of drift this assertion exists to catch.)
     """
     x, _ = sum_tensor([9], shift=2.0, seed=20)
     y = multifuncrs2([x], lambda v: 1.0 / v[:, 0], eps=1e-10, verb=0,
                      n_check=50)
-    assert y.history.err_check is None
-    assert "err_check" in multifuncrs2.__doc__ and "None" in multifuncrs2.__doc__
+    assert y.history.err_check == 0.0
+    assert len(y.history.sweeps) == 1
+    assert "err_check" in multifuncrs2.__doc__
+    assert "``0.0``" in multifuncrs2.__doc__
 
 
 # --- the zero-collapse guard (unreachable from a natural funs) ---------------
@@ -402,14 +405,15 @@ def test_qtt_small_d_against_the_dense_grid():
 
 
 def test_high_d_reports_converged_and_the_module_says_eps_is_no_bound():
-    """d=40: the run reports converged and issues no warning, and the achieved
-    accuracy is *not* tied to eps.
+    """d=40: the run reports converged, issues no warning, and stays near eps.
 
-    Measured on two truncation rules of :func:`tt.algs.cross.rect_cross`:
-    err/eps = 6.4e3 (eps/sqrt(d) local truncation) and 0.11 (rank-capped
-    truncation) at eps=1e-10 -- a 5e4 spread for the same call.  So the only
-    thing a caller may rely on is the measurement, and the module docstring must
-    say so; that coupling is what this test protects.
+    The achieved accuracy at high ``d`` is a property of the cross engine and
+    has moved by a factor of 6e4 within the life of this repository (an earlier
+    truncation rule inside :func:`tt.algs.cross.rect_cross` landed at 6.4e3*eps
+    here, the present one at 0.11*eps -- both reported as converged).  The test
+    pins the current number to within a factor of 100 *and* pins the module
+    docstring to saying that eps is not a bound; the second half is what keeps
+    the documentation from quietly becoming a lie again.
     """
     d, eps = 40, 1e-10
     x = tt.xfun(2, d) * (1.0 / 2 ** d) + tt.ones(2, d) * (1.0 / 2 ** d)
@@ -421,8 +425,9 @@ def test_high_d_reports_converged_and_the_module_says_eps_is_no_bound():
         "the run claims convergence, so it must not also warn about it")
     assert y.history.converged
     assert y.history.err_check is not None
-    assert y.history.err_check <= 1e-5, (
-        f"d=40 is far worse than ever measured: {y.history.err_check:.3e}")
+    assert y.history.err_check <= 100 * eps, (
+        f"d=40: measured {y.history.err_check:.3e} for eps={eps:.0e}, "
+        "i.e. worse than 100*eps")
     import tt.algs.multifuncrs as m
     assert "*bound*" in m.__doc__, "the module must say eps is not a bound"
     assert "n_check" in m.__doc__ and "err_check" in multifuncrs2.__doc__
@@ -484,6 +489,226 @@ def test_multifuncrs2_accepts_the_legacy_positional_call():
     assert rel_err(y.full(), 1.0 / dense) <= 1e-9
 
 
+# --- rank cap, component mode, and what the history admits to ----------------
+
+def test_rmax_does_not_cap_the_component_tail():
+    """``rmax`` caps the internal ranks; the last one *is* ``d2`` by definition.
+
+    Measured: ``rmax=2`` with three components returns ranks [1, 2, 2, 2, 3].
+    A caller who reads "hard cap on the TT ranks" literally would call that a
+    violation, so the docstring has to say it -- pinned here.
+    """
+    x, _ = sum_tensor([5] * 4, shift=2.0, seed=31)
+
+    def f(v):
+        return np.stack([v[:, 0], 1.0 / v[:, 0], v[:, 0] ** 2], axis=1)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        y = multifuncrs2([x], f, eps=1e-8, rmax=2, verb=0)
+    ranks = [int(v) for v in y.r]
+    assert ranks[-1] == 3, f"the component tail was capped away: {ranks}"
+    assert max(ranks[:-1]) <= 2, f"an internal rank broke rmax=2: {ranks}"
+    assert "not capped" in multifuncrs2.__doc__
+
+
+def test_rmax_active_is_reachable_and_converged_alone_would_lie():
+    """A capped run reports converged=True while being 8 orders off.
+
+    That combination is the dangerous one, so the fact must be reachable
+    programmatically and not only as a printed warning.
+    """
+    x, dense = sum_tensor([6] * 5, shift=2.0, seed=32)
+    with pytest.warns(RuntimeWarning, match="rank cap"):
+        y = multifuncrs2([x], lambda v: 1.0 / v[:, 0], eps=1e-12, rmax=2,
+                         verb=0)
+    err = rel_err(y.full(), 1.0 / dense)
+    assert err > 1e-5, f"pick a harder case: the capped run reached {err:.2e}"
+    assert y.history.converged, "the sweeps do stop moving -- that is the trap"
+    assert y.history.rmax_active, "the trap is not reachable from the history"
+    assert "rmax_active" in repr(y.history)
+    assert np.isfinite(y.history.err_round)
+
+
+def test_vector_valued_funs_do_not_multiply_the_user_cost():
+    """d2 components must not cost d2 times the user evaluations.
+
+    Measured on d=5, n=6, eps=1e-8: 7844 points for one component and 7381 for
+    five (ratio 0.94).  The engine asks for 11689 *scalar* entries in the
+    5-component case, so the de-duplication is doing real work; the assertion is
+    the property a user pays for, not the internal ratio.
+    """
+    x, _ = sum_tensor([6] * 5, shift=2.0, seed=33)
+    cost = {}
+    for d2 in (1, 5):
+        seen = {"v": 0}
+
+        def f(v, d2=d2, seen=seen):
+            seen["v"] += v.shape[0]
+            cols = [1.0 / (v[:, 0] + j) for j in range(d2)]
+            return cols[0] if d2 == 1 else np.stack(cols, axis=1)
+
+        y = multifuncrs2([x], f, eps=1e-8, verb=0)
+        assert y.history.funs_values == seen["v"]
+        cost[d2] = seen["v"]
+        if d2 == 5:
+            assert y.history.cross.fun_eval > 1.3 * seen["v"], (
+                "the engine asked for barely more scalar entries than funs was "
+                "called on: the component mode is not being de-duplicated")
+    assert cost[5] <= 1.5 * cost[1], (
+        f"five components cost {cost[5]} user points against {cost[1]} for one")
+
+
+# --- degenerate inputs and outputs -------------------------------------------
+
+@pytest.mark.parametrize("n", [[2, 2], [2, 2, 2], [2, 3], [2]])
+def test_tiny_grids_are_reproduced_exactly(n):
+    """Grids smaller than the probe batch (8 points) and the initial rank."""
+    x, dense = sum_tensor(n, shift=2.0, seed=34)
+    y = multifuncrs2([x], lambda v: 1.0 / v[:, 0], eps=1e-12, verb=0)
+    assert rel_err(y.full(), 1.0 / dense) < 1e-14
+
+
+def test_mode_of_size_one():
+    """n_k = 1 is a legal TT mode and a classic off-by-one trap."""
+    x, dense = sum_tensor([4, 1, 5], shift=2.0, seed=35)
+    y = multifuncrs2([x], lambda v: 1.0 / v[:, 0], eps=1e-12, verb=0)
+    assert [int(v) for v in y.n] == [4, 1, 5]
+    assert rel_err(y.full(), 1.0 / dense) < 1e-13
+
+
+def test_the_same_tensor_twice_cancels_exactly():
+    """X may repeat an entry; ``v[:, 0] - v[:, 1]`` must then be exactly zero."""
+    x, dense = sum_tensor([5] * 3, shift=2.0, seed=36)
+    y = multifuncrs2([x, x], lambda v: v[:, 0] - v[:, 1] + 1.0, eps=1e-12,
+                     verb=0)
+    assert rel_err(y.full(), np.ones_like(dense)) < 1e-14
+
+
+def test_funs_ignoring_its_input_is_a_rank_one_constant():
+    x, dense = sum_tensor([4] * 3, shift=2.0, seed=37)
+    y = multifuncrs2([x], lambda v: np.full(v.shape[0], 7.0), eps=1e-12, verb=0)
+    assert max(int(v) for v in y.r) == 1
+    assert rel_err(y.full(), np.full_like(dense, 7.0)) < 1e-14
+
+
+def test_integer_valued_funs_is_promoted_to_float():
+    """An indicator function returns int64; the cores must not stay integer."""
+    x, dense = sum_tensor([4] * 3, shift=2.0, seed=38)
+    cut = float(np.median(dense))
+    y = multifuncrs2([x], lambda v: (v[:, 0] > cut).astype(np.int64),
+                     eps=1e-10, verb=0)
+    assert np.asarray(y.cores[0]).dtype == np.float64
+    assert rel_err(y.full(), (dense > cut).astype(float)) < 1e-13
+
+
+def test_a_column_shaped_return_is_still_a_scalar_function():
+    """``(batch, 1)`` means one component, i.e. no artificial component mode."""
+    x, dense = sum_tensor([4] * 3, shift=2.0, seed=39)
+    y = multifuncrs2([x], lambda v: (1.0 / v[:, 0]).reshape(-1, 1), eps=1e-12,
+                     verb=0)
+    assert y.d == 3 and int(y.r[-1]) == 1 and y.history.d2 == 1
+    assert rel_err(y.full(), 1.0 / dense) < 1e-13
+
+
+def test_a_component_that_is_identically_zero_stays_zero():
+    """The block layout must not leak the nonzero component into the zero one."""
+    x, dense = sum_tensor([5] * 3, shift=2.0, seed=40)
+    y = multifuncrs2([x], lambda v: np.stack([1.0 / v[:, 0], 0.0 * v[:, 0]], 1),
+                     eps=1e-10, verb=0)
+    assert int(y.r[-1]) == 2
+    zero = component(y, 1)
+    good = component(y, 0)
+    assert rel_err(good.full(), 1.0 / dense) < 1e-12
+    assert float(zero.norm()) <= 1e-14 * float(good.norm()), (
+        f"the zero component came back with norm {float(zero.norm()):.3e}")
+
+
+def test_an_exception_inside_funs_is_not_swallowed():
+    x, _ = sum_tensor([4] * 3, shift=2.0, seed=41)
+
+    def bad(v):
+        raise KeyError("a bug in the user's funs")
+
+    with pytest.raises(KeyError, match="a bug in the user"):
+        multifuncrs2([x], bad, eps=1e-6, verb=0)
+
+
+def test_a_funs_that_is_not_a_function_is_reported_not_hidden():
+    """Noisy ``funs`` violates the contract; the run must not claim success.
+
+    Measured: 1/x plus 0.1% multiplicative noise, eps=1e-10 -> the sweeps never
+    settle (last relative change 1.5e-3), the run warns and reports
+    converged=False with the ranks blown up to 25.
+    """
+    x, dense = sum_tensor([5] * 4, shift=2.0, seed=42)
+    rng = np.random.default_rng(0)
+
+    def noisy(v):
+        return (1.0 / v[:, 0]) * (1.0 + 1e-3 * rng.standard_normal(v.shape[0]))
+
+    with pytest.warns(RuntimeWarning, match="did not reach"):
+        y = multifuncrs2([x], noisy, eps=1e-10, verb=0)
+    assert not y.history.converged
+    assert y.history.err_rel > 1e-5
+    assert rel_err(y.full(), 1.0 / dense) > 1e-5, (
+        "the noise has to show up in the answer, otherwise this proves nothing")
+
+
+def test_kickrank_larger_than_the_whole_tensor():
+    """rect_maxvol cannot pick more rows than the matrix has."""
+    x, dense = sum_tensor([3] * 3, shift=2.0, seed=43)
+    y = multifuncrs2([x], lambda v: 1.0 / v[:, 0], eps=1e-12, kickrank=50,
+                     verb=0)
+    assert rel_err(y.full(), 1.0 / dense) < 1e-14
+    assert max(int(v) for v in y.r) <= 3
+
+
+# --- the one failure the method cannot see --------------------------------
+
+def test_a_spike_is_missed_silently_and_the_docs_say_so():
+    """The honest limit of any sampling method, pinned as behaviour.
+
+    ``funs`` is 1 at a single entry of a 6^5 grid and 1e-3 elsewhere.  The run
+    returns the constant, i.e. a relative error of 0.995, while reporting
+    ``converged=True`` and a relative change between sweeps of ~1e-15, and it
+    warns about nothing.  A held-out sample large enough to hit the spike does
+    catch it (3000 points -> err_check 0.998 and a warning); a small one does
+    not (20 points -> 1.7e-15, silent).  Nothing here is a bug to fix -- it is
+    the property a user must know about, so the test also pins the sentence in
+    the docstring that says it.
+    """
+    n = [6] * 5
+    x = tt.xfun(n)                      # distinct value at every entry
+    dense = np.asarray(x.full())
+    top = float(dense.reshape(-1, order="F")[1234])
+
+    def spike(v):
+        return np.where(v[:, 0] == top, 1.0, 1e-3)
+
+    exact = np.where(dense == top, 1.0, 1e-3)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        y = multifuncrs2([x], spike, eps=1e-8, verb=0)
+    assert rel_err(y.full(), exact) > 0.9, "the spike was found; rewrite the test"
+    assert y.history.converged and y.history.err_rel < 1e-12
+    assert caught == [], f"an unexpected warning appeared: {caught}"
+
+    with pytest.warns(RuntimeWarning, match="held-out"):
+        y3000 = multifuncrs2([x], spike, eps=1e-8, verb=0, n_check=3000)
+    assert y3000.history.err_check > 0.9
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        y20 = multifuncrs2([x], spike, eps=1e-8, verb=0, n_check=20)
+    assert y20.history.err_check < 1e-10, "20 points hit the spike; use fewer"
+    assert caught == [], "a Monte Carlo miss must not produce a warning either"
+
+    assert "spike" in multifuncrs2.__doc__ or "few entries" in multifuncrs2.__doc__
+    assert "Monte Carlo" in multifuncrs2.__doc__
+
+
 # --- torch -------------------------------------------------------------------
 
 def _to_torch(x, torch, dev):
@@ -522,3 +747,52 @@ def test_torch_vector_valued_and_complex():
     z = multifuncrs2([xt], lambda v: np.exp(1j * v[:, 0]), eps=eps, verb=0)
     assert z.backend.name == "torch" and z.is_complex
     assert rel_err(z.full(), np.exp(1j * dense)) <= 10 * eps
+    assert all(c.device.type == dev for c in z.cores), (
+        f"the answer left {dev}: {[str(c.device) for c in z.cores]}")
+
+
+def test_mixed_backends_in_X_follow_the_first_input():
+    """A numpy and a torch tensor in the same call: the answer must land on the
+    backend of ``X[0]`` and be right either way."""
+    torch = pytest.importorskip("torch")
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    a, ad = sum_tensor([5] * 3, shift=2.0, seed=45)
+    at = _to_torch(a, torch, dev)
+    exact = ad / (1.0 + ad)
+    num = multifuncrs2([a, at], lambda v: v[:, 0] / (1.0 + v[:, 1]), eps=1e-10,
+                       verb=0)
+    tor = multifuncrs2([at, a], lambda v: v[:, 0] / (1.0 + v[:, 1]), eps=1e-10,
+                       verb=0)
+    assert num.backend.name == "numpy" and tor.backend.name == "torch"
+    assert rel_err(num.full(), exact) <= 1e-9      # 10 * eps
+    assert rel_err(tor.full(), exact) <= 1e-9
+
+
+def test_torch_randn_honours_its_rng():
+    torch = pytest.importorskip("torch")
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    like = torch.zeros((1,), dtype=torch.float64, device=dev)
+    a = tt.backend.randn((3, 4), dtype="float64", like=like,
+                         rng=np.random.default_rng(7))
+    b = tt.backend.randn((3, 4), dtype="float64", like=like,
+                         rng=np.random.default_rng(7))
+    assert bool((a == b).all().item()), "the same seed gave a different draw"
+
+
+def test_torch_funs_receives_numpy_not_tensors():
+    """The user's ``funs`` is numpy code; handing it torch tensors on the GPU
+    would break every legacy script."""
+    torch = pytest.importorskip("torch")
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    x, dense = sum_tensor([5] * 3, shift=2.0, seed=44)
+    xt = _to_torch(x, torch, dev)
+    kinds = []
+
+    def f(v):
+        kinds.append(type(v))
+        return 1.0 / v[:, 0]
+
+    y = multifuncrs2([xt], f, eps=1e-10, verb=0)
+    assert kinds and all(k is np.ndarray for k in kinds), f"funs got {set(kinds)}"
+    assert y.backend.name == "torch"
+    assert rel_err(y.full(), 1.0 / dense) <= 1e-9

@@ -518,7 +518,14 @@ def multifuncrs2(X, funs, eps=1e-6, nswp=10, kickrank=5, y0=None, rmax=999999,
             be a genuine function of its argument (same input, same output).
         eps: Target relative accuracy in the Frobenius norm.  It is a knob, not
             a bound -- see "What ``eps`` actually buys" in the module docstring
-            for the measured error/eps ratio as a function of ``d``.
+            for the measured error/eps ratio as a function of ``d``.  The one
+            failure this method cannot detect by itself is a feature carried by
+            a few entries: for ``funs`` equal to ``1`` at a single point of a
+            ``6^5`` grid and ``1e-3`` elsewhere, the run returns the constant
+            ``1e-3`` (relative error 0.995) with ``converged=True`` and a
+            relative change between sweeps of ``1e-15``.  Only ``n_check``
+            large enough to hit the feature sees it (3000 points did, 20 did
+            not); nothing else can.
         nswp: Maximum number of cross sweeps (one sweep = forward and back).
         kickrank: Rank-increasing parameter: extra rows the rectangular maxvol
             adds on top of the numerical rank at every micro-step.  ``0`` turns
@@ -557,10 +564,12 @@ def multifuncrs2(X, funs, eps=1e-6, nswp=10, kickrank=5, y0=None, rmax=999999,
             different from ``eps``.
         n_check: Measure the true relative error on that many uniformly random
             held-out points after the last sweep; ends up in
-            ``history.err_check``.  Costs that many extra ``funs`` values.
-            For a one-dimensional ``X`` the cross evaluates the whole tensor
-            exactly and the engine returns before measuring, so ``err_check``
-            stays ``None`` there (see :func:`tt.algs.cross.rect_cross`).
+            ``history.err_check``.  Costs that many extra ``funs`` values.  It
+            is a Monte Carlo estimate: it resolves what a uniform sample of
+            that size can hit, and nothing finer.
+            For a one-dimensional ``X`` the cross evaluates the whole tensor,
+            so the measurement is exact and comes out as ``0.0`` rather than as
+            an estimate.
         seed: Seed of the random initial guess and of the held-out sample.
         kicktype: Legacy switch; ``'amr-two'`` and ``'rect'`` both mean the
             rectangular-maxvol enrichment actually used.  Anything else raises.

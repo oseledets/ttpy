@@ -239,7 +239,25 @@ class TorchBackend(Backend):
         return self.torch.arange(n, dtype=self._dt(dtype), device=self.device)
 
     def randn(self, shape, dtype=None, rng=None):
-        return self.torch.randn(tuple(shape), dtype=self._dt(dtype), device=self.device)
+        """Gaussian sample; ``rng`` makes it reproducible AND backend-identical.
+
+        With a generator the numbers are drawn by numpy and copied to the
+        device, so the same seed gives bit-identical results on both backends —
+        which is what a caller passing a seed is asking for.  Without one the
+        fast on-device generator is used.  Ignoring ``rng`` (as this did) turns
+        every documented ``seed=`` into a silent no-op.
+        """
+        t = self.torch
+        dt = self._dt(dtype)
+        if rng is None:
+            if dt.is_complex:
+                real = getattr(t, _REAL_OF[canon_dtype(dt)])
+                re = t.randn(tuple(shape), dtype=real, device=self.device)
+                im = t.randn(tuple(shape), dtype=real, device=self.device)
+                return (re + 1j * im).to(dt)
+            return t.randn(tuple(shape), dtype=dt, device=self.device)
+        return self.asarray(
+            NumpyBackend(canon_dtype(dt)).randn(shape, dtype, rng=rng), dtype)
 
     def concatenate(self, arrays, axis=0):
         return self.torch.cat(list(arrays), dim=axis)

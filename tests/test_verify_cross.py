@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 
 import tt
+from tt import backend as bk
 from tt.algs.cross import cross, element, rect_cross
 
 
@@ -87,8 +88,15 @@ def test_smooth_function_reaches_the_requested_accuracy(name, eps):
     local bases truncated at ``eps/sqrt(d)`` the index sets could shrink, the
     ranks locked at a fixed point and the run reported ``converged=True`` with
     ``err_rel=1e-16`` at a true relative error of 1.2e-1 on ``coulomb_8^4``,
-    eps=1e-10.  A factor 30 over the requested eps is the tolerance here; the
-    measured values are 1e-11 (eps=1e-10) and 1e-5 (eps=1e-4).
+    eps=1e-10.
+
+    The tolerance is ``3 * eps`` and that number is not arbitrary.  Measured on
+    this box (numpy, float64, seeds 0..4, the ratios are seed independent to
+    two digits) the worst ``err / eps`` over the whole bank is 0.70
+    (``sqrt_10^4`` at eps=1e-4); the pre-fix code reached 5.2 on that same
+    entry and 1.2e+3 on ``coulomb_8^4`` at eps=1e-10.  A looser tolerance --
+    the 30x this test used to carry -- lets half of the pre-fix failures
+    through, which is why it is 3 and not 30.
     """
     n, fun = SMOOTH[name]
     ref = dense_of(fun, n)
@@ -98,8 +106,8 @@ def test_smooth_function_reaches_the_requested_accuracy(name, eps):
     best = tt.vector(ref, eps=eps)
     best_err = float(np.linalg.norm(np.asarray(best.full()) - ref)
                      / np.linalg.norm(ref))
-    assert best_err < 30 * eps, f"the oracle itself missed eps: {best_err:.2e}"
-    assert err < 30 * eps, (
+    assert best_err < 3 * eps, f"the oracle itself missed eps: {best_err:.2e}"
+    assert err < 3 * eps, (
         f"{name}: cross gave {err:.3e} for eps={eps:.0e} "
         f"(dense TT-SVD reaches {best_err:.3e} with ranks {list(best.r)}); "
         f"history {y.history}")
@@ -244,6 +252,47 @@ def test_element_on_complex_cores():
     got = np.asarray(element(x, idx))
     assert got.dtype == np.dtype("complex128")
     assert np.linalg.norm(got - eval_tt_dense(x.cores, idx)) < 1e-12
+
+
+def test_torch_backend_is_actually_exercised_not_just_assumed():
+    """The module claims to be backend agnostic; run it on torch and check.
+
+    No CUDA needed -- the dispatch path is the same on a CPU torch tensor, and
+    that is what was never verified.  Measured on b300 with torch 2.13.0+cpu:
+    float64 gives 1.8e-7 for eps=1e-6, complex promotion gives 8.3e-10 for
+    eps=1e-8, both against the dense numpy array.
+    """
+    torch = pytest.importorskip("torch")
+    n = [6] * 4
+    fun = lambda i: 1.0 / (1.0 + np.asarray(i).astype(float).sum(axis=1))
+    ref = dense_of(fun, n)
+    cores = [torch.as_tensor(np.asarray(c), dtype=torch.float64, device="cpu")
+             for c in tt.rand(n, r=2).cores]
+    y = rect_cross(fun, tt.vector.from_list(cores), eps=1e-6, nswp=10,
+                   n_check=200)
+    assert isinstance(y.cores[0], torch.Tensor), "the answer left the backend"
+    assert all(isinstance(c, torch.Tensor) for c in y.cores)
+    got = np.asarray(bk.to_numpy(y.full()))
+    err = float(np.linalg.norm(got - ref) / np.linalg.norm(ref))
+    assert err < 3e-6, f"torch float64: {err:.3e}"
+    assert y.history.err_check == pytest.approx(err, rel=0.5)
+
+    # element() must survive the trip too: it is what err_check is computed with
+    idx = all_indices(n)
+    vals = np.asarray(bk.to_numpy(element(y, idx))).reshape(tuple(n))
+    assert np.linalg.norm(vals - got) < 1e-12
+
+    def cfun(i):
+        s = 1.0 + np.asarray(i).astype(float).sum(axis=1) / 6.0
+        return np.exp(1j * s) / s
+
+    cores = [torch.as_tensor(np.asarray(c), dtype=torch.float64, device="cpu")
+             for c in tt.rand(n, r=2).cores]
+    z = rect_cross(cfun, tt.vector.from_list(cores), eps=1e-8, nswp=10)
+    assert z.cores[0].dtype == torch.complex128
+    cref = dense_of(cfun, n)
+    assert float(np.linalg.norm(np.asarray(bk.to_numpy(z.full())) - cref)
+                 / np.linalg.norm(cref)) < 1e-7
 
 
 # --- shapes and degenerate grids ---------------------------------------------
@@ -405,6 +454,131 @@ def test_fun_eval_counts_every_call_and_nothing_else():
     y = cross(fun, n, eps=1e-8, n_check=123, seed=0)
     assert box["n"] == y.history.fun_eval + y.history.fun_eval_check
     assert y.history.fun_eval_check == 123
+
+
+# --- the measurement must not be quieter than the guess -----------------------
+
+def test_held_out_measurement_that_contradicts_eps_is_reported():
+    """converged=True, ranks free, nothing looks wrong -- and the answer is 100% wrong.
+
+    ``f = 1`` on the upper corner block and 0 elsewhere: every fiber the cross
+    starts from is identically zero, so it returns the zero tensor, the change
+    between sweeps is exactly 0 and the run "converges" in two sweeps.  The
+    2000 held-out points the caller paid for measure a relative error of 1.0.
+    Before the fix this run produced *no warning at all*: the one number that
+    was actually measured against ``fun`` was recorded and never surfaced.
+    """
+    n = [8] * 4
+    fun = lambda i: (np.all(np.asarray(i) >= 4, axis=1)).astype(float)
+    with pytest.warns(RuntimeWarning, match="held-out points"):
+        y = cross(fun, n, eps=1e-8, nswp=10, n_check=2000, seed=0)
+    h = y.history
+    assert h.converged is True          # the indicator really does say "fine"
+    assert h.err_rel == 0.0
+    assert h.err_check == pytest.approx(1.0)
+    assert rel_err(y, dense_of(fun, n)) == pytest.approx(1.0)
+
+
+def test_a_good_run_with_a_check_stays_quiet():
+    """The warning above is worthless if it fires on a run that met its eps."""
+    n = [5] * 5
+    fun = lambda i: 1.0 / (1.0 + np.asarray(i).astype(float).sum(axis=1))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        y = cross(fun, n, eps=1e-6, nswp=20, n_check=500, seed=0)
+    assert y.history.err_check < 1e-6
+    assert rel_err(y, dense_of(fun, n)) < 3e-6
+
+
+# --- argument validation ------------------------------------------------------
+
+@pytest.mark.parametrize("rmax", [0, -1])
+def test_absurd_rmax_is_rejected_not_reinterpreted(rmax):
+    """``rmax=0`` used to mean "no cap" (falsy) and ``rmax=-1`` meant rank 1.
+
+    Measured before the fix: ``rmax=0`` returned ranks [1,5,8,5,1] (uncapped),
+    ``rmax=-3`` returned the rank-1 tensor at a 6.0e-1 relative error.  Both are
+    the library guessing what the caller meant.
+    """
+    fun = lambda i: 1.0 / (1.0 + np.asarray(i).astype(float).sum(axis=1))
+    with pytest.raises(ValueError, match="rmax"):
+        cross(fun, [5] * 4, eps=1e-10, rmax=rmax)
+
+
+def test_element_rejects_a_negative_index():
+    """numpy would wrap it around and hand back the value from the far end."""
+    x = rand_tt([3, 4, 5], r=2, seed=8)
+    with pytest.raises(ValueError, match="negative"):
+        element(x, np.array([[-1, 0, 0]]))
+    with pytest.raises(IndexError):
+        element(x, np.array([[3, 0, 0]]))
+
+
+# --- one-mode runs keep the same history contract as every other run ----------
+
+def test_d1_run_honours_n_check_and_records_a_sweep():
+    """A d=1 run used to return a differently-shaped history: no sweep entry and
+    ``n_check`` silently ignored (``err_check=None`` after paying for it)."""
+    fun = lambda i: np.cos(np.asarray(i)[:, 0].astype(float))
+    y = cross(fun, [9], eps=1e-12, n_check=5)
+    h = y.history
+    assert h.err_check == pytest.approx(0.0, abs=1e-14)
+    assert h.fun_eval_check == 5
+    assert h.fun_eval == 9              # the whole fiber, once
+    assert len(h.sweeps) == 1
+    assert h.sweeps[0]["fun_eval"] == 9
+    assert h.converged is True
+    assert h.rmax_active is False
+    assert np.allclose(np.asarray(y.full()).reshape(-1), np.cos(np.arange(9.0)))
+
+
+def test_d1_with_kickrank_zero_does_not_cry_wolf():
+    """There is no rank adaptation to switch off when there is one mode."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        cross(lambda i: np.asarray(i)[:, 0].astype(float), [6], kickrank=0)
+
+
+# --- the stopping criterion the caller asked for ------------------------------
+
+def test_stop_fun_replaces_the_criterion_and_is_obeyed():
+    seen = []
+
+    def stop(prev, new):
+        seen.append((float(prev.norm()), float(new.norm())))
+        return len(seen) >= 2
+
+    fun = lambda i: 1.0 / (1.0 + np.asarray(i).astype(float).sum(axis=1))
+    y = rect_cross(fun, tt.rand([5] * 4, r=2), eps=1e-14, nswp=10, stop_fun=stop)
+    assert len(seen) == 2, "stop_fun must be consulted once per sweep"
+    assert len(y.history.sweeps) == 2, "and it must actually stop the loop"
+    assert y.history.converged is True
+
+
+def test_eps_abs_can_stop_a_run_that_eps_cannot():
+    """A tiny tensor: the relative criterion is unreachable, the absolute one is."""
+    fun = lambda i: 1e-12 / (1.0 + np.asarray(i).astype(float).sum(axis=1))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        y = rect_cross(fun, tt.rand([5] * 4, r=2), eps=1e-16, eps_abs=1e-10,
+                       nswp=10)
+    assert y.history.converged is True
+    assert len(y.history.sweeps) < 10
+
+
+def test_round_result_false_keeps_the_exploration_ranks():
+    """The ranks the interpolant really has, before the cosmetic rounding."""
+    n = [5] * 5
+    xt = rand_tt(n, r=3, seed=21)
+    fun = lambda i: eval_tt_dense(xt.cores, i)
+    raw = cross(fun, n, eps=1e-11, nswp=8, seed=0, round_result=False)
+    rounded = cross(fun, n, eps=1e-11, nswp=8, seed=0, round_result=True)
+    assert max(raw.history.ranks) > max(rounded.history.ranks)
+    assert raw.history.err_round == 0.0
+    assert rounded.history.err_round <= 1e-11 * 10
+    # both must represent the same tensor to the requested accuracy
+    for y in (raw, rounded):
+        assert float((y - xt).norm() / xt.norm()) < 1e-10
 
 
 def test_evaluations_stay_far_below_the_grid_in_high_dimension():

@@ -200,10 +200,13 @@ def test_sin_over_x_on_a_plain_grid():
     y = cross(fun, n, eps=1e-9, nswp=15, seed=4)
     ref = fun(all_indices(n)).reshape(tuple(n))
     err = np.linalg.norm(np.asarray(y.full()) - ref) / np.linalg.norm(ref)
-    # the stopping criterion is the change between sweeps, an estimate of the
-    # error and not a bound: landing within two orders of magnitude of eps is
-    # what the method promises (measured: 1.3e-8 for eps=1e-9)
-    assert err < 100 * 1e-9, f"relative error {err:.3e}"
+    # The stopping criterion is the change between sweeps -- an estimate of the
+    # error, not a bound -- so the tolerance carries a factor.  It is 5, not the
+    # 100 this test used to carry: measured 5.5e-10 for eps=1e-9 (numpy,
+    # float64, identical to two digits for seeds 0..4), i.e. the method lands
+    # *below* the requested accuracy here and a 100x window would have hidden a
+    # 20-fold regression.
+    assert err < 5 * 1e-9, f"relative error {err:.3e}"
     assert y.history.fun_eval < 0.2 * 32 ** 4
 
 

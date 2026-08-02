@@ -372,8 +372,10 @@ def rect_cross(fun, x0, eps=1e-6, nswp=20, kickrank=1, rf=2, verbose=False,
             result comes back on that backend with that floating point width
             (a ``float32`` ``x0`` gives ``float32`` cores), promoted to complex
             if ``fun`` returns complex values.
-        eps: Target relative accuracy.  Drives both the local truncation
-            (``eps/sqrt(d)`` per core) and the stopping criterion.
+        eps: Target relative accuracy.  It is the stopping criterion (the sweeps
+            stop when the tensor stops moving by more than ``eps``) and the
+            tolerance of the final rounding.  It is deliberately *not* used to
+            truncate the local bases -- see :func:`_left_basis`.
         nswp: Maximum number of sweeps (one sweep = left-to-right and back).
         kickrank: Minimum number of extra rows the rectangular maxvol adds on
             top of the numerical rank at every micro-step.  This is the
@@ -409,11 +411,13 @@ def rect_cross(fun, x0, eps=1e-6, nswp=20, kickrank=1, rf=2, verbose=False,
         the convergence flag.
 
     Raises:
-        ValueError: if ``fun`` is not vectorized or returns non-finite values.
+        ValueError: if ``fun`` is not vectorized or returns non-finite values,
+            if ``nswp < 1`` or if ``rmax < 1``.
 
     Warns:
         RuntimeWarning: if the sweeps ran out before the stopping criterion was
-            met, if the ranks saturate ``rmax``, or if ``kickrank`` is zero.
+            met, if the ranks saturate ``rmax``, if ``kickrank`` is zero, or if
+            the held-out measurement (``n_check > 0``) comes out above ``eps``.
             The tensor is still returned -- with the achieved accuracy in
             ``history`` -- because a wrong-but-quiet answer is the one thing we
             must not produce.
@@ -522,10 +526,21 @@ def rect_cross(fun, x0, eps=1e-6, nswp=20, kickrank=1, rf=2, verbose=False,
     if hist.rmax_active:
         notes.append(f"the rank cap rmax={int(rmax)} is active, so eps="
                      f"{eps:.1e} is not certified")
-    if opts["kickrank"] < 1:
-        notes.append("kickrank=0 switches off the rank adaptation, so the "
-                     "change between sweeps measures stagnation at a fixed "
-                     "rank and says nothing about the error")
+    if opts["kickrank"] < 1 and d > 1:
+        notes.append(f"kickrank={opts['kickrank']} switches off the rank "
+                     "adaptation, so the change between sweeps measures "
+                     "stagnation at a fixed rank and says nothing about the "
+                     "error")
+    # The one case that used to be completely silent: the run converged, the
+    # ranks are free, nothing looks wrong -- and the held-out sample the caller
+    # paid for says the answer is wrong anyway (a function whose mass sits
+    # outside the sampled fibers does exactly this).  A measurement that
+    # contradicts eps outranks every indicator above it.
+    if hist.err_check is not None and hist.err_check > max(10.0 * eps, 1e-13):
+        notes.append(
+            f"the measured relative error on {int(n_check)} held-out points is "
+            f"{hist.err_check:.3e}, which is above the requested eps="
+            f"{eps:.1e}: the sampled fibers do not represent this function")
     if notes:
         msg = ("tt cross: " + "; ".join(notes)
                + f"; ranks {hist.ranks}, rounding error "

@@ -244,9 +244,14 @@ def test_vector_valued_funs_calls_are_deduplicated(xdata):
 
     y = multifuncrs2([x], f, eps=1e-8, verb=0)
     scalar = y.history.cross.fun_eval  # scalar entries the engine asked for
-    assert calls["values"] < scalar, (
+    # ``< scalar`` alone would pass on a single de-duplicated row in the whole
+    # run.  Measured here: 9910 scalar entries for 7408 user points, a ratio of
+    # 1.34 out of the ideal 2 (the cross does not put every spatial index next
+    # to both components in the same batch, so the ideal is not reachable).
+    assert scalar >= 1.25 * calls["values"], (
         f"funs was called on {calls['values']} points for {scalar} scalar "
         "entries; de-duplication over the component mode is not working")
+    assert y.history.funs_values == calls["values"]
 
 
 def test_d2_mismatch_raises(xdata):
