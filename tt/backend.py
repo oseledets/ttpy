@@ -300,7 +300,17 @@ def same_backend(arrays, what="cores"):
 # --- per-array dispatch ------------------------------------------------------
 
 def asarray(a, dtype=None, backend=None):
-    return (backend or _default).asarray(a, dtype)
+    """Convert to a backend array.
+
+    An array that already belongs to a backend keeps it: switching the default
+    backend must not silently drag existing tensors to another device.
+    """
+    if backend is None:
+        try:
+            backend = backend_of(a)
+        except TypeError:
+            backend = _default
+    return backend.asarray(a, dtype)
 
 
 def to_numpy(a):
