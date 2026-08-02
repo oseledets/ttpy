@@ -1,0 +1,36 @@
+[project]
+name = "ttpy"
+version = "2.0.0.dev0"
+description = "Tensor Train toolbox: TT/QTT decompositions, cross approximation, AMEn solvers — pure Python, numpy/torch backends"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Ivan Oseledets" }]
+keywords = ["tensor train", "TT", "QTT", "low-rank", "cross approximation", "AMEn"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "einops>=0.7",
+]
+
+[project.optional-dependencies]
+torch = ["torch>=2.2"]
+test = ["pytest>=7", "pytest-xdist"]
+
+[project.urls]
+Homepage = "https://github.com/oseledets/ttpy"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error::DeprecationWarning:tt.*"]
