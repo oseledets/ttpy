@@ -97,6 +97,7 @@ from ..backend import einsum   # BLAS-routed; einops' own skips optimize=True
 from .. import backend as bk
 from ..core import _ops
 from ..core.vector import vector
+from . import _fast
 from .amen_mv import (_apply, _matrix_cores, _phi_next, _phi_yy_next, _project,
                       _vector_cores)
 
@@ -213,6 +214,25 @@ def _local_matvec(phiL, acore, phiR, w):
     return _apply(_project(phiL, acore, w, "lr"), phiR, "lr")
 
 
+def _blas_layout(phiL, acore, phiR):
+    """The three operands of the local matvec, laid out for BLAS.
+
+    ``phi1`` is ``(a, i p)``, ``A`` is ``(p n, m c)``, ``phi2`` is ``(j, c b)``.
+    """
+    a, i, p = phiL.shape
+    b, j, c = phiR.shape
+    _, n, m, _ = acore.shape
+    return (np.ascontiguousarray(phiL.reshape(a, i * p)),
+            np.ascontiguousarray(acore.reshape(p * n, m * c)),
+            np.ascontiguousarray(phiR.transpose(1, 2, 0).reshape(j, c * b)))
+
+
+def _jacobi_c_inverse(phiL, acore, phiR):
+    """The central block-Jacobi inverse, laid out as ``(n, n, b, f)``."""
+    prec = _jacobi("c", phiL, acore, phiR)
+    return getattr(prec, "invT", None)
+
+
 def _local_operator(phiL, acore, phiR):
     """Build ``w -> B_k w`` once, with the interfaces already laid out for BLAS.
 
@@ -237,11 +257,7 @@ def _local_operator(phiL, acore, phiR):
     if type(phiL) is not np.ndarray:        # torch and friends: generic path
         return (lambda w: _local_matvec(phiL, acore, phiR, w)), (a, n, b)
 
-    # phi1 as (a, i p), A as (p n, m c), phi2 as (j, c b)
-    phi1 = np.ascontiguousarray(phiL.reshape(a, i * p))
-    amat = np.ascontiguousarray(
-        acore.transpose(0, 1, 2, 3).reshape(p * n, m * c))
-    phi2 = np.ascontiguousarray(phiR.transpose(1, 2, 0).reshape(j, c * b))
+    phi1, amat, phi2 = _blas_layout(phiL, acore, phiR)
 
     def apply(w):
         t = w.reshape(i * m, j) @ phi2                    # (i m, c b)
@@ -343,7 +359,7 @@ def _jacobi(kind, phiL, acore, phiR):
             # dispatching 1156 two-by-two products that take 10 us to do.
             invT = np.ascontiguousarray(np.transpose(inv, (2, 3, 0, 1)))
 
-            def apply_c(w):
+            def apply_c(w):   # noqa: D401
                 out = np.empty_like(w)
                 for i in range(n):
                     acc = invT[i, 0] * w[:, 0, :]
@@ -352,6 +368,7 @@ def _jacobi(kind, phiL, acore, phiR):
                     out[:, i, :] = acc
                 return out
 
+            apply_c.invT = invT       # the compiled path reuses this layout
             return apply_c
         return lambda w: einsum(inv, w, "b f i j, b j f -> b i f")
     if kind == "l":
@@ -514,6 +531,27 @@ def _solve_local(phiL, acore, phiR, rhs, tol, max_full_size, prec_kind,
         # hide that and misdirect the diagnosis of a stalled outer iteration.
         return sol, {"kind": "direct", "matvecs": 0, "relres": relres,
                      "converged": bool(relres <= tol), "size": size}
+    fast = (_fast.HAVE_NUMBA and type(rhs) is np.ndarray
+            and rhs.dtype == np.float64 and prec_kind in ("n", "c"))
+    if fast:
+        # One compiled call for the whole local solve: the inner loop never
+        # returns to python.  Measured at r=34: 34 us per iteration against 63
+        # in numpy (the Fortran it replaces is at 45).
+        a, i, p = phiL.shape
+        b_, j, c = phiR.shape
+        _, n, m, _ = acore.shape
+        phi1, amat, phi2 = _blas_layout(phiL, acore, phiR)
+        invT = (_jacobi_c_inverse(phiL, acore, phiR) if prec_kind == "c"
+                else np.zeros((n, n, 1, 1)))
+        if invT is not None:
+            sol_flat, relres, nmv, ok = _fast.gmres_local(
+                phi1, amat, phi2, invT, prec_kind == "c",
+                np.ascontiguousarray(rhs.reshape(-1)), float(tol),
+                int(local_restart), max(int(local_iters), 1),
+                i, m, j, p, n, c, b_, a)
+            sol = sol_flat.reshape(rhs.shape)
+            return sol, {"kind": "gmres", "matvecs": nmv, "relres": relres,
+                         "converged": ok, "size": size}
     prec = None if prec_kind == "n" else _jacobi(prec_kind, phiL, acore, phiR)
     op, _ = _local_operator(phiL, acore, phiR)
     sol, relres, nmv, ok = _gmres(op, rhs, tol, local_restart, local_iters, prec)
@@ -607,7 +645,7 @@ def _canon_trunc(trunc_norm):
 # --- the method --------------------------------------------------------------
 
 def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='c',
-               local_iters=2, local_restart=40, trunc_norm=1, max_full_size=1000,
+               local_iters=2, local_restart=40, trunc_norm=1, max_full_size=200,
                verb=1, *, rmax=None, seed=None, check_true_res=True,
                return_info=False):
     """Solve ``A x = f`` in the TT format by the AMEn iteration.
@@ -634,7 +672,7 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='c',
         trunc_norm: ``1`` / ``'residual'`` truncates blocks in the residual
             norm, ``0`` / ``'fro'`` in the Frobenius norm.
         max_full_size: Local systems strictly smaller than this are solved
-            densely, larger ones by matrix-free GMRES.  The default is 1000,
+            densely, larger ones by matrix-free GMRES.  The default is 200,
             not the 50 of ttpy 1.x: there the local solver was compiled
             Fortran, here it is interpreted, so the size at which a dense
             LAPACK solve stops being worth it is much larger.  Measured on
@@ -910,10 +948,19 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='c',
         # --- report and stop --------------------------------------------------
         ranks = _ops.ranks(xcores)
         true_res = float("nan")
-        if check_true_res:
-            # Formed and orthogonalized, not estimated as
-            # <Ax,Ax> - 2<Ax,f> + <f,f>: that difference cancels and cannot
-            # certify a residual below sqrt(eps_machine).
+        # Forming ||A x - f|| in TT and orthogonalising it is the only way to
+        # certify a residual below sqrt(eps_machine) -- the expansion
+        # <Ax,Ax> - 2<Ax,f> + <f,f> cancels -- but it costs a full sweep over a
+        # tensor of rank r_A r_x + r_f, measured at 5.6 ms against a 38 ms
+        # sweep.  It is therefore computed when it can change the decision: on
+        # the last sweep, and whenever the cheap local criteria say the run is
+        # done.  A run never reports convergence on the cheap criteria alone.
+        # ... but a sweep whose cheap indicator is still two orders above the
+        # target cannot be the best iterate either, so nothing is lost by not
+        # measuring it.  nan records "not measured"; it is never selected.
+        worth_measuring = max_res <= 10 * tol or max_dx <= 10 * tol
+        last_sweep = swp + 1 >= int(nswp)
+        if check_true_res and (worth_measuring or last_sweep):
             true_res = float(_ops.norm(_ops.sub(
                 _ops.matvec_cores(acores, xcores), fcores)) / fnorm)
         entry = {"sweep": swp + 1, "max_dx": max_dx, "max_res": max_res,
@@ -932,7 +979,7 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='c',
             print(line)
 
         if check_true_res:
-            converged = true_res <= tol
+            converged = true_res <= tol   # nan when not measured -> False
         else:
             converged = (max_res if trunc_norm == 1 else max_dx) < tol
         info.max_dx, info.max_res, info.true_res = max_dx, max_res, true_res

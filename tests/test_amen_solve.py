@@ -413,8 +413,13 @@ def test_history_is_recorded_even_when_silent(capsys):
     captured = capsys.readouterr()
     assert captured.out == "" and captured.err == ""
     assert info.nswp_done >= 1
-    assert all(np.isfinite([s["max_dx"], s["max_res"], s["true_res"],
-                            s["time"]]).all() for s in info.sweeps)
+    assert all(np.isfinite([s["max_dx"], s["max_res"], s["time"]]).all()
+               for s in info.sweeps)
+    # true_res is measured only where it can change the decision (it costs a
+    # full sweep over A x - f); elsewhere it is nan, which says "not measured"
+    # rather than inventing a number.  The sweep the run stopped on must have it.
+    assert np.isfinite(info.sweeps[-1]["true_res"])
+    assert np.isfinite(info.true_res)
     assert x.amen_info is info
     assert "converged" in repr(info)
 

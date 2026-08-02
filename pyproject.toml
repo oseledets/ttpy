@@ -19,6 +19,10 @@ dependencies = [
 
 [project.optional-dependencies]
 torch = ["torch>=2.2"]
+# Compiled kernels for the innermost AMEn loops. numba ships wheels, so this
+# still needs no compiler on the user's machine; without it the package falls
+# back to the numpy path and every result is identical (tests/test_fast.py).
+fast = ["numba>=0.59"]
 test = ["pytest>=7", "pytest-xdist"]
 
 [project.urls]

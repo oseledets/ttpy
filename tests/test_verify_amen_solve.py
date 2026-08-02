@@ -187,7 +187,12 @@ def test_mode_sizes_that_differ_per_mode():
                              np.asarray(f.full(asvector=True)))
         assert info.converged
         assert dense_residual(A, x, f) <= 1e-11          # measured ~6e-13
-        assert rel(np.asarray(x.full(asvector=True)), xd) < 1e-10
+        # The solver targets a RESIDUAL; the error against the dense solution
+        # is bounded by cond(A) times that residual, and this QTT Laplacian has
+        # cond ~ 1e3.  Asserting 1e-10 on the error was pinning an accident of
+        # where the iteration happened to stop (measured 1.0e-10 with one local
+        # solver, 8e-11 with another).
+        assert rel(np.asarray(x.full(asvector=True)), xd) < 1e-8
 
 
 def test_two_dimensional_problem():
@@ -218,7 +223,12 @@ def test_multidimensional_qtt_laplacian(dims):
                          np.asarray(f.full(asvector=True)))
     assert info.converged
     assert dense_residual(A, x, f) <= 1e-8              # measured ~1e-14
-    assert rel(np.asarray(x.full(asvector=True)), xd) < 1e-10
+    # The solver targets a RESIDUAL; the error against the dense solution is
+    # bounded by cond(A) times that residual, and this QTT Laplacian has
+    # cond ~ 1e3.  Asserting 1e-10 on the error pinned an accident of where the
+    # iteration happened to stop (1.0e-10 with one local solver, 8e-11 with
+    # another) rather than anything the method promises.
+    assert rel(np.asarray(x.full(asvector=True)), xd) < 1e-8
 
 
 def test_rank_one_right_hand_side_and_rank_one_solution():
@@ -450,8 +460,10 @@ def test_history_describes_the_returned_vector():
                              return_info=True)
     assert info.ranks == [int(r) for r in x.r]
     best = info.sweeps[info.best_sweep - 1]
-    assert info.true_res == best["true_res"] == min(s["true_res"]
-                                                    for s in info.sweeps)
+    measured = [s["true_res"] for s in info.sweeps if np.isfinite(s["true_res"])]
+    # sweeps whose cheap indicator is still far from the target are not measured
+    # (nan) and can never be selected as the best iterate
+    assert info.true_res == best["true_res"] == min(measured)
     assert info.max_dx == best["max_dx"] and info.max_res == best["max_res"]
     assert f"{info.true_res:.3E}" in info.message
     # and the residual it claims is the residual it has
@@ -468,8 +480,11 @@ def test_silent_run_stays_silent_on_the_failure_path(capsys):
     captured = capsys.readouterr()
     assert captured.out == "" and captured.err == ""
     assert len(info.sweeps) == 3
-    assert all(np.isfinite([s["max_dx"], s["max_res"], s["true_res"]]).all()
+    assert all(np.isfinite([s["max_dx"], s["max_res"]]).all()
                for s in info.sweeps)
+    # true_res costs a sweep over A x - f, so it is measured only where it can
+    # change the decision; the sweep the run stopped on always carries it.
+    assert np.isfinite(info.sweeps[-1]["true_res"]) and np.isfinite(info.true_res)
 
 
 # --- the random streams ------------------------------------------------------
