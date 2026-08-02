@@ -304,6 +304,17 @@ def _diag_of(phi):
     return einsum(phi, ident, "a b p, a b -> a p")
 
 
+def _invert_blocks(blocks, kind):
+    """Invert the diagonal blocks, refusing loudly if one is singular."""
+    try:
+        return bk.inv(blocks)
+    except Exception as exc:                 # LinAlgError differs per backend
+        raise RuntimeError(
+            f"local Jacobi preconditioner {kind!r}: a diagonal block of the "
+            "local matrix is singular, the preconditioner does not exist; "
+            "run with local_prec='n'") from exc
+
+
 def _jacobi(kind, phiL, acore, phiR):
     """Block-Jacobi preconditioner for the local operator.
 
@@ -350,15 +361,10 @@ def _jacobi(kind, phiL, acore, phiR):
     else:                                    # pragma: no cover - guarded above
         raise NotImplementedError(kind)
 
-    try:
-        inv = bk.inv(blocks)
-    except Exception as exc:                 # LinAlgError differs per backend
-        raise RuntimeError(
-            f"local Jacobi preconditioner {kind!r}: a diagonal block of the "
-            "local matrix is singular, the preconditioner does not exist; "
-            "run with local_prec='n'") from exc
-
     if kind == "c":
+        # The n = 2 path inverts the blocks itself, so the batched numpy inverse
+        # below must not run first: it was doing the same 1156 two-by-two
+        # inversions a second time (16 ms of a 200 ms solve).
         if _fast.HAVE_NUMBA and type(blocks) is np.ndarray and n == 2:
             invT = np.empty((2, 2, blocks.shape[0], blocks.shape[1]))
             ok = _fast.invert_2x2_blocks(blocks, invT)
@@ -374,6 +380,7 @@ def _jacobi(kind, phiL, acore, phiR):
 
             apply_c2.invT = invT
             return apply_c2
+        inv = _invert_blocks(blocks, kind)
         if type(inv) is np.ndarray and n * n <= 16:
             # n^2 elementwise products on (b, f) arrays instead of a batched
             # matmul over r1*r2 tiny n x n blocks: numpy spends 34 us
@@ -391,7 +398,9 @@ def _jacobi(kind, phiL, acore, phiR):
 
             apply_c.invT = invT       # the compiled path reuses this layout
             return apply_c
+        inv = _invert_blocks(blocks, kind)
         return lambda w: einsum(inv, w, "b f i j, b j f -> b i f")
+    inv = _invert_blocks(blocks, kind)
     if kind == "l":
         def apply_l(w):
             flat = rearrange(w, "b j f -> f (b j)")
@@ -610,11 +619,16 @@ def _truncate(core, next_core, tol, residual_ctx, rmax):
         rnew = max(1, _ops.chop(s, tol * float(bk.norm(s))))
     else:
         phiL, acore, phiR, rhs, rhs_norm = residual_ctx
+        op, _ = _local_operator(phiL, acore, phiR)
+        # Walked down from the top, not bisected.  The local residual is only
+        # *nearly* monotone in the rank, and bisection on it picked ranks that
+        # cost convergence (measured: a d=14 QTT Laplacian stopped at 1.3e-08
+        # instead of reaching 1e-10).  The scan exits after a few steps in
+        # practice, which is why it costs 30 ms of a 200 ms solve and not more.
         rnew = 1
         for r in range(rmin - 1, 0, -1):
             trial = (u[:, :r] @ tail[:r, :]).reshape((r1, n, r2))
-            res = _local_matvec(phiL, acore, phiR, trial) - rhs
-            if float(bk.norm(res)) / rhs_norm > tol:
+            if float(bk.norm(op(trial) - rhs)) / rhs_norm > tol:
                 rnew = r + 1
                 break
     rnew = min(rnew, rmin)
@@ -987,7 +1001,7 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='c',
         # it.  nan records "not measured"; such a sweep is never selected as the
         # best iterate.  Measured: 61 ms of a 237 ms solve went into residuals
         # that changed nothing.
-        worth_measuring = max_res <= 10 * tol or max_dx <= 10 * tol
+        worth_measuring = max_res <= 10 * tol
         last_sweep = swp + 1 >= int(nswp)
         if check_true_res and (worth_measuring or last_sweep):
             true_res = float(_ops.norm(_ops.sub(
