@@ -35,27 +35,37 @@ __all__ = [
 ]
 
 
+# Names that were *modules* in ttpy 1.x (``from tt.amen import amen_solve``) and
+# names that were *functions* on the package (``tt.multifuncrs(...)``).  Keeping
+# the distinction is what makes old scripts run unchanged.
+_LEGACY_MODULES = ("maxvol", "cross", "amen", "eigb", "ksl", "optimize",
+                   "riemannian", "completion", "solvers", "multifuncrs2_mod")
+_FUNCTIONS = {
+    "multifuncrs": ("tt.algs.multifuncrs", "multifuncrs"),
+    "multifuncrs2": ("tt.algs.multifuncrs", "multifuncrs2"),
+    "GMRES": ("tt.algs.solvers", "GMRES"),
+    "amen_solve": ("tt.algs.amen", "amen_solve"),
+    "amen_mv": ("tt.algs.amen_mv", "amen_mv"),
+    "eigb_solve": ("tt.algs.eigb", "eigb"),
+    "ksl_step": ("tt.algs.ksl", "ksl"),
+    "rect_cross": ("tt.algs.cross", "rect_cross"),
+    "rect_maxvol": ("tt.algs.maxvol", "rect_maxvol"),
+    "min_tens": ("tt.algs.optimize", "min_tens"),
+    "min_func": ("tt.algs.optimize", "min_func"),
+}
+
+
 def __getattr__(name):
-    """Import the algorithm namespaces lazily (keeps ``import tt`` cheap)."""
-    if name in ("multifuncrs", "multifuncrs2"):
-        from .algs import multifuncrs as _m
-        return getattr(_m, name)
-    if name == "GMRES":
-        from .algs.solvers import GMRES
-        return GMRES
-    if name in ("amen_solve", "amen_mv"):
-        from .algs import amen as _a
-        return getattr(_a, name)
-    if name in ("cross", "rect_cross", "greedy_cross"):
-        from .algs import cross as _c
-        return getattr(_c, name)
-    if name in ("maxvol", "rect_maxvol"):
-        from .algs.maxvol import maxvol, rect_maxvol
-        return {"maxvol": maxvol, "rect_maxvol": rect_maxvol}[name]
-    if name == "eigb":
-        from .algs.eigb import eigb
-        return eigb
-    if name in ("ksl", "diag_ksl"):
-        from .algs.ksl import diag_ksl, ksl
-        return {"ksl": ksl, "diag_ksl": diag_ksl}[name]
+    """Resolve the algorithm layer lazily (keeps ``import tt`` cheap).
+
+    Algorithms are imported on first use, so a missing optional dependency or a
+    module still under construction cannot break ``import tt``.
+    """
+    import importlib
+
+    if name in _LEGACY_MODULES:
+        return importlib.import_module(f"tt.{name}")
+    if name in _FUNCTIONS:
+        module, attr = _FUNCTIONS[name]
+        return getattr(importlib.import_module(module), attr)
     raise AttributeError(f"module 'tt' has no attribute {name!r}")
