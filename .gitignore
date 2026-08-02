@@ -3,3 +3,5 @@ __pycache__/
 .venv/
 .pytest_cache/
 
+_probe*.py
+_scratch*
