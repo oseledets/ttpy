@@ -329,8 +329,14 @@ def _jacobi(kind, phiL, acore, phiR):
     """
     r1, n, m, r2 = phiL.shape[1], acore.shape[1], acore.shape[2], phiR.shape[1]
     if kind == "c":
-        t = einsum(_diag_of(phiL), acore, "b p, p i j q -> b i j q")
-        blocks = einsum(t, _diag_of(phiR), "b i j q, f q -> b f i j")
+        if (_fast.HAVE_NUMBA and type(phiL) is np.ndarray
+                and phiL.dtype == np.float64 and acore.dtype == np.float64):
+            blocks = np.empty((phiL.shape[0], phiR.shape[0],
+                               acore.shape[1], acore.shape[2]))
+            _fast.jacobi_c_blocks(phiL, acore, phiR, blocks)
+        else:
+            t = einsum(_diag_of(phiL), acore, "b p, p i j q -> b i j q")
+            blocks = einsum(t, _diag_of(phiR), "b i j q, f q -> b f i j")
     elif kind == "l":
         t = einsum(phiL, acore, "c b p, p i j q -> c b i j q")
         blocks = rearrange(
@@ -353,6 +359,21 @@ def _jacobi(kind, phiL, acore, phiR):
             "run with local_prec='n'") from exc
 
     if kind == "c":
+        if _fast.HAVE_NUMBA and type(blocks) is np.ndarray and n == 2:
+            invT = np.empty((2, 2, blocks.shape[0], blocks.shape[1]))
+            ok = _fast.invert_2x2_blocks(blocks, invT)
+            if not ok:
+                raise RuntimeError(
+                    "local Jacobi preconditioner 'c': a 2x2 diagonal block is "
+                    "singular, the preconditioner does not exist; "
+                    "run with local_prec='n'")
+
+            def apply_c2(w):
+                out = np.empty_like(w)
+                return _fast.jacobi_c_apply(invT, w, out)
+
+            apply_c2.invT = invT
+            return apply_c2
         if type(inv) is np.ndarray and n * n <= 16:
             # n^2 elementwise products on (b, f) arrays instead of a batched
             # matmul over r1*r2 tiny n x n blocks: numpy spends 34 us
@@ -955,9 +976,17 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='c',
         # sweep.  It is therefore computed when it can change the decision: on
         # the last sweep, and whenever the cheap local criteria say the run is
         # done.  A run never reports convergence on the cheap criteria alone.
-        # ... but a sweep whose cheap indicator is still two orders above the
-        # target cannot be the best iterate either, so nothing is lost by not
-        # measuring it.  nan records "not measured"; it is never selected.
+        # ... and a sweep whose local residuals have not reached the target
+        # cannot be the one that converges.  Note max_res, not max_dx: the step
+        # size collapses long before the residual does, and keying on it had the
+        # residual formed in 6 sweeps of 12 (57 ms of a 250 ms solve) to decide
+        # nothing.  Keying on max_res costs two extra sweeps and saves five
+        # residuals: 250 -> 206 ms.
+        # A sweep whose cheap indicators have not reached the target
+        # cannot be the one that converges, so nothing is decided by measuring
+        # it.  nan records "not measured"; such a sweep is never selected as the
+        # best iterate.  Measured: 61 ms of a 237 ms solve went into residuals
+        # that changed nothing.
         worth_measuring = max_res <= 10 * tol or max_dx <= 10 * tol
         last_sweep = swp + 1 >= int(nswp)
         if check_true_res and (worth_measuring or last_sweep):

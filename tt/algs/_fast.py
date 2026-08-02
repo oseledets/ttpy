@@ -230,3 +230,137 @@ def gmres_local(phi1, amat, phi2, invT, use_prec, rhs, tol, restart, maxit,
         if relres <= tol:
             return sol, relres, nmv, True
     return sol, relres, nmv, relres <= tol
+
+
+@njit(**_JIT)
+def invert_2x2_blocks(blocks, out):
+    """Invert every 2x2 diagonal block of the central Jacobi preconditioner.
+
+    ``blocks`` is (b, f, 2, 2), ``out`` is (2, 2, b, f) -- the layout
+    :func:`jacobi_c_apply` wants.  numpy's batched ``inv`` over ~1156 two-by-two
+    matrices spends its time dispatching, not inverting.  Returns False if any
+    block is singular; the caller raises rather than silently substituting.
+    """
+    bb = blocks.shape[0]
+    ff = blocks.shape[1]
+    for b in range(bb):
+        for f in range(ff):
+            a11 = blocks[b, f, 0, 0]
+            a12 = blocks[b, f, 0, 1]
+            a21 = blocks[b, f, 1, 0]
+            a22 = blocks[b, f, 1, 1]
+            det = a11 * a22 - a12 * a21
+            if det == 0.0 or not np.isfinite(det):
+                return False
+            out[0, 0, b, f] = a22 / det
+            out[0, 1, b, f] = -a12 / det
+            out[1, 0, b, f] = -a21 / det
+            out[1, 1, b, f] = a11 / det
+    return True
+
+
+@njit(**_JIT)
+def project_lr(phi, acore, xcore):
+    """``phi[a,i,p], A[p,n,m,c], x[i,m,j] -> w[a,n,j,c]``.
+
+    Two BLAS products with the permutations done explicitly, in one call: the
+    two-einsum version spends about two thirds of its 77 us on dispatch and
+    temporaries rather than on the 0.84 Mflop it computes.
+    """
+    a, i, p = phi.shape
+    _, n, m, c = acore.shape
+    _, _, j = xcore.shape
+    # t[a,p,m,j] = sum_i phi[a,i,p] x[i,m,j]
+    phi_t = np.ascontiguousarray(phi.transpose(0, 2, 1)).reshape(a * p, i)
+    t = (phi_t @ np.ascontiguousarray(xcore).reshape(i, m * j)).reshape(a, p, m, j)
+    # out[a,n,j,c] = sum_{p,m} t[a,p,m,j] A[p,n,m,c]
+    t2 = np.ascontiguousarray(t.transpose(0, 3, 1, 2)).reshape(a * j, p * m)
+    a2 = np.ascontiguousarray(acore.transpose(0, 2, 1, 3)).reshape(p * m, n * c)
+    out = (t2 @ a2).reshape(a, j, n, c)
+    return np.ascontiguousarray(out.transpose(0, 2, 1, 3))
+
+
+@njit(**_JIT)
+def project_rl(phi, acore, xcore):
+    """``phi[b,j,c], A[p,n,m,c], x[i,m,j] -> w[b,n,i,p]`` (the mirror image)."""
+    b, j, c = phi.shape
+    p, n, m, _ = acore.shape
+    i, _, _ = xcore.shape
+    # t[b,c,i,m] = sum_j phi[b,j,c] x[i,m,j]
+    phi_t = np.ascontiguousarray(phi.transpose(0, 2, 1)).reshape(b * c, j)
+    x_t = np.ascontiguousarray(xcore.transpose(2, 0, 1)).reshape(j, i * m)
+    t = (phi_t @ x_t).reshape(b, c, i, m)
+    # out[b,n,i,p] = sum_{c,m} t[b,c,i,m] A[p,n,m,c]
+    t2 = np.ascontiguousarray(t.transpose(0, 2, 3, 1)).reshape(b * i, m * c)
+    a2 = np.ascontiguousarray(acore.transpose(2, 3, 1, 0)).reshape(m * c, n * p)
+    out = (t2 @ a2).reshape(b, i, n, p)
+    return np.ascontiguousarray(out.transpose(0, 2, 1, 3))
+
+
+@njit(**_JIT)
+def apply_lr(w, phi):
+    """``w[a,n,j,c], phi[b,j,c] -> y[a,n,b]``."""
+    a, n, j, c = w.shape
+    b = phi.shape[0]
+    wc = np.ascontiguousarray(w).reshape(a * n, j * c)
+    pc = np.ascontiguousarray(np.ascontiguousarray(phi).reshape(b, j * c).T)
+    return (wc @ pc).reshape(a, n, b)
+
+
+@njit(**_JIT)
+def apply_rl(w, phi):
+    """``w[b,n,i,p], phi[a,i,p] -> y[a,n,b]``."""
+    b, n, i, p = w.shape
+    a = phi.shape[0]
+    wt = np.ascontiguousarray(w.transpose(2, 3, 0, 1)).reshape(i * p, b * n)
+    t = (np.ascontiguousarray(phi).reshape(a, i * p) @ wt).reshape(a, b, n)
+    return np.ascontiguousarray(t.transpose(0, 2, 1))
+
+
+@njit(**_JIT)
+def phi_next_lr(w, ycore):
+    """``w[a,n,j,c], conj(y)[a,n,b] -> phi[b,j,c]``."""
+    a, n, j, c = w.shape
+    b = ycore.shape[2]
+    yt = np.ascontiguousarray(np.ascontiguousarray(ycore).reshape(a * n, b).T)
+    return (yt @ np.ascontiguousarray(w).reshape(a * n, j * c)).reshape(b, j, c)
+
+
+@njit(**_JIT)
+def phi_next_rl(w, ycore):
+    """``w[b,n,i,p], conj(y)[a,n,b] -> phi[a,i,p]``."""
+    b, n, i, p = w.shape
+    a = ycore.shape[0]
+    y2 = np.ascontiguousarray(ycore.transpose(0, 2, 1)).reshape(a, b * n)
+    w2 = np.ascontiguousarray(w).reshape(b * n, i * p)
+    return (y2 @ w2).reshape(a, i, p)
+
+
+@njit(**_JIT)
+def jacobi_c_blocks(phiL, acore, phiR, out):
+    """Diagonal blocks of the central Jacobi preconditioner.
+
+    ``out[b, f, i, j] = sum_{p,q} phiL[b,b,p] A[p,i,j,q] phiR[f,f,q]`` -- the
+    n x n diagonal block for every pair of rank indices.  Written as loops
+    because the whole thing is ~80k multiply-adds: two einsums plus a diagonal
+    extraction spend their time on dispatch, not on that.
+    """
+    r1 = phiL.shape[0]
+    r2 = phiR.shape[0]
+    R1 = acore.shape[0]
+    n = acore.shape[1]
+    m = acore.shape[2]
+    R2 = acore.shape[3]
+    for b in range(r1):
+        for f in range(r2):
+            for i in range(n):
+                for j in range(m):
+                    acc = 0.0
+                    for p in range(R1):
+                        lp = phiL[b, b, p]
+                        if lp == 0.0:
+                            continue
+                        for q in range(R2):
+                            acc += lp * acore[p, i, j, q] * phiR[f, f, q]
+                    out[b, f, i, j] = acc
+    return out

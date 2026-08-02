@@ -65,6 +65,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 from einops import rearrange
+from . import _fast
 from ..backend import einsum   # BLAS-routed; einops' own skips optimize=True
 
 from .. import backend as bk
@@ -197,6 +198,12 @@ def _lq(a, renorm):
 #   i, j : x ranks, left and right             m : column mode of A (mode of x)
 #   p, c : A ranks, left and right
 
+def _use_fast(*arrays):
+    """The compiled kernels take real float64 numpy arrays and nothing else."""
+    return _fast.HAVE_NUMBA and all(
+        type(a) is np.ndarray and a.dtype == np.float64 for a in arrays)
+
+
 def _project(phi, acore, xcore, direction):
     """Contract ``A`` and ``x`` into an interface, leaving the ``y`` legs free.
 
@@ -204,6 +211,9 @@ def _project(phi, acore, xcore, direction):
     This is the expensive step; both ``_apply`` and ``_phi_next`` reuse its
     result, which is why it is a separate function.
     """
+    if _use_fast(phi, acore, xcore):
+        return (_fast.project_lr(phi, acore, xcore) if direction == "lr"
+                else _fast.project_rl(phi, acore, xcore))
     if direction == "lr":
         t = einsum(phi, xcore, "a i p, i m j -> a p m j")
         return einsum(t, acore, "a p m j, p n m c -> a n j c")
@@ -213,6 +223,9 @@ def _project(phi, acore, xcore, direction):
 
 def _apply(w, phi_other, direction):
     """Close ``w`` with the opposite interface: the local block of ``A x``."""
+    if _use_fast(w, phi_other):
+        return (_fast.apply_lr(w, phi_other) if direction == "lr"
+                else _fast.apply_rl(w, phi_other))
     if direction == "lr":
         return einsum(w, phi_other, "a n j c, b j c -> a n b")
     return einsum(w, phi_other, "b n i p, a i p -> a n b")
@@ -220,6 +233,9 @@ def _apply(w, phi_other, direction):
 
 def _phi_next(w, ycore, direction):
     """Close ``w`` with a (conjugated) frame core: the next interface."""
+    if _use_fast(w, ycore):
+        return (_fast.phi_next_lr(w, ycore) if direction == "lr"
+                else _fast.phi_next_rl(w, ycore))
     if direction == "lr":
         return einsum(w, ycore.conj(), "a n j c, a n b -> b j c")
     return einsum(w, ycore.conj(), "b n i p, a n b -> a i p")
