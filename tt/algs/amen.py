@@ -337,6 +337,22 @@ def _jacobi(kind, phiL, acore, phiR):
             "run with local_prec='n'") from exc
 
     if kind == "c":
+        if type(inv) is np.ndarray and n * n <= 16:
+            # n^2 elementwise products on (b, f) arrays instead of a batched
+            # matmul over r1*r2 tiny n x n blocks: numpy spends 34 us
+            # dispatching 1156 two-by-two products that take 10 us to do.
+            invT = np.ascontiguousarray(np.transpose(inv, (2, 3, 0, 1)))
+
+            def apply_c(w):
+                out = np.empty_like(w)
+                for i in range(n):
+                    acc = invT[i, 0] * w[:, 0, :]
+                    for jj in range(1, n):
+                        acc = acc + invT[i, jj] * w[:, jj, :]
+                    out[:, i, :] = acc
+                return out
+
+            return apply_c
         return lambda w: einsum(inv, w, "b f i j, b j f -> b i f")
     if kind == "l":
         def apply_l(w):
@@ -590,7 +606,7 @@ def _canon_trunc(trunc_norm):
 
 # --- the method --------------------------------------------------------------
 
-def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='l',
+def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='c',
                local_iters=2, local_restart=40, trunc_norm=1, max_full_size=1000,
                verb=1, *, rmax=None, seed=None, check_true_res=True,
                return_info=False):
@@ -792,9 +808,27 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='l',
             max_res = max(max_res, err)
 
             if err > real_tol:
+                # Inexact local solve, as in the AMEn papers: the target is an
+                # ABSOLUTE local residual of real_tol/err * ||rhs||, so a block
+                # that is already close is not solved any harder than it needs.
+                # We solve the correction equation B d = res, whose right-hand
+                # side has norm err*||rhs||, so the relative tolerance carries a
+                # second factor of err.  Passing real_tol/err here (the same
+                # number the full-system formulation uses) over-solves by 1/err
+                # -- measured on the 2D QTT Laplacian: 7482 local iterations
+                # against the Fortran's 4185 for the same sweeps and ranks.
+                #
+                # The cap is not cosmetic.  The legacy restarts its local GMRES
+                # from zero, so a loose tolerance still moves the block; we start
+                # from the current iterate, so the same tolerance can mean "do
+                # nothing" and the sweep stops converging (measured: residual
+                # 2.6e-04 instead of 5.7e-07 with no cap).  Demanding a tenfold
+                # improvement of every block solved keeps that from happening;
+                # 0.01 costs 36% more iterations, 0.3 costs three more sweeps.
+                tol_local = min(0.1, real_tol / (err * err))
                 sol, linfo = _solve_local(
                     phiax_l[k], acores[k], phiax_r[k + 1], res,
-                    real_tol / err, max_full_size, prec_kind,
+                    tol_local, max_full_size, prec_kind,
                     local_iters, local_restart, a_symmetric)
                 n_matvecs += linfo["matvecs"]
                 n_direct += int(linfo["kind"] == "direct")
