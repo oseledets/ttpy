@@ -425,3 +425,31 @@ def test_no_ternary_einsum_anywhere_in_the_package():
     assert not offenders, (
         "einsum called with 3+ operands (split it into binary contractions): "
         + ", ".join(offenders))
+
+
+def test_dot_block_boundary_ranks_matches_the_general_path():
+    """dot() has a fast path for r0 = 1; the block case must agree with it.
+
+    Boundary ranks > 1 (block TT, as produced by eigb) take the einsum branch,
+    so both branches need an oracle: here the dense contraction.
+    """
+    rng = np.random.default_rng(77)
+    n = [3, 4, 2]
+    for ra0, rb0, rad, rbd in [(2, 3, 1, 1), (1, 1, 2, 3), (2, 2, 3, 3)]:
+        acores = [rng.standard_normal((ra0, 3, 4)), rng.standard_normal((4, 4, 5)),
+                  rng.standard_normal((5, 2, rad))]
+        bcores = [rng.standard_normal((rb0, 3, 3)), rng.standard_normal((3, 4, 2)),
+                  rng.standard_normal((2, 2, rbd))]
+        x, y = tt.vector.from_list(acores), tt.vector.from_list(bcores)
+        got = np.asarray(_ops.dot(x.cores, y.cores)).reshape(ra0, rb0, rad, rbd)
+        xa = np.asarray(_ops.full(x.cores)).reshape((ra0,) + tuple(n) + (rad,))
+        yb = np.asarray(_ops.full(y.cores)).reshape((rb0,) + tuple(n) + (rbd,))
+        ref = np.einsum("aijkc,bijkd->abcd", xa.conj(), yb)
+        assert rel(got, ref) < 1e-11, (ra0, rb0, rad, rbd)
+
+
+def test_dot_fast_path_and_general_path_agree():
+    x, y = tt.rand([3, 4, 3], r=3), tt.rand([3, 4, 3], r=3)
+    fast = _ops.dot(x.cores, y.cores)
+    ref = float(np.sum(np.asarray(x.full()) * np.asarray(y.full())))
+    assert abs(fast - ref) < 1e-10 * abs(ref)
