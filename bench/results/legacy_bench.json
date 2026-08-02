@@ -1,0 +1,95 @@
+{
+ "env": {
+  "ttpy": "1.x (legacy, Fortran)",
+  "python": "3.11.15",
+  "numpy": "1.24.4",
+  "host": "Planck",
+  "threads": {
+   "OMP_NUM_THREADS": "4",
+   "MKL_NUM_THREADS": null,
+   "OPENBLAS_NUM_THREADS": "4"
+  }
+ },
+ "rows": [
+  {
+   "workload": "round",
+   "median_s": 0.010526075959205627,
+   "best_s": 0.010485521517693996,
+   "d": 30,
+   "n": 2,
+   "r": 50
+  },
+  {
+   "workload": "round",
+   "median_s": 0.3741370150819421,
+   "best_s": 0.371332760900259,
+   "d": 60,
+   "n": 2,
+   "r": 100
+  },
+  {
+   "workload": "round",
+   "median_s": 0.4409295404329896,
+   "best_s": 0.4398673204705119,
+   "d": 20,
+   "n": 4,
+   "r": 150
+  },
+  {
+   "workload": "add+round",
+   "median_s": 0.12557062972337008,
+   "best_s": 0.12469756882637739,
+   "d": 30,
+   "n": 2,
+   "r": 50
+  },
+  {
+   "workload": "add+round",
+   "median_s": 1.397430599667132,
+   "best_s": 1.3966361405327916,
+   "d": 60,
+   "n": 2,
+   "r": 100
+  },
+  {
+   "workload": "dot",
+   "median_s": 0.010074897669255733,
+   "best_s": 0.009157299995422363,
+   "d": 60,
+   "n": 2,
+   "r": 100
+  },
+  {
+   "workload": "matvec+round",
+   "median_s": 0.18887838628143072,
+   "best_s": 0.18776843324303627,
+   "d": 30,
+   "n": 2,
+   "r": 50
+  },
+  {
+   "workload": "matvec+round",
+   "median_s": 0.9796085022389889,
+   "best_s": 0.9765063719823956,
+   "d": 40,
+   "n": 2,
+   "r": 100
+  },
+  {
+   "workload": "tt_svd",
+   "median_s": 8.271513992920518,
+   "best_s": 8.255613037385046,
+   "d": 10,
+   "n": 4,
+   "r": 0
+  },
+  {
+   "workload": "amen_solve",
+   "median_s": 0.016261440701782703,
+   "best_s": 0.016261440701782703,
+   "d": 12,
+   "n": 2,
+   "r": 0
+  }
+ ]
+}
