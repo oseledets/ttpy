@@ -151,7 +151,65 @@ def _arnoldi(op, v, space):
     arrays shaped like ``v``, ``H`` is ``(k+1, k+1)`` with the extra row carrying
     ``h_{k+1,k}`` (the augmented matrix of the EXPOKIT error estimate), ``beta``
     is ``||v||`` and ``happy`` flags an exact (breakdown) Krylov space.
+
+    The basis is kept as one contiguous ``(space+1, size)`` array so that
+    orthogonalisation is two matrix products, not a python loop of ``j`` inner
+    products: on the tiny blocks of a KSL sweep that loop was 128 numpy calls
+    per exponential, each on a hundred numbers.
     """
+    dt = bk.dtype_of(v)
+    shape = v.shape
+    size = int(np.prod(shape))
+    probe = op(v)
+    if type(probe) is not type(v) or probe.shape != shape:
+        # A mixed-backend operator (a numpy A applied to a torch iterate) does
+        # not necessarily return the shape it was given.  The contiguous-basis
+        # path below cannot express that, so such a run keeps the original
+        # list-of-blocks Arnoldi: correctness first, speed only where it is free.
+        return _arnoldi_blocks(op, v, space)
+    beta = float(bk.norm(v))
+    hmat = bk.zeros((space + 1, space + 1), dtype=dt, like=v)
+    V = bk.zeros((space + 1, size), dtype=dt, like=v)
+    V[0] = v.reshape((size,)) / beta
+    cplx = bk.is_complex(v)
+    happy = False
+    k = space
+    for j in range(space):
+        w = op(V[j].reshape(shape))
+        if type(w) is not type(V):
+            # the operator may live on another backend than the iterate (a numpy
+            # A applied to a torch y is legitimate); the basis is one array, so
+            # bring the result to where the basis is
+            w = bk.asarray(bk.to_numpy(w), dt, backend=bk.backend_of(V))
+        w = w.reshape((size,))
+        # the breakdown test must compare like with like: `hn` below is a
+        # residual of `A v_j`, so it scales with ||A||, not with ||v||.  Testing
+        # it against ||v|| declares a breakdown at the first step for any
+        # badly-scaled input and silently degrades the exponential to a
+        # one-dimensional Krylov space, with a reported error of exactly zero.
+        wn0 = float(bk.norm(w))
+        Vj = V[:j + 1]
+        Vc = Vj.conj() if cplx else Vj
+        for _ in range(2):  # classical Gram-Schmidt, repeated -> stable
+            h = Vc @ w
+            w = w - h @ Vj
+            hmat[:j + 1, j] = hmat[:j + 1, j] + h
+        hn = float(bk.norm(w))
+        if wn0 == 0.0 or hn <= 1e-13 * wn0:
+            k, happy = j + 1, True
+            break
+        if j + 1 <= space:
+            hmat[j + 1, j] = hn
+        if j + 1 < space:
+            V[j + 1] = w / hn
+        else:
+            k = space
+    basis = [V[i].reshape(shape) for i in range(k)]
+    return basis, hmat[:k + 1, :k + 1], beta, happy
+
+
+def _arnoldi_blocks(op, v, space):
+    """Arnoldi with the basis as a list of blocks (the general-shape fallback)."""
     dt = bk.dtype_of(v)
     beta = float(bk.norm(v))
     hmat = bk.zeros((space + 1, space + 1), dtype=dt, like=v)
@@ -160,13 +218,8 @@ def _arnoldi(op, v, space):
     k = space
     for j in range(space):
         w = op(basis[j])
-        # the breakdown test must compare like with like: `hn` below is a
-        # residual of `A v_j`, so it scales with ||A||, not with ||v||.  Testing
-        # it against ||v|| declares a breakdown at the first step for any
-        # badly-scaled input and silently degrades the exponential to a
-        # one-dimensional Krylov space, with a reported error of exactly zero.
         wn0 = float(bk.norm(w))
-        for _ in range(2):  # classical Gram-Schmidt, repeated -> stable
+        for _ in range(2):
             for i in range(j + 1):
                 h = _vdot(basis[i], w)
                 hmat[i, j] = hmat[i, j] + h
@@ -338,6 +391,40 @@ def tangent_defect(A, y):
     return max(gap, floor), znorm
 
 
+
+DENSE_LOCAL_LIMIT = 256
+"""Below this local size the operator is formed densely for the Krylov step.
+
+The blocks of a KSL sweep are tiny -- ``r n r`` with the fixed rank of the
+manifold -- and applying them as three contractions costs about 25 us of numpy
+dispatch against 2 us of arithmetic.  Forming the matrix once per exponential
+(``size^2 R`` flops) and using ``B @ v`` for all ``space`` Krylov steps turns
+that around.  Above the limit the contraction wins again and is used.
+"""
+
+
+def _dense_or_contract_local(left, acore, right, block):
+    """The K-step operator: dense when the block is small, contracted otherwise."""
+    shape = block.shape
+    size = int(np.prod(shape))
+    if (size <= DENSE_LOCAL_LIMIT and type(left) is np.ndarray
+            and type(block) is np.ndarray and type(acore) is np.ndarray):
+        mat = np.asarray(lo.local_matrix(left, acore, right)).reshape((size, size))
+        return lambda x: (mat @ x.reshape((size,))).reshape(shape)
+    return lambda x: lo.local_matvec(left, acore, right, x)
+
+
+def _dense_or_contract_interface(left, right, block):
+    """The S-step operator, same rule."""
+    shape = block.shape
+    size = int(np.prod(shape))
+    if (size <= DENSE_LOCAL_LIMIT and type(left) is np.ndarray
+            and type(block) is np.ndarray):
+        mat = np.asarray(lo.interface_matrix(left, right)).reshape((size, size))
+        return lambda x: (mat @ x.reshape((size,))).reshape(shape)
+    return lambda x: lo.interface_matvec(left, right, x)
+
+
 # --- the integrator ----------------------------------------------------------
 
 def _sweep_backward(cores, acores, left, right, tau0, space, tol, use_normest,
@@ -345,7 +432,8 @@ def _sweep_backward(cores, acores, left, right, tau0, space, tol, use_normest,
     """``K_d S_{d-1} K_{d-1} ... S_1 K_1`` with steps ``+tau0`` / ``-tau0``."""
     d = len(cores)
     for i in range(d - 1, -1, -1):
-        k = _step_exp(lambda x: lo.local_matvec(left[i], acores[i], right[i + 1], x),
+        k = _step_exp(_dense_or_contract_local(left[i], acores[i], right[i + 1],
+                                               cores[i]),
                       cores[i], tau0, space, tol, use_normest, hist, sweep_id, i, "K")
         if i == 0:
             cores[0] = k
@@ -353,7 +441,7 @@ def _sweep_backward(cores, acores, left, right, tau0, space, tol, use_normest,
         s, q = lo.right_orthogonalize(k)
         cores[i] = q
         right[i] = lo.phi_right(right[i + 1], acores[i], q, q)
-        s = _step_exp(lambda x: lo.interface_matvec(left[i], right[i], x),
+        s = _step_exp(_dense_or_contract_interface(left[i], right[i], s),
                       s, -tau0, space, tol, use_normest, hist, sweep_id, i, "S")
         r0, nk, _ = cores[i - 1].shape
         cores[i - 1] = (cores[i - 1].reshape((r0 * nk, -1)) @ s).reshape(
@@ -366,7 +454,8 @@ def _sweep_forward(cores, acores, left, right, tau0, space, tol, use_normest,
     """``K_1 S_1 K_2 ... S_{d-1} K_d`` with steps ``+tau0`` / ``-tau0``."""
     d = len(cores)
     for i in range(d):
-        k = _step_exp(lambda x: lo.local_matvec(left[i], acores[i], right[i + 1], x),
+        k = _step_exp(_dense_or_contract_local(left[i], acores[i], right[i + 1],
+                                               cores[i]),
                       cores[i], tau0, space, tol, use_normest, hist, sweep_id, i, "K")
         if i == d - 1:
             cores[i] = k
@@ -374,7 +463,7 @@ def _sweep_forward(cores, acores, left, right, tau0, space, tol, use_normest,
         q, s = lo.left_orthogonalize(k)
         cores[i] = q
         left[i + 1] = lo.phi_left(left[i], acores[i], q, q)
-        s = _step_exp(lambda x: lo.interface_matvec(left[i + 1], right[i + 1], x),
+        s = _step_exp(_dense_or_contract_interface(left[i + 1], right[i + 1], s),
                       s, -tau0, space, tol, use_normest, hist, sweep_id, i, "S")
         _, nk, r2 = cores[i + 1].shape
         cores[i + 1] = (s @ cores[i + 1].reshape((s.shape[1], nk * r2))).reshape(
@@ -463,7 +552,8 @@ def ksl(A, y0, tau, verb=1, scheme="symm", space=8, rmax=2000, use_normest=1,
         left = lo.ones_interface(cores[0], dt)
         right = lo.ones_interface(cores[0], dt)
         cores[0] = _step_exp(
-            lambda x: lo.local_matvec(left, acores[0], right, x), cores[0], tau,
+            _dense_or_contract_local(left, acores[0], right, cores[0]),
+            cores[0], tau,
             space, local_tol, use_normest, hist, 0, 0, "K")
         y = vector.from_list(cores)
         hist.ranks = [int(v) for v in y.r]
