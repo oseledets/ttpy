@@ -30,10 +30,18 @@ CASES = [
 
 
 def make_cores(d, n, r, backend, dtype):
+    """Random TT whose norm stays O(1).
+
+    Unscaled Gaussian cores multiply up to an astronomical norm: with d=60 and
+    r=200 the tensor overflows float32 outright (and the resulting inf reaches
+    LAPACK, which is a confusing way to learn that the benchmark data is wrong).
+    Scaling each core by 1/sqrt(r) keeps the product bounded.
+    """
     rng = np.random.default_rng(0)
     ranks = [1] + [r] * (d - 1) + [1]
-    return [backend.asarray(rng.standard_normal((ranks[k], n, ranks[k + 1])), dtype)
-            for k in range(d)]
+    return [backend.asarray(
+        rng.standard_normal((ranks[k], n, ranks[k + 1])) / np.sqrt(ranks[k + 1]),
+        dtype) for k in range(d)]
 
 
 def timeit(fn, backend, repeats):

@@ -135,9 +135,19 @@ class NumpyBackend(Backend):
     def svd(a, full_matrices=False):
         try:
             return np.linalg.svd(a, full_matrices=full_matrices)
-        except np.linalg.LinAlgError:
-            # gesdd can fail to converge on nasty matrices; gesvd is slower but
-            # sturdier.  Loud fallback: we say what happened rather than guess.
+        except np.linalg.LinAlgError as exc:
+            # Two very different failures reach this point and they must not be
+            # confused: a genuinely hard matrix (gesdd sometimes fails to
+            # converge where the slower gesvd succeeds), and garbage input.
+            # Retrying on garbage produces a baffling error from deep inside
+            # scipy, so name the real cause here.
+            if not np.isfinite(a).all():
+                n_bad = int(np.sum(~np.isfinite(a)))
+                raise ValueError(
+                    f"SVD input contains {n_bad} non-finite entries "
+                    f"(inf/NaN) out of {a.size}; the data is broken upstream, "
+                    "check for overflow (float32 overflows around 3.4e38)"
+                ) from exc
             import scipy.linalg as sla
             return sla.svd(a, full_matrices=full_matrices, lapack_driver="gesvd")
 

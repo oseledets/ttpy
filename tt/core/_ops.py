@@ -245,8 +245,11 @@ def randomized_round(cores, rmax, oversampling=10, seed=None, return_error=False
     W = [None] * (d + 1)
     W[d] = bk.eye(r[d], ell[d], dtype=bk.dtype_of(cores[0]), like=cores[0])
     for k in range(d - 1, 0, -1):
-        W[k] = einsum(cores[k], W[k + 1], sketch[k],
-                      "a n b, b c, l n c -> a l")
+        # two binary contractions, never one ternary einsum: einops passes the
+        # pattern straight to np.einsum, which without optimize=True evaluates a
+        # 3-operand contraction by brute force (measured: 316x slower here)
+        tmp = einsum(cores[k], W[k + 1], "a n b, b c -> a n c")
+        W[k] = einsum(tmp, sketch[k], "a n c, l n c -> a l")
 
     out = []
     carry = None  # (l_{k-1}, r_{k-1}) factor pushed into the next core

@@ -397,3 +397,31 @@ def test_randomized_round_is_exact_for_exactly_low_rank():
 def test_randomized_round_demands_a_rank():
     with pytest.raises(ValueError):
         tt.rand([2, 2, 2], r=2).round(1e-8, method="randomized")
+
+
+# --- guards against a whole class of mistakes --------------------------------
+
+def test_no_ternary_einsum_anywhere_in_the_package():
+    """einops.einsum forwards to np.einsum WITHOUT optimize=True.
+
+    A contraction of three or more operands is then evaluated by brute force:
+    measured 5.5 s versus 0.017 s for the same contraction split into two binary
+    ones (numpy 2.x, shapes (300,4,300)x(300,160)x(160,4,160)). Splitting is not
+    a matter of taste, so the rule is enforced rather than remembered.
+    """
+    import ast
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent / "tt"
+    offenders = []
+    for path in root.rglob("*.py"):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+            if name == "einsum" and len(node.args) > 3:
+                offenders.append(f"{path.relative_to(root.parent)}:{node.lineno}")
+    assert not offenders, (
+        "einsum called with 3+ operands (split it into binary contractions): "
+        + ", ".join(offenders))
