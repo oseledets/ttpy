@@ -117,3 +117,27 @@ def test_set_backend_roundtrip():
     finally:
         bk.set_backend("numpy")
     assert tt.rand([2, 2], r=2).backend.name == "numpy"
+
+
+def test_copy_works_on_torch_tensors():
+    """torch tensors have .clone(), not .copy(); bk.copy() hides the difference.
+
+    Found by the amen_solve agent, which needs to keep a best-so-far iterate.
+    """
+    x = to_gpu(tt.rand([2, 3, 2], r=2))
+    y = x.copy()
+    assert y.backend.name == "torch"
+    assert rel(y.full(), x.full()) < 1e-14
+    y.cores[0] += 1.0                       # a copy must not alias the original
+    assert rel(y.full(), x.full()) > 1e-8
+
+    z = tt.vector(x)                        # copy constructor
+    assert z.backend.name == "torch"
+    assert rel(z.full(), x.full()) < 1e-14
+
+    m = tt.qlaplace_dd([4]).to("torch", "cuda")
+    assert rel(m.copy().full(), m.full()) < 1e-14
+
+    single = tt.vector.from_list([bk.TorchBackend("cuda").asarray(
+        np.arange(6.0).reshape(1, 6, 1))])
+    assert rel(single.round(1e-12).full(), single.full()) < 1e-14

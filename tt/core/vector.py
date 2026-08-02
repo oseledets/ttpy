@@ -38,7 +38,7 @@ class vector(object):
         if a is None:
             return
         if isinstance(a, vector):
-            self.cores = [c.copy() for c in a.cores]
+            self.cores = [bk.copy(c) for c in a.cores]
             return
         if isinstance(a, (list, tuple)) and a and hasattr(a[0], "ndim"):
             self.cores = _ops.check_cores([bk.asarray(c) for c in a])
@@ -84,7 +84,7 @@ class vector(object):
 
     def copy(self):
         c = vector()
-        c.cores = [x.copy() for x in self.cores]
+        c.cores = [bk.copy(x) for x in self.cores]
         return c
 
     def to(self, backend=None, device=None, dtype=None):
@@ -455,7 +455,7 @@ class vector(object):
         from . import tools
         tmp = self.astype(bk.complex_dtype(self.dtype))
         cores = list(tmp.cores)
-        last = cores[-1].copy()
+        last = bk.copy(cores[-1])
         last[:, 1, :] = last[:, 1, :] * 1j
         cores[-1] = last
         return tools.sum(vector.from_list(cores), axis=self.d - 1)

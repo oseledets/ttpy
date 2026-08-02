@@ -160,7 +160,7 @@ def round_cores(cores, eps=1e-14, rmax=None):
     check_cores(cores)
     d = len(cores)
     if d == 1:
-        return [cores[0].copy() if hasattr(cores[0], "copy") else cores[0]]
+        return [bk.copy(cores[0])]
     rmax = 10 ** 9 if rmax is None else int(rmax)
 
     out = orthogonalize(cores, center=0)

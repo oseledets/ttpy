@@ -22,7 +22,7 @@ import numpy as np
 
 __all__ = [
     "set_backend", "get_backend", "backend_of", "Backend",
-    "asarray", "to_numpy", "zeros", "empty", "eye", "arange", "randn",
+    "asarray", "to_numpy", "copy", "zeros", "empty", "eye", "arange", "randn",
     "concatenate", "stack", "transpose", "einsum", "diag", "tril", "triu",
     "svd", "qr", "solve", "lstsq", "eigh", "eig", "expm", "norm", "inv",
     "dtype_of", "is_complex", "result_dtype", "real_dtype", "complex_dtype",
@@ -116,6 +116,10 @@ class NumpyBackend(Backend):
 
     def to_numpy(self, a):
         return np.asarray(a)
+
+    @staticmethod
+    def copy(a):
+        return a.copy()
 
     def zeros(self, shape, dtype=None):
         return np.zeros(shape, dtype=self._dt(dtype))
@@ -216,6 +220,10 @@ class TorchBackend(Backend):
 
     def to_numpy(self, a):
         return a.detach().cpu().numpy()
+
+    @staticmethod
+    def copy(a):
+        return a.clone()      # torch tensors have no .copy()
 
     def zeros(self, shape, dtype=None):
         return self.torch.zeros(tuple(shape), dtype=self._dt(dtype), device=self.device)
@@ -345,6 +353,11 @@ def asarray(a, dtype=None, backend=None):
 
 def to_numpy(a):
     return backend_of(a).to_numpy(a)
+
+
+def copy(a):
+    """Duplicate an array. numpy spells it .copy(), torch spells it .clone()."""
+    return backend_of(a).copy(a)
 
 
 def zeros(shape, dtype=None, like=None, backend=None):
