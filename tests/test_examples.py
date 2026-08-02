@@ -146,3 +146,47 @@ def test_cross_recovers_a_low_rank_tensor():
     got = cross.cross(fun, [n] * d, eps=1e-10)
     assert rel(got.full(), dense) < 1e-8
     assert calls["n"] < n ** d, "cross must not evaluate the whole tensor"
+
+
+def test_ksl_is_exact_when_the_manifold_is_the_whole_space():
+    """d=6, n=2, ranks [1,2,4,8,4,2,1] IS the full space: no projection error.
+
+    Whatever error survives is the local matrix exponential, so this pins the
+    replacement of EXPOKIT (5803 lines of Fortran in the old package) against
+    scipy.linalg.expm on the dense operator. Measured: 2e-15 at tau=1e-3 and
+    8e-15 at tau=0.1, where the Fortran left 1.3e-8 and 6.7e-3 on bit-identical
+    input.
+    """
+    ksl_mod = pytest.importorskip("tt.algs.ksl")
+    import scipy.linalg as sla
+
+    d = 6
+    ranks = [1, 2, 4, 8, 4, 2, 1]
+    rng = np.random.default_rng(12345)
+    y0 = tt.vector.from_list(
+        [rng.standard_normal((ranks[k], 2, ranks[k + 1])) for k in range(d)])
+    A = (-1.0) * tt.qlaplace_dd([d])
+    dense = np.asarray(A.full())
+    y0d = np.asarray(y0.full()).flatten("F")
+
+    for tau in (1e-3, 1e-2, 1e-1):
+        ref = sla.expm(tau * dense) @ y0d
+        got = np.asarray(ksl_mod.ksl(A, y0, tau, verb=0).full()).flatten("F")
+        err = np.linalg.norm(got - ref) / np.linalg.norm(ref)
+        assert err < 1e-12, f"tau={tau}: relative error {err:.3e}"
+
+
+def test_eigb_matches_a_dense_symmetric_eigensolver():
+    """Replaces PRIMME (89 vendored C/Fortran files) with dense eigh / lobpcg.
+
+    Oracle: the analytic eigenvalues of the 1D discrete Laplacian.
+    """
+    eigb_mod = pytest.importorskip("tt.algs.eigb")
+    d, B = 8, 4
+    A = tt.qlaplace_dd([d])
+    n = 2 ** d
+    exact = np.sort(4 * np.sin(np.pi * np.arange(1, n + 1) / (2 * (n + 1))) ** 2)[:B]
+    ranks = [1] + [2 * B] * (d - 1) + [B]
+    y, lam = eigb_mod.eigb(A, tt.rand([2] * d, d, ranks), 1e-8, verb=0)
+    lam = np.sort(np.asarray(lam).ravel())[:B]
+    assert np.max(np.abs(lam - exact) / exact) < 1e-9, (lam, exact)
