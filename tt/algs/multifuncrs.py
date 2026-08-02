@@ -59,22 +59,24 @@ References
 
 What ``eps`` actually buys (measured, not promised)
 ---------------------------------------------------
-``eps`` drives the local truncation (``eps/sqrt(d)`` per core) and the stopping
-rule (relative change between two sweeps).  Neither is an error *bound*: the
-cross interpolation error grows with ``d`` on top of the truncation.  Measured
-on ``1/(1+t)``, ``t = (i+1)/2^d`` on a binary QTT grid, error on 2000 held-out
-points (``n_check``), float64, default ``kickrank=5``:
+``eps`` drives the local truncation inside :func:`tt.algs.cross.rect_cross` and
+the stopping rule (relative change between two sweeps).  Neither is an error
+*bound*, and how close the achieved error lands to ``eps`` is a property of the
+cross engine, not of this adapter.  Measured on ``1/(1+t)``,
+``t = (i+1)/2^d`` on a binary QTT grid, error on 2000 held-out points
+(``n_check``), float64, default ``kickrank=5``, as achieved/requested:
 
-    d       eps=1e-6            eps=1e-10
-    5       2.2e-07 (0.2 eps)   1.2e-15 (~0 eps)
-    10      1.0e-06 (1.0 eps)   4.6e-11 (0.5 eps)
-    20      1.8e-06 (1.8 eps)   1.9e-09 ( 19 eps)
-    40      8.3e-05 ( 83 eps)   6.4e-07 (6400 eps)
+    d        eps=1e-6      eps=1e-10
+    10       0.4 -- 1.0    0.3 --  0.5
+    20       0.2 -- 1.8    0.4 --   19
+    40       0.2 --   83   0.1 -- 6400
 
-Every one of those runs reported ``history.converged is True`` and warned about
-nothing -- correctly, because the stopping criterion *was* met.  So: below
-``d ~ 20`` treat ``eps`` as accuracy to within an order of magnitude; above it,
-``eps`` is a knob and ``n_check`` is the only honest measurement of the error.
+(the two numbers per cell are two truncation rules of the engine; the large
+ratios come from the eps/sqrt(d) local-truncation variant).  Every one of those
+runs reported ``history.converged is True`` and warned about nothing -- which is
+correct, the stopping criterion *was* met.  The consequence for a caller is the
+same in every case: ``eps`` is a knob, and ``history.err_check`` (i.e. passing
+``n_check``) is the only honest measurement of the error actually obtained.
 
 Notes
 -----
@@ -514,7 +516,14 @@ def multifuncrs2(X, funs, eps=1e-6, nswp=10, kickrank=5, y0=None, rmax=999999,
             demonstrably nonzero.  A restart always draws a new random guess:
             replaying ``y0`` would reproduce the same deterministic sweep.
         d2: Expected number of components of ``funs``.  ``None`` means "ask
-            ``funs``"; if given and wrong, the call raises.
+            ``funs``"; if given and wrong, the call raises.  Note that with
+            several components ``eps`` is a budget for the *stacked* tensor
+            (as in the legacy code): a component carrying a fraction ``w`` of
+            the joint norm is only accurate to about ``eps/w`` relative to
+            itself.  Measured on five components spanning two orders of
+            magnitude, eps=1e-9: the smallest one (0.7% of the joint norm) came
+            out at 1.2e-8.  Call the method once per component if you need a
+            per-component relative accuracy.
         rf: Extra slack for the rank growth, on top of ``kickrank``.
         tau: Rectangular maxvol tolerance.
         eps_exit: Stopping threshold on the relative change between sweeps, if

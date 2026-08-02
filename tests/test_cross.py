@@ -160,17 +160,23 @@ def test_qtt_smooth_function_against_dense():
     assert h.fun_eval < 2 ** D_QTT  # cheaper than filling the grid
 
 
-def test_reported_accuracy_is_honest_when_the_sweeps_stall():
-    """eps=1e-2 stops with err_rel ~ 1e-16 while the true error is ~1e-2.
+def test_reported_accuracy_tracks_the_dense_truth_at_a_loose_eps():
+    """At eps=1e-2 the reported numbers must be in the same league as the truth.
 
-    The change between sweeps is *not* an error bound: once the truncation pins
-    the ranks, the iteration stops moving.  The held-out measurement is the one
-    number a user may trust, so it has to agree with the dense truth.
+    This test used to pin the opposite behaviour (err_rel = 4.7e-16 against a
+    true error of 8.0e-3) back when the local bases were truncated at the local
+    accuracy: that truncation let the index sets shrink and pinned the ranks, so
+    the iteration froze and its own change indicator became meaningless.  With
+    the truncation removed (see ``cross._left_basis``) the ranks stay free, so
+    the change between sweeps is again an indicator of the error -- measured
+    here 4.7e-4 reported against 2.0e-3 true, i.e. within an order of magnitude.
+    The held-out measurement must agree with the dense truth much more tightly.
     """
     y = cross(qtt_coulomb, [2] * D_QTT, eps=1e-2, nswp=20, n_check=400, seed=2)
     h = y.history
     err = dense_err(y, QTT_REF)
-    assert err > 10 * h.err_rel, "this case is only interesting if err_rel lies"
+    assert err < 1e-2, f"eps=1e-2 was requested, got {err:.3e}"
+    assert h.err_rel < 100 * err, f"err_rel {h.err_rel:.2e} vs true {err:.2e}"
     assert h.err_check == pytest.approx(err, rel=0.5), f"{h.err_check} vs {err}"
 
 

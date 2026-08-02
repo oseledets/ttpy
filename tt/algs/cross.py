@@ -14,11 +14,13 @@ maxvol row selection.  At site ``k`` the supercore
 
 is evaluated on the current left index set ``I_k`` (multi-indices of modes
 ``0..k-1``) and right index set ``J_k`` (modes ``k+1..d-1``), an orthogonal basis
-of its column (resp. row) space is truncated at the local accuracy, and
+``Q`` of its column (resp. row) space is computed, and
 :func:`tt.algs.maxvol.rect_maxvol` picks ``rho + kickrank ...`` rows of that
 basis.  Those rows extend the index set for the next site; the interpolation
-matrix ``C = Q pinv(Q[ind])`` becomes the new core.  The result is the classical
-cross interpolant
+matrix ``C = Q pinv(Q[ind])`` becomes the new core.  The basis is deliberately
+*not* truncated at the local accuracy -- see :func:`_left_basis` for what that
+costs.  Ranks are controlled by ``rmax`` and by the final rounding to ``eps``.
+The result is the classical cross interpolant
 
     X = A(:, J_0) A(I_1, J_0)^{-1} A(I_1, :, J_1) ... A(I_{d-1}, :)
 
@@ -69,33 +71,32 @@ _EMPTY = np.empty((1, 0), dtype=np.int64)
 class CrossHistory:
     """Everything the run knows about itself (R7: verbose=False still records).
 
-    None of the three error numbers is a bound.  Read them together:
+    None of the error numbers is a bound.  Read them together:
 
-    * ``err_rel`` says the iteration stopped moving.  It goes to machine
-      precision as soon as the ranks are pinned -- by ``rmax``, by
-      ``kickrank=0`` or by a local truncation -- whatever the true error is.
-    * ``err_trunc`` says how much energy the local SVDs of the last sweep threw
-      away.  It survives a stalled iteration (this is the number that is ~eps
-      when ``err_rel`` has collapsed to 1e-16) but it is blind to anything the
-      sampled fibers never contained.
-    * ``err_check`` is a Monte Carlo measurement on points nobody looked at.
-      It is the only one computed against ``fun`` itself, but it is still a
-      random sample: a feature localised on a few entries (a spike) is missed
-      by all three, and no amount of sampling changes that.
+    * ``err_rel`` is the relative change between the last two sweeps, the
+      classical cross indicator.  It tracks the true error to about an order of
+      magnitude while the ranks are still free to grow (measured on the QTT
+      Coulomb kernel of the tests: 4.7e-4 reported against 2.0e-3 true), and it
+      collapses to machine precision as soon as they are *not* free -- when
+      ``rmax`` binds or ``kickrank`` is zero.  Both of those are flagged.
+    * ``err_round`` is the exact relative error added by the final rounding of
+      the interpolant to ``eps``.  It is a measurement, not an estimate.
+    * ``err_check`` is a Monte Carlo measurement on points nobody looked at,
+      the only number computed against ``fun`` itself.  It is still a random
+      sample: a feature carried by a few entries (a spike) is invisible to all
+      three numbers, and no amount of sampling changes that.
 
     Attributes:
         eps: Requested relative accuracy.
-        sweeps: One dict per sweep with keys ``sweep, err_rel, err_abs,
-            err_trunc, erank, max_rank, fun_eval, time`` (``fun_eval`` is the
-            running total).
+        sweeps: One dict per sweep with keys ``sweep, err_rel, err_abs, erank,
+            max_rank, fun_eval, time`` (``fun_eval`` is the running total).
         fun_eval: Number of function values requested by the cross itself.
         fun_eval_check: Extra values spent on the held-out accuracy check.
         converged: The *stopping criterion* fired, i.e. the change between the
             last two sweeps fell below the threshold.  Not a certificate of
             accuracy -- see above and ``rmax_active``.
         err_rel: Relative change between the last two sweeps.
-        err_trunc: Accumulated relative local truncation error of the last
-            sweep, ``sqrt(sum_k tail_k^2)``.
+        err_round: Relative error added by the final ``round(eps)``.
         err_check: Relative error on ``n_check`` random held-out points, or
             ``None`` if it was not requested.
         ranks: TT ranks of the returned tensor.
@@ -110,7 +111,7 @@ class CrossHistory:
     fun_eval_check: int = 0
     converged: bool = False
     err_rel: float = float("nan")
-    err_trunc: float = float("nan")
+    err_round: float = float("nan")
     err_check: float | None = None
     ranks: list = field(default_factory=list)
     rmax_active: bool = False
@@ -120,7 +121,7 @@ class CrossHistory:
         chk = "n/a" if self.err_check is None else f"{self.err_check:.2e}"
         return (f"CrossHistory(sweeps={len(self.sweeps)}, "
                 f"converged={self.converged}, err_rel={self.err_rel:.2e}, "
-                f"err_trunc={self.err_trunc:.2e}, err_check={chk}, "
+                f"err_round={self.err_round:.2e}, err_check={chk}, "
                 f"fun_eval={self.fun_eval}, "
                 f"max_rank={max(self.ranks) if self.ranks else 0}, "
                 f"rmax_active={self.rmax_active}, time={self.time:.2f}s)")
@@ -185,21 +186,27 @@ def _to_backend(vals, opts):
     return bk.asarray(vals, dtype=dtype, backend=opts["backend"])
 
 
-def _left_basis(mat, eps_loc, rmax):
-    """Truncated orthonormal basis of the column space of ``mat``.
+def _left_basis(mat, rmax):
+    """Orthonormal basis of the column space of ``mat``, capped at ``rmax``.
 
-    Returns the basis and the *relative* 2-norm of the discarded singular
-    values -- the local truncation error, which is what ``history.err_trunc``
-    accumulates.  It is zero when nothing was thrown away.
+    The basis is deliberately *not* truncated at the local accuracy.  Doing so
+    (an obvious-looking economy, and the one the commented-out lines of the
+    reference implementation warn about) makes the index sets shrink: the size
+    of the next index set is the numerical rank of the current sampled block
+    plus ``kickrank``, so a block that happens to be rank deficient -- which is
+    the normal case, e.g. every ``f(i_1 + ... + i_d)`` has repeated fibers --
+    resets the set to a smaller size than it had.  Left and right sets then cap
+    each other and the ranks lock at a fixed point far above ``eps``: measured
+    on ``1/(1 + i_1 + ... + i_4)``, ``n = 8``, ``eps = 1e-10``, that fixed point
+    is a 12% relative error reported as converged.
+
+    Rank control is therefore not done here.  It is done by ``rmax`` and by the
+    final :meth:`round` at ``eps``, which is the single owner of "how many ranks
+    does this accuracy need".
     """
-    q, s, _ = bk.svd(mat)
-    nrm = float(bk.norm(s))
-    delta = eps_loc * nrm
-    rho = _ops.chop(s, delta)
-    rho = max(1, min(rho, q.shape[1], rmax))
-    ns = int(s.shape[0])
-    tail = (float(bk.norm(s[rho:])) / nrm) if (rho < ns and nrm > 0) else 0.0
-    return q[:, :rho], tail
+    q, _s, _ = bk.svd(mat)
+    rho = max(1, min(q.shape[1], rmax))
+    return q[:, :rho]
 
 
 def _select_rows(q, kickrank, rf, rmax, tau):
@@ -268,7 +275,7 @@ def _init_right_indices(cores):
 
 # --- sweeps ------------------------------------------------------------------
 
-def _sweep_lr(fun, iset, jset, n, eps_loc, opts, counter):
+def _sweep_lr(fun, iset, jset, n, opts, counter):
     """Left-to-right: refine the left index sets ``I[1..d-1]``."""
     d = len(n)
     for k in range(d - 1):
@@ -276,29 +283,22 @@ def _sweep_lr(fun, iset, jset, n, eps_loc, opts, counter):
         idx = _merge(iset[k], n[k], jset[k])
         vals = _evaluate(fun, idx, counter)
         sup = _to_backend(vals.reshape((r1 * n[k], r2)), opts)
-        q, _tail = _left_basis(sup, eps_loc, opts["rmax"])
+        q = _left_basis(sup, opts["rmax"])
         ind = _select_rows(q, opts["kickrank"], opts["rf"], opts["rmax"],
                            opts["tau"])
         iset[k + 1] = _merge(iset[k], n[k], _EMPTY)[ind]
 
 
-def _sweep_rl(fun, iset, jset, n, eps_loc, opts, counter):
-    """Right-to-left: refine ``J[0..d-2]`` and build the cores of the answer.
-
-    Returns the cores and ``sqrt(sum of squared local truncation errors)``, the
-    accumulated relative error thrown away by the local SVDs of this sweep.
-    """
+def _sweep_rl(fun, iset, jset, n, opts, counter):
+    """Right-to-left: refine ``J[0..d-2]`` and build the cores of the answer."""
     d = len(n)
     cores = [None] * d
-    trunc = 0.0
     for k in range(d - 1, 0, -1):
         r1, r2 = iset[k].shape[0], jset[k].shape[0]
         idx = _merge(iset[k], n[k], jset[k])
         vals = _evaluate(fun, idx, counter)
         sup = _to_backend(vals.reshape((r1, n[k] * r2)), opts)
-        q, tail = _left_basis(rearrange(sup, "a s -> s a"), eps_loc,
-                              opts["rmax"])
-        trunc += tail ** 2
+        q = _left_basis(rearrange(sup, "a s -> s a"), opts["rmax"])
         ind = _select_rows(q, opts["kickrank"], opts["rf"], opts["rmax"],
                            opts["tau"])
         cmat = _interp(q, ind)
@@ -307,7 +307,7 @@ def _sweep_rl(fun, iset, jset, n, eps_loc, opts, counter):
     idx = _merge(iset[0], n[0], jset[0])
     vals = _evaluate(fun, idx, counter)
     cores[0] = _to_backend(vals.reshape((1, n[0], jset[0].shape[0])), opts)
-    return cores, float(np.sqrt(trunc))
+    return cores
 
 
 # --- evaluation of a TT tensor at scattered indices --------------------------
@@ -436,36 +436,32 @@ def rect_cross(fun, x0, eps=1e-6, nswp=20, kickrank=1, rf=2, verbose=False,
         idx = np.arange(n[0], dtype=np.int64).reshape((-1, 1))
         vals = _evaluate(fun, idx, counter)
         y = vector.from_list([_to_backend(vals.reshape((1, n[0], 1)), opts)])
-        hist.converged, hist.err_rel, hist.err_trunc = True, 0.0, 0.0
+        hist.converged, hist.err_rel, hist.err_round = True, 0.0, 0.0
         hist.fun_eval, hist.ranks = counter.n, [1, 1]
         hist.time = time.time() - t0
         y.history = hist
         return y
 
-    eps_loc = float(eps) / np.sqrt(d)
     iset = [_EMPTY] * d
     jset = _init_right_indices(x0.cores)
     xprev = x0
     y = None
     for swp in range(int(nswp)):
         t_swp = time.time()
-        _sweep_lr(fun, iset, jset, n, eps_loc, opts, counter)
-        cores, err_trunc = _sweep_rl(fun, iset, jset, n, eps_loc, opts, counter)
-        y = vector.from_list(cores)
+        _sweep_lr(fun, iset, jset, n, opts, counter)
+        y = vector.from_list(_sweep_rl(fun, iset, jset, n, opts, counter))
         nrm = y.norm()
         err_abs = (y - xprev).norm()
         err_rel = err_abs / nrm if nrm > 0 else err_abs
         hist.sweeps.append({
             "sweep": swp, "err_rel": float(err_rel), "err_abs": float(err_abs),
-            "err_trunc": float(err_trunc),
             "erank": float(y.erank), "max_rank": int(max(y.r)),
             "fun_eval": counter.n, "time": time.time() - t_swp})
         hist.err_rel = float(err_rel)
-        hist.err_trunc = float(err_trunc)
         if verbose:
             print(f"cross: swp {swp + 1}/{nswp} err_rel = {err_rel:.3e} "
-                  f"err_trunc = {err_trunc:.3e} erank = {y.erank:.1f} "
-                  f"max_rank = {max(y.r)} fun_eval = {counter.n}")
+                  f"erank = {y.erank:.1f} max_rank = {max(y.r)} "
+                  f"fun_eval = {counter.n}")
         if stop_fun is not None:
             hist.converged = bool(stop_fun(xprev, y))
         else:
@@ -475,7 +471,12 @@ def rect_cross(fun, x0, eps=1e-6, nswp=20, kickrank=1, rf=2, verbose=False,
         xprev = y
 
     if round_result:
-        y = y.round(eps)
+        yr = y.round(eps)
+        nrm = y.norm()
+        hist.err_round = float((yr - y).norm() / nrm) if nrm > 0 else 0.0
+        y = yr
+    else:
+        hist.err_round = 0.0
     hist.ranks = [int(v) for v in y.r]
     hist.fun_eval = counter.n
     hist.rmax_active = bool(rmax) and max(hist.ranks) >= int(rmax)
@@ -505,8 +506,8 @@ def rect_cross(fun, x0, eps=1e-6, nswp=20, kickrank=1, rf=2, verbose=False,
                      "rank and says nothing about the error")
     if notes:
         msg = ("tt cross: " + "; ".join(notes)
-               + f"; ranks {hist.ranks}, local truncation error "
-                 f"{hist.err_trunc:.3e}, {hist.fun_eval} function evaluations")
+               + f"; ranks {hist.ranks}, rounding error "
+                 f"{hist.err_round:.3e}, {hist.fun_eval} function evaluations")
         if hist.err_check is not None:
             msg += (f"; measured relative error on {n_check} held-out points "
                     f"{hist.err_check:.3e}")
