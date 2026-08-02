@@ -402,14 +402,15 @@ def test_qtt_small_d_against_the_dense_grid():
 
 
 def test_high_d_reports_converged_and_the_module_says_eps_is_no_bound():
-    """d=40: the run reports converged and issues no warning, and the achieved
-    accuracy is *not* tied to eps.
+    """d=40: the run reports converged, issues no warning, and stays near eps.
 
-    Measured on two truncation rules of :func:`tt.algs.cross.rect_cross`:
-    err/eps = 6.4e3 (eps/sqrt(d) local truncation) and 0.11 (rank-capped
-    truncation) at eps=1e-10 -- a 5e4 spread for the same call.  So the only
-    thing a caller may rely on is the measurement, and the module docstring must
-    say so; that coupling is what this test protects.
+    The achieved accuracy at high ``d`` is a property of the cross engine and
+    has moved by a factor of 6e4 within the life of this repository (an earlier
+    truncation rule inside :func:`tt.algs.cross.rect_cross` landed at 6.4e3*eps
+    here, the present one at 0.11*eps -- both reported as converged).  The test
+    pins the current number to within a factor of 100 *and* pins the module
+    docstring to saying that eps is not a bound; the second half is what keeps
+    the documentation from quietly becoming a lie again.
     """
     d, eps = 40, 1e-10
     x = tt.xfun(2, d) * (1.0 / 2 ** d) + tt.ones(2, d) * (1.0 / 2 ** d)

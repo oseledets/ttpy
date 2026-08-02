@@ -82,7 +82,10 @@ class CrossHistory:
     * ``err_round`` is the exact relative error added by the final rounding of
       the interpolant to ``eps``.  It is a measurement, not an estimate.
     * ``err_check`` is a Monte Carlo measurement on points nobody looked at,
-      the only number computed against ``fun`` itself.  It is still a random
+      the only number computed against ``fun`` itself.  When it is requested and
+      it exceeds the requested accuracy, the run warns -- a measurement that
+      contradicts ``eps`` is the strongest evidence available and staying quiet
+      about it would make the whole check pointless.  It is still a random
       sample: a feature carried by a few entries (a spike) is invisible to all
       three numbers, and no amount of sampling changes that.
 
@@ -328,6 +331,14 @@ def element(x, idx):
         raise ValueError(f"idx has shape {idx.shape}, expected (m, {len(cores)})")
     if cores[0].shape[0] != 1 or cores[-1].shape[2] != 1:
         raise ValueError("element() needs boundary ranks equal to one")
+    # A negative index is not an index into a tensor, it is a numpy slicing
+    # convention; letting it through would silently return the value at the
+    # opposite end of the mode instead of failing.
+    if idx.size and idx.min() < 0:
+        bad = int(np.unravel_index(int(np.argmin(idx)), idx.shape)[0])
+        raise ValueError(
+            f"idx contains a negative entry at row {bad}: {idx[bad].tolist()}; "
+            "indices must be in [0, n_k)")
     p = cores[0][0][idx[:, 0], :]
     for k in range(1, len(cores)):
         g = cores[k][:, idx[:, k], :]
@@ -422,53 +433,63 @@ def rect_cross(fun, x0, eps=1e-6, nswp=20, kickrank=1, rf=2, verbose=False,
         raise TypeError(f"x0 must be a tt.vector, got {type(x0)!r}")
     if int(nswp) < 1:
         raise ValueError(f"nswp must be at least 1, got {nswp}")
+    # ``rmax=0`` used to be swallowed by a truthiness test and silently meant
+    # "no cap at all" -- the opposite of what anyone typing it wants.
+    if rmax is not None and int(rmax) < 1:
+        raise ValueError(f"rmax must be at least 1 or None, got {rmax}")
     t0 = time.time()
     n = [int(v) for v in x0.n]
     d = len(n)
     counter = _Counter()
     hist = CrossHistory(eps=float(eps))
     opts = {"kickrank": int(kickrank), "rf": int(rf), "tau": float(tau),
-            "rmax": int(rmax) if rmax else 10 ** 9,
+            "rmax": int(rmax) if rmax is not None else 10 ** 9,
             "backend": bk.backend_of(x0.cores[0]),
             "dtype": bk.dtype_of(x0.cores[0])}
 
-    if d == 1:  # nothing to sweep over: the whole tensor is one fiber
+    if d == 1:
+        # Nothing to sweep over: the whole tensor is one fiber, so the "sweep"
+        # is exact.  It still goes through the common tail below, otherwise the
+        # history of a d=1 run would be a different object than every other run
+        # (no sweep entry, ``n_check`` silently ignored).
+        t_swp = time.time()
         idx = np.arange(n[0], dtype=np.int64).reshape((-1, 1))
         vals = _evaluate(fun, idx, counter)
         y = vector.from_list([_to_backend(vals.reshape((1, n[0], 1)), opts)])
-        hist.converged, hist.err_rel, hist.err_round = True, 0.0, 0.0
-        hist.fun_eval, hist.ranks = counter.n, [1, 1]
-        hist.time = time.time() - t0
-        y.history = hist
-        return y
-
-    iset = [_EMPTY] * d
-    jset = _init_right_indices(x0.cores)
-    xprev = x0
-    y = None
-    for swp in range(int(nswp)):
-        t_swp = time.time()
-        _sweep_lr(fun, iset, jset, n, opts, counter)
-        y = vector.from_list(_sweep_rl(fun, iset, jset, n, opts, counter))
-        nrm = y.norm()
-        err_abs = (y - xprev).norm()
-        err_rel = err_abs / nrm if nrm > 0 else err_abs
+        hist.converged, hist.err_rel = True, 0.0
         hist.sweeps.append({
-            "sweep": swp, "err_rel": float(err_rel), "err_abs": float(err_abs),
-            "erank": float(y.erank), "max_rank": int(max(y.r)),
-            "fun_eval": counter.n, "time": time.time() - t_swp})
-        hist.err_rel = float(err_rel)
-        if verbose:
-            print(f"cross: swp {swp + 1}/{nswp} err_rel = {err_rel:.3e} "
-                  f"erank = {y.erank:.1f} max_rank = {max(y.r)} "
-                  f"fun_eval = {counter.n}")
-        if stop_fun is not None:
-            hist.converged = bool(stop_fun(xprev, y))
-        else:
-            hist.converged = bool(err_abs <= max(eps * nrm, eps_abs))
-        if hist.converged:
-            break
-        xprev = y
+            "sweep": 0, "err_rel": 0.0, "err_abs": 0.0, "erank": 1.0,
+            "max_rank": 1, "fun_eval": counter.n,
+            "time": time.time() - t_swp})
+    else:
+        iset = [_EMPTY] * d
+        jset = _init_right_indices(x0.cores)
+        xprev = x0
+        y = None
+        for swp in range(int(nswp)):
+            t_swp = time.time()
+            _sweep_lr(fun, iset, jset, n, opts, counter)
+            y = vector.from_list(_sweep_rl(fun, iset, jset, n, opts, counter))
+            nrm = y.norm()
+            err_abs = (y - xprev).norm()
+            err_rel = err_abs / nrm if nrm > 0 else err_abs
+            hist.sweeps.append({
+                "sweep": swp, "err_rel": float(err_rel),
+                "err_abs": float(err_abs), "erank": float(y.erank),
+                "max_rank": int(max(y.r)), "fun_eval": counter.n,
+                "time": time.time() - t_swp})
+            hist.err_rel = float(err_rel)
+            if verbose:
+                print(f"cross: swp {swp + 1}/{nswp} err_rel = {err_rel:.3e} "
+                      f"erank = {y.erank:.1f} max_rank = {max(y.r)} "
+                      f"fun_eval = {counter.n}")
+            if stop_fun is not None:
+                hist.converged = bool(stop_fun(xprev, y))
+            else:
+                hist.converged = bool(err_abs <= max(eps * nrm, eps_abs))
+            if hist.converged:
+                break
+            xprev = y
 
     if round_result:
         yr = y.round(eps)
@@ -479,7 +500,8 @@ def rect_cross(fun, x0, eps=1e-6, nswp=20, kickrank=1, rf=2, verbose=False,
         hist.err_round = 0.0
     hist.ranks = [int(v) for v in y.r]
     hist.fun_eval = counter.n
-    hist.rmax_active = bool(rmax) and max(hist.ranks) >= int(rmax)
+    hist.rmax_active = (rmax is not None and d > 1
+                        and max(hist.ranks) >= int(rmax))
     if n_check > 0:
         check = _Counter()
         hist.err_check = _held_out_error(

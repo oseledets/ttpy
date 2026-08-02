@@ -36,13 +36,13 @@ def rel(a, b):
     return np.linalg.norm(a - b) / max(np.linalg.norm(b), 1e-300)
 
 
-def test_cross_runs_on_cuda_and_returns_numpy(on_cuda):
-    """cross stays on numpy on purpose: the black box hands back numpy values.
+def test_cross_runs_on_cuda(on_cuda):
+    """cross samples a numpy-valued black box but must answer on the default backend.
 
-    Moving the sampled fibers to the GPU would copy a handful of numbers per
-    evaluation across PCIe to run index bookkeeping there. If this assertion
-    ever fails because the result became a torch tensor, that is a design
-    change, not a bug — update the reasoning with it.
+    The sampling and the index bookkeeping happen in numpy — shipping a handful
+    of fiber values across PCIe to index them on the GPU would be a loss — but
+    the tensor it returns has to live where the user's other tensors live, or
+    the next tt.matvec mixes backends.
     """
     from tt.algs.cross import cross
 
@@ -52,8 +52,9 @@ def test_cross_runs_on_cuda_and_returns_numpy(on_cuda):
     dense = np.asarray(bk.to_numpy(ref.full()))
 
     y = cross(lambda idx: dense[tuple(np.asarray(idx, dtype=int).T)], n, eps=1e-10)
-    assert y.backend.name == "numpy"
     assert rel(y.full(), dense) < 1e-10
+    # and it must compose with the GPU tensor it was sampled from
+    assert (y.to("torch", "cuda") - ref).norm() / ref.norm() < 1e-9
 
 
 def test_amen_mv_runs_on_cuda(on_cuda):

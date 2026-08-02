@@ -742,16 +742,6 @@ def test_min_tens_on_torch(torch_default):
     assert val == pytest.approx(dense.min(), rel=1e-10)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "CORE DEFECT (tt/core/tools.py, frozen): the constructors qlaplace_dd, "
-    "sin, cos, delta, stepfun, qshift, unit and xfun build their cores with "
-    "np.zeros/np.eye instead of tt.backend, so they ignore tt.set_backend and "
-    "return numpy tensors -- while ones/zeros/rand/eye in the same module do "
-    "honour it, and tt/backend.py documents the default backend as 'used by "
-    "constructors'.  Consequence: tt.matvec(qlaplace_dd(...), torch_vector) "
-    "dies inside einops with 'can't convert cuda:0 device type tensor to "
-    "numpy' instead of either working or raising the loud "
-    "'cores live on different backends' error of bk.same_backend."))
 def test_core_constructors_honour_the_default_backend(torch_default):
     from tt import backend as bkend
     for name, build in [("qlaplace_dd", lambda: tt.matrix.to_list(tt.qlaplace_dd([3]))[0]),
@@ -761,11 +751,5 @@ def test_core_constructors_honour_the_default_backend(torch_default):
         assert bkend.backend_of(build()).name == "torch", name
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "CORE DEFECT (tt/core/tools.py, frozen): tt.linspace mixes a numpy array "
-    "into a core allocated through the backend, so with the torch default it "
-    "raises TypeError: can't assign a numpy.ndarray to a torch.cuda."
-    "DoubleTensor.  A constructor must either honour the default backend or "
-    "ignore it; raising is neither."))
 def test_core_linspace_works_under_the_torch_backend(torch_default):
     tt.linspace(2, 4)

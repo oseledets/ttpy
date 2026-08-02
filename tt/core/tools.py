@@ -20,6 +20,37 @@ __all__ = [
 ]
 
 
+def _vec(cores):
+    """Build a TT-vector from freshly made cores, honouring the default backend.
+
+    Constructors allocate their (tiny) cores with numpy because that is how the
+    formulas read.  They must still return a tensor on whatever backend
+    :func:`tt.set_backend` selected — otherwise ``tt.matvec(tt.qlaplace_dd(d), x)``
+    with a GPU ``x`` mixes backends and dies somewhere deep instead of working.
+    ``vector.from_list`` deliberately keeps the backend of the arrays it is
+    given, so the conversion has to happen here.
+    """
+    target = bk.get_backend()
+    return vector.from_list([target.asarray(c) for c in cores])
+
+
+def _mat(cores4):
+    """Same as :func:`_vec` for TT-matrix cores of shape (r, n, m, r)."""
+    target = bk.get_backend()
+    return matrix.from_list([target.asarray(c) for c in cores4])
+
+
+def _like(cores, ref):
+    """Put freshly computed cores on the backend of an existing tensor.
+
+    Used by the operations that have to drop to numpy internally: an operation
+    on a user's tensor must give the answer back where the tensor lives, which
+    is not necessarily the global default.
+    """
+    target = bk.backend_of(ref.cores[0] if hasattr(ref, "cores") else ref)
+    return [target.asarray(c) for c in cores]
+
+
 def _modes(n, d=None):
     """Normalize the (n, d) argument pair used all over the legacy API."""
     if d is None:
@@ -89,15 +120,15 @@ def mkron(a, *args):
 def zkron(ttA, ttB):
     """Kronecker product of TT-matrices in z-order (arXiv:1802.02839)."""
     al, bl = matrix.to_list(ttA), matrix.to_list(ttB)
-    return matrix.from_list([np.kron(bk.to_numpy(B), bk.to_numpy(A))
-                             for A, B in zip(al, bl)])
+    out = [np.kron(bk.to_numpy(B), bk.to_numpy(A)) for A, B in zip(al, bl)]
+    return matrix.from_list(_like(out, ttA.tt))
 
 
 def zkronv(ttA, ttB):
     """Kronecker product of TT-vectors in z-order."""
     al, bl = ttA.cores, ttB.cores
-    return vector.from_list([np.kron(bk.to_numpy(B), bk.to_numpy(A))
-                             for A, B in zip(al, bl)])
+    out = [np.kron(bk.to_numpy(B), bk.to_numpy(A)) for A, B in zip(al, bl)]
+    return vector.from_list(_like(out, ttA))
 
 
 def zmeshgrid(d):
@@ -116,7 +147,7 @@ def zaffine(c0, c1, c2, d):
     hs[-1][1, :, :] = c1 * hx[-1][1, :, :] + (c0 + c2 * hy[-1][1, :, :])
     for k in range(1, len(hs) - 1):
         hs[k][1, :, 0] = c1 * hx[k][1, :, 0] + c2 * hy[k][1, :, 0]
-    return vector.from_list(hs)
+    return vector.from_list(_like(hs, xx))
 
 
 def concatenate(*args):
@@ -164,14 +195,13 @@ def sum(a, axis=-1):
 def ones(n, d=None):
     """TT-vector of all ones."""
     n0 = _modes(n, d)
-    return vector.from_list(
-        [bk.zeros((1, int(k), 1)) + 1.0 for k in n0])
+    return _vec([np.ones((1, int(k), 1)) for k in n0])
 
 
 def zeros(n, d=None):
     """TT-vector of all zeros (rank 1)."""
     n0 = _modes(n, d)
-    return vector.from_list([bk.zeros((1, int(k), 1)) for k in n0])
+    return _vec([np.zeros((1, int(k), 1)) for k in n0])
 
 
 def rand(n, d=None, r=2, samplefunc=None):
@@ -197,14 +227,13 @@ def rand(n, d=None, r=2, samplefunc=None):
             cores.append(bk.asarray(
                 np.asarray(samplefunc(int(np.prod(shape)))).reshape(
                     (shape[2], shape[1], shape[0])).transpose(2, 1, 0)))
-    return vector.from_list(cores)
+    return _vec(cores)
 
 
 def eye(n, d=None):
     """Identity TT-matrix."""
     n0 = _modes(n, d)
-    return matrix.from_list(
-        [bk.eye(int(k)).reshape((1, int(k), int(k), 1)) for k in n0])
+    return _mat([np.eye(int(k)).reshape((1, int(k), int(k), 1)) for k in n0])
 
 
 def xfun(n, d=None):
@@ -212,8 +241,7 @@ def xfun(n, d=None):
     n0 = _modes(n, d)
     dd = n0.size
     if dd == 1:
-        return vector.from_list(
-            [bk.arange(int(n0[0])).reshape((1, int(n0[0]), 1))])
+        return _vec([np.arange(float(n0[0])).reshape((1, int(n0[0]), 1))])
     cores = []
     first = np.ones((1, int(n0[0]), 2))
     first[0, :, 0] = np.arange(n0[0])
@@ -229,7 +257,7 @@ def xfun(n, d=None):
     last = np.ones((2, int(n0[-1]), 1))
     last[1, :, 0] = ni * np.arange(n0[-1])
     cores.append(last)
-    return vector.from_list(cores)
+    return _vec(cores)
 
 
 def linspace(n, d=None, a=0.0, b=1.0, right=True, left=True):
@@ -270,7 +298,7 @@ def sin(d, alpha=1.0, phase=0.0):
     last[0, :, 0] = [0.0, math.sin(alpha * 2 ** (d - 1))]
     last[1, :, 0] = [1.0, math.cos(alpha * 2 ** (d - 1))]
     cores.append(last)
-    return vector.from_list(cores)
+    return _vec(cores)
 
 
 def cos(d, alpha=1.0, phase=0.0):
@@ -296,7 +324,7 @@ def delta(n, d=None, center=0):
         cur = np.zeros((1, int(n0[i]), 1))
         cur[0, cind[i], 0] = 1.0
         cores.append(cur)
-    return vector.from_list(cores)
+    return _vec(cores)
 
 
 def stepfun(n, d=None, center=1, direction=1):
@@ -365,7 +393,7 @@ def stepfun(n, d=None, center=1, direction=1):
                     cur[0, :, 0] = tempx
         prevrank = nextrank
         cores.append(cur)
-    return vector.from_list(cores[::-1])
+    return _vec(cores[::-1])
 
 
 def unit(n, d=None, j=None, tt_instance=True):
@@ -383,7 +411,7 @@ def unit(n, d=None, j=None, tt_instance=True):
         cur[0, rest % int(n[k]), 0] = 1.0
         rest //= int(n[k])
         cores.append(cur)
-    return vector.from_list(cores) if tt_instance else cores
+    return _vec(cores) if tt_instance else cores
 
 
 def shift(d, step=-1):
@@ -405,7 +433,7 @@ def shift(d, step=-1):
         cores.append(cur)
     cores[0] = cores[0][1:2]        # carry into the lowest bit: add one
     cores[-1] = cores[-1][:, :, :, 0:1]   # no carry out of the highest bit
-    S = matrix.from_list(cores)
+    S = _mat(cores)
     return S if step == -1 else S.T
 
 
@@ -413,7 +441,7 @@ def IpaS(d, a, tt_instance=True):
     """``I + a * S_{-1}``: bidiagonal, ones on the diagonal, ``a`` below it."""
     if d == 1:
         M = np.array([[1.0, 0.0], [a, 1.0]]).reshape((1, 2, 2, 1))
-        return matrix.from_list([M]) if tt_instance else M
+        return _mat([M]) if tt_instance else M
     M = (eye(2, d) + a * shift(d, -1)).round(1e-14)
     return M if tt_instance else matrix.to_list(M)
 
@@ -445,7 +473,7 @@ def qlaplace_dd(d):
                 cur[1, :, :, 0] = J.T
                 cur[2, :, :, 0] = J
             cr.append(cur)
-        return matrix.from_list(cr)
+        return _mat(cr)
     for k in range(D):
         for kappa in range(1, d0[k] + 1):
             if kappa == 1:
@@ -497,7 +525,7 @@ def qlaplace_dd(d):
                     cur[2, :, :, 0] = J
                     cur[3, :, :, 3] = I
             cr.append(cur)
-    return matrix.from_list(cr)
+    return _mat(cr)
 
 
 def Toeplitz(x, d=None, D=None, kind="F"):
@@ -614,7 +642,7 @@ def Toeplitz(x, d=None, D=None, kind="F"):
             dp += 1
             crs.append(cr)
     # the block tensors above are written with the column index first
-    return matrix.from_list([rearrange(c, "a n m b -> a m n b") for c in crs])
+    return _mat([rearrange(c, "a n m b -> a m n b") for c in crs])
 
 
 def qshift(d):

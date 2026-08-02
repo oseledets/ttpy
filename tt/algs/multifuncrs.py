@@ -59,24 +59,28 @@ References
 
 What ``eps`` actually buys (measured, not promised)
 ---------------------------------------------------
-``eps`` drives the local truncation inside :func:`tt.algs.cross.rect_cross` and
-the stopping rule (relative change between two sweeps).  Neither is an error
-*bound*, and how close the achieved error lands to ``eps`` is a property of the
-cross engine, not of this adapter.  Measured on ``1/(1+t)``,
-``t = (i+1)/2^d`` on a binary QTT grid, error on 2000 held-out points
-(``n_check``), float64, default ``kickrank=5``, as achieved/requested:
+``eps`` enters in exactly two places inside :func:`tt.algs.cross.rect_cross`,
+and neither is an error *bound*: it is the threshold of the stopping rule (the
+relative change between two sweeps) and the accuracy of the final rounding of
+the interpolant.  The sweeps themselves do *not* truncate locally -- see
+``tt.algs.cross._left_basis`` for what that costs -- so how close the achieved
+error lands to ``eps`` is a property of the cross engine, not of this adapter.
+Measured on ``1/(1+t)``, ``t = (i+1)/2^d`` on a binary QTT grid, relative error
+on 2000 held-out points (``n_check``), float64, default ``kickrank=5``, as
+achieved divided by requested:
 
     d        eps=1e-6      eps=1e-10
-    10       0.4 -- 1.0    0.3 --  0.5
-    20       0.2 -- 1.8    0.4 --   19
-    40       0.2 --   83   0.1 -- 6400
+    10          0.43          0.27
+    20          0.19          0.35
+    40          0.19          0.11
 
-(the two numbers per cell are two truncation rules of the engine; the large
-ratios come from the eps/sqrt(d) local-truncation variant).  Every one of those
-runs reported ``history.converged is True`` and warned about nothing -- which is
-correct, the stopping criterion *was* met.  The consequence for a caller is the
-same in every case: ``eps`` is a knob, and ``history.err_check`` (i.e. passing
-``n_check``) is the only honest measurement of the error actually obtained.
+All six runs reported ``history.converged is True`` and warned about nothing --
+correctly, the stopping criterion *was* met.  That the ratio stays below one is
+a measurement on one smooth function, not a promise: for a function whose
+relevant fibers the sampling never visits (a spike on a few entries) every one
+of those numbers would be optimistic, and so would the stopping rule.  ``eps``
+is a knob; ``history.err_check`` (i.e. passing ``n_check``) is the only honest
+measurement of the error actually obtained.
 
 Notes
 -----
@@ -121,7 +125,9 @@ class MultifuncrsHistory:
         funs_values: Number of points ``funs`` was asked about, probes included.
         probe_values: Points spent on the shape/dtype probe alone.
         cross: The underlying :class:`tt.algs.cross.CrossHistory` -- per-sweep
-            relative change, ranks, timing, convergence flag.
+            relative change, ranks, timing, convergence flag.  ``sweeps``,
+            ``converged``, ``err_rel``, ``err_check``, ``err_round`` and
+            ``rmax_active`` are forwarded from it as properties.
         ranks: TT ranks of the returned tensor (last one is ``d2``).
         time: Wall clock seconds for the whole call.
         ignored_options: Legacy options accepted but without effect here.
@@ -158,13 +164,29 @@ class MultifuncrsHistory:
         """Measured relative error on held-out points, or ``None``."""
         return None if self.cross is None else self.cross.err_check
 
+    @property
+    def rmax_active(self):
+        """Whether the answer sits on the rank cap, i.e. ``eps`` is not certified.
+
+        ``converged`` is ``True`` in exactly that case as well -- the sweeps
+        stop moving because they *cannot* move -- so a caller who tests only
+        ``converged`` would read a capped, inaccurate answer as a good one.  The
+        run also warns; this is the same fact, reachable programmatically.
+        """
+        return False if self.cross is None else self.cross.rmax_active
+
+    @property
+    def err_round(self):
+        """Relative error added by the final rounding to ``eps`` (a measurement)."""
+        return float("nan") if self.cross is None else self.cross.err_round
+
     def __repr__(self):
         return (f"MultifuncrsHistory(sweeps={len(self.sweeps)}, "
                 f"converged={self.converged}, err_rel={self.err_rel:.2e}, "
                 f"d2={self.d2}, funs_calls={self.funs_calls}, "
                 f"funs_values={self.funs_values}, "
                 f"max_rank={max(self.ranks) if self.ranks else 0}, "
-                f"time={self.time:.2f}s)")
+                f"rmax_active={self.rmax_active}, time={self.time:.2f}s)")
 
 
 # --- input handling ----------------------------------------------------------
@@ -505,7 +527,12 @@ def multifuncrs2(X, funs, eps=1e-6, nswp=10, kickrank=5, y0=None, rmax=999999,
             a multi-component ``funs`` its last rank may be ``d2`` (the legacy
             way of declaring the number of components) or ``1``.
         rmax: Hard cap on the TT ranks of the answer; ``None`` means no cap.
-            Values below 1 raise instead of being read as "no cap".
+            Values below 1 raise instead of being read as "no cap".  It caps
+            the ``d - 1`` internal ranks only: when ``funs`` returns ``d2 > 1``
+            components the last rank of the result *is* ``d2`` by definition of
+            the block-TT layout and is not capped (``rmax=2`` with three
+            components returns ranks ``[1, 2, 2, 2, 3]``).  Capping it would
+            throw components away, which is never what a rank budget means.
         verb: 0 silent, >= 1 prints the sweep table after the run.  The history
             is recorded either way; ``verb`` never changes the numerics.
         do_qr: Accepted for signature compatibility; no effect, the local basis
