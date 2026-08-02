@@ -59,9 +59,16 @@ Known limits
 ------------
 * The attainable relative residual is bounded from below by
   ``eps_machine * ||A|| ||x|| / ||f||``: for the QTT Laplacian on ``2^12``
-  points with a constant right-hand side that is ~1e-9 in float64 (LAPACK's
-  own dense solve leaves 2e-10 there), so asking for ``eps = 1e-10`` at that
-  size cannot succeed.  The solver reports the failure; it does not pretend.
+  points with a constant right-hand side that factor is 6.1e6, so the floor is
+  ~1e-9 in float64.  Measured with the residual evaluated in float128 (the
+  float64 evaluation of ``x.full()`` has a 6e-10 noise floor of its own):
+  LAPACK's dense solve leaves 1.52e-10 there and this solver leaves 4.7e-10,
+  so ``eps = 1e-10`` at that size cannot succeed.  The solver reports the
+  failure; it does not pretend.
+* The residual the solver reports about itself is computed in TT arithmetic.
+  Against the float128 residual of the returned cores it came out
+  *conservative* by 20-30% on the QTT Laplacian at ``d = 6, 8, 10, 12``
+  (ratios exact/reported 0.78, 0.81, 0.77, 0.70), never optimistic.
 * The local solver is restarted GMRES, which is known to stagnate on strongly
   non-normal operators whose spectrum surrounds the origin, no matter how well
   conditioned they are.  When that happens the failure message names the local
@@ -84,7 +91,8 @@ import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
-from einops import einsum, rearrange
+from einops import rearrange
+from ..backend import einsum   # BLAS-routed; einops' own skips optimize=True
 
 from .. import backend as bk
 from ..core import _ops
@@ -114,11 +122,14 @@ class AmenSolveHistory:
     Attributes:
         tol: Requested relative accuracy.
         sweeps: One dict per sweep with keys ``sweep, max_dx, max_res,
-            max_rank, true_res, time, local_matvecs, local_direct``.
+            max_rank, true_res, time, local_matvecs, local_direct,
+            local_solves, local_failed, local_failed_direct,
+            local_failed_gmres``.
         converged: Whether the stopping criterion was met (see
             :func:`amen_solve` for which criterion that is).
-        max_dx: Largest relative block update of the last sweep.
-        max_res: Largest local relative residual of the last sweep.
+        max_dx: Largest relative block update of the sweep that produced the
+            returned iterate (``best_sweep``).
+        max_res: Largest local relative residual of that same sweep.
         true_res: ``||A x - f|| / ||f||`` of the returned ``x``, computed
             exactly in the TT format.  ``nan`` iff ``check_true_res=False``.
         ranks: TT ranks of the returned ``x``.
@@ -363,8 +374,12 @@ def _solve_local(phiL, acore, phiR, rhs, tol, max_full_size, prec_kind,
         sol = bk.solve(mat, rhs.reshape((-1,))).reshape(rhs.shape)
         res = _local_matvec(phiL, acore, phiR, sol) - rhs
         relres = float(bk.norm(res)) / rhs_norm if rhs_norm > 0 else 0.0
+        # A dense solve is backward stable, not exact: on an ill-conditioned
+        # local system its residual is ~cond*eps_machine and can sit above the
+        # requested tolerance.  Reporting "converged" unconditionally would
+        # hide that and misdirect the diagnosis of a stalled outer iteration.
         return sol, {"kind": "direct", "matvecs": 0, "relres": relres,
-                     "converged": True, "size": size}
+                     "converged": bool(relres <= tol), "size": size}
     prec = None if prec_kind == "n" else _jacobi(prec_kind, phiL, acore, phiR)
     sol, relres, nmv, ok = _gmres(
         lambda w: _local_matvec(phiL, acore, phiR, w), rhs, tol,
@@ -433,6 +448,20 @@ def _canon_prec(local_prec):
     return _PREC_ALIASES[key]
 
 
+def _check_positive(**kwargs):
+    """Reject nonsense integer arguments instead of quietly reinterpreting them.
+
+    ``kickrank=-1`` used to mean "no enrichment" and ``rmax=0`` used to mean
+    "rank 0, then whatever the enrichment adds": both are answers to a question
+    the caller did not ask.
+    """
+    for name, (value, lo) in kwargs.items():
+        if value is None:
+            continue
+        if int(value) < lo:
+            raise ValueError(f"{name}={value!r}: expected an integer >= {lo}")
+
+
 def _canon_trunc(trunc_norm):
     if trunc_norm in (1, "residual", "resid"):
         return 1
@@ -487,7 +516,9 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
         rmax: Hard cap on the TT rank chosen by the truncation.  The
             enrichment that follows it adds up to ``kickrank`` more, so the
             ranks of the returned ``x`` are bounded by ``rmax + kickrank``.
-        seed: Seed for the random ``z`` and the random ``x0``.
+        seed: Integer seed (or ``None``).  The random ``z`` and the random
+            ``x0`` are drawn from two *independent* streams spawned from it,
+            so they never coincide.
         check_true_res: Compute ``||A x - f|| / ||f||`` exactly in the TT
             format after every sweep and use it as the stopping criterion.
             With ``False`` the criterion is the legacy one (``max_res`` for
@@ -502,8 +533,14 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
         pair ``(x, info)``.
 
     Raises:
-        ValueError: on mode/dimension mismatch or a non-square ``A``.
+        ValueError: on mode/dimension mismatch, a non-square ``A``, a zero
+            right-hand side (``A x = 0`` has the trivial solution and no
+            relative residual), a negative ``eps``, or a non-positive
+            ``nswp`` / ``rmax`` / ``local_iters`` / ``local_restart`` /
+            negative ``kickrank``.
         NotImplementedError: on an unknown ``local_prec``.
+        numpy.linalg.LinAlgError: if a local system is exactly singular (a
+            singular ``A``); nothing is substituted for the missing solution.
 
     Warns:
         UserWarning: if the accuracy was not reached in ``nswp`` sweeps; the
@@ -522,8 +559,12 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
     t0 = time.time()
     prec_kind = _canon_prec(local_prec)
     trunc_norm = _canon_trunc(trunc_norm)
+    _check_positive(kickrank=(kickrank, 0), nswp=(nswp, 1), rmax=(rmax, 1),
+                    local_iters=(local_iters, 1), local_restart=(local_restart, 1))
     kickrank = int(kickrank)
     tol = float(eps)
+    if not np.isfinite(tol) or tol < 0.0:
+        raise ValueError(f"eps={eps!r}: expected a finite non-negative accuracy")
 
     fcores, f_is_vector = _vector_cores(f)
     d = len(fcores)
@@ -538,10 +579,15 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
         raise ValueError(f"f has modes {[c.shape[1] for c in fcores]}, "
                          f"A has row modes {n}")
 
+    # ``x`` and ``z`` must be drawn from *independent* streams: seeding both
+    # with ``seed`` made them the same tensor whenever kickrank == 2, i.e. the
+    # enrichment started out inside the trial subspace and added nothing.
+    seed_x, seed_z = np.random.SeedSequence(seed).spawn(2)
+
     dt = bk.result_dtype(bk.dtype_of(acores[0]), bk.dtype_of(fcores[0]))
     if x0 is None:
         xcores = _ops.random_tt(m, [1] + [2] * (d - 1) + [1], dtype=dt,
-                                like=fcores[0], seed=seed)
+                                like=fcores[0], seed=seed_x)
     else:
         xcores, _ = _vector_cores(x0)
         if [c.shape[1] for c in xcores] != m:
@@ -553,7 +599,14 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
     xcores = _ops.to_dtype(list(xcores), dt)
 
     like = fcores[0]
-    fnorm = _ops.norm(fcores)
+    fnorm = float(_ops.norm(fcores))
+    if fnorm == 0.0:
+        # Same contract as tt.algs.solvers.GMRES: without a scale there is no
+        # relative residual to converge, and every stopping test would divide
+        # by zero.  (The answer is x = 0; say so rather than iterate on nan.)
+        raise ValueError(
+            "amen_solve: the right-hand side is zero, so a relative residual "
+            "is undefined; the solution of A x = 0 is x = 0 (tt.zeros)")
     # Both the local and the global tolerance are split over the d-1 splittings
     # of the TT chain, exactly as in ttamen.f90.
     real_tol = tol / np.sqrt(max(d - 1, 1)) / RESID_DAMP
@@ -572,7 +625,7 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
 
     if kickrank > 0:
         zcores = _ops.random_tt(n, [1] + [kickrank] * (d - 1) + [1], dtype=dt,
-                                like=like, seed=seed)
+                                like=like, seed=seed_z)
         phizax_l, phizax_r = interfaces(one), interfaces(one)
         phizf_l, phizf_r = interfaces(one2), interfaces(one2)
 
@@ -607,7 +660,8 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
         n_matvecs = 0
         n_direct = 0
         n_local = 0
-        n_local_failed = 0
+        n_failed_direct = 0
+        n_failed_gmres = 0
         for k in range(d):
             rhs = _local_rhs(phif_l[k], fcores[k], phif_r[k + 1])
             rhs_norm = float(bk.norm(rhs))
@@ -627,7 +681,11 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
                 n_matvecs += linfo["matvecs"]
                 n_direct += int(linfo["kind"] == "direct")
                 n_local += 1
-                n_local_failed += int(not linfo["converged"])
+                if not linfo["converged"]:
+                    if linfo["kind"] == "direct":
+                        n_failed_direct += 1
+                    else:
+                        n_failed_gmres += 1
                 # ``sol`` solves B sol = A x - f, so it is the *negative*
                 # correction.
                 xcores[k] = xcores[k] - sol
@@ -710,7 +768,9 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
                  "max_rank": int(max(ranks)), "true_res": true_res,
                  "time": time.time() - t0, "local_matvecs": n_matvecs,
                  "local_direct": n_direct, "local_solves": n_local,
-                 "local_failed": n_local_failed}
+                 "local_failed": n_failed_direct + n_failed_gmres,
+                 "local_failed_direct": n_failed_direct,
+                 "local_failed_gmres": n_failed_gmres}
         info.sweeps.append(entry)
         if verb > 0:
             line = (f"amen_solve: swp={swp + 1}, max_dx={max_dx:9.3E}, "
@@ -741,9 +801,13 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
             break
 
     if best_cores is not None and best_res < info.true_res:
+        # The whole summary must describe the vector that is handed back, not
+        # the last one computed: a history that mixes two iterates is a lie.
         xcores = best_cores
         info.true_res = best_res
-        info.ranks = [int(r) for r in _ops.ranks(xcores)]
+        best = info.sweeps[info.best_sweep - 1]
+        info.max_dx, info.max_res = best["max_dx"], best["max_res"]
+    info.ranks = [int(r) for r in _ops.ranks(xcores)]
 
     info.time = time.time() - t0
     if info.converged:
@@ -753,12 +817,20 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='n',
         reached = (f"true residual {info.true_res:.3E}" if check_true_res
                    else f"max_res {info.max_res:.3E}, max_dx {info.max_dx:.3E}")
         last = info.sweeps[-1] if info.sweeps else {}
-        if last.get("local_failed", 0):
-            blame = (f" The local solver missed its tolerance in "
-                     f"{last['local_failed']} of {last['local_solves']} blocks "
-                     "of the last sweep, so it -- not the outer iteration -- "
-                     "may be the bottleneck: raise max_full_size (dense local "
-                     "solves), local_iters/local_restart, or set local_prec.")
+        if last.get("local_failed_gmres", 0):
+            blame = (f" The local GMRES missed its tolerance in "
+                     f"{last['local_failed_gmres']} of {last['local_solves']} "
+                     "blocks of the last sweep, so it -- not the outer "
+                     "iteration -- may be the bottleneck: raise max_full_size "
+                     "(dense local solves), local_iters/local_restart, or set "
+                     "local_prec.")
+        elif last.get("local_failed_direct", 0):
+            blame = (f" The *dense* local solves missed their tolerance in "
+                     f"{last['local_failed_direct']} of "
+                     f"{last['local_solves']} blocks of the last sweep: the "
+                     "local systems are too ill-conditioned for the working "
+                     "precision, so neither more sweeps nor a different local "
+                     "solver will help.")
         else:
             blame = (" All local systems were solved to their tolerance, so "
                      "the outer iteration is what stalled: the accuracy may be "

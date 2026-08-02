@@ -156,6 +156,13 @@ def GMRES(A, u_0, b, eps=1e-6, maxit=100, m=20, callback=None, verbose=0, *,
     if m < 1:
         raise ValueError(f"the Krylov dimension m must be at least 1, got {m}")
     eps = float(eps)
+    if eps < 0.0:
+        # A negative target can never be met, and it is passed straight on to
+        # every ``round``, where "eps <= 0" means "truncate nothing".  The run
+        # would burn ``maxit`` iterations at full rank and then warn about a
+        # threshold that was never reachable.
+        raise ValueError(f"eps must be non-negative, got {eps}; use eps = 0 to "
+                         "iterate to maxit without a residual target")
 
     t0 = time.perf_counter()
     hist = GmresHistory(eps=eps)
@@ -198,7 +205,11 @@ def GMRES(A, u_0, b, eps=1e-6, maxit=100, m=20, callback=None, verbose=0, *,
             # operator may be.  Capped at 1 -- a relative error of 1 means the
             # result carries no information, and rounding to it would silently
             # replace the vector by noise.
-            delta = min(eps * resnorm / curr_beta, 1.0)
+            # curr_beta == 0 happens when the projected problem is solved
+            # exactly (an invariant Krylov space reached with eps = 0); the
+            # ratio is then +inf, which is what the cap is for -- but as python
+            # floats it would be a ZeroDivisionError, so it is spelled out.
+            delta = 1.0 if curr_beta == 0.0 else min(eps * resnorm / curr_beta, 1.0)
             if verbose > 1:
                 print(f"it = {hist.iterations + 1} delta = {delta:.3e}")
 

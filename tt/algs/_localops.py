@@ -39,16 +39,37 @@ and which then costs orders of magnitude more.
 
 from __future__ import annotations
 
-from einops import einsum, rearrange
+from einops import rearrange
+from ..backend import einsum   # BLAS-routed; einops' own skips optimize=True
 
 from .. import backend as bk
 
 __all__ = [
-    "ones_interface", "phi_left", "phi_right",
+    "operator_cores", "ones_interface", "phi_left", "phi_right",
     "local_matvec", "local_matmat", "local_matrix",
     "interface_matvec", "interface_matrix",
     "left_orthogonalize", "right_orthogonalize",
 ]
+
+
+def operator_cores(A, like, dtype):
+    """Cores of the TT-matrix ``A``, on the backend and dtype of ``like``.
+
+    The alternating algorithms contract ``A``-cores with vector cores in one
+    ``einsum``, so the two must live on the same backend.  Coercing the operator
+    to the vector (never the other way round) is the convention of
+    ``amen_mv``: a numpy operator used with a torch iterate follows the iterate
+    to the device instead of dragging it back to the host.
+
+    Args:
+        A: :class:`tt.matrix`.
+        like: A vector core (or any backend array) that fixes the backend.
+        dtype: Canonical dtype for the result.
+    """
+    from ..core.matrix import matrix
+
+    return [bk.asarray(c, dtype, backend=bk.backend_of(like))
+            for c in matrix.to_list(A)]
 
 
 def ones_interface(like, dtype=None):

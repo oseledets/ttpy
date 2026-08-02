@@ -145,7 +145,20 @@ class NumpyBackend(Backend):
     concatenate = staticmethod(lambda arrays, axis=0: np.concatenate(arrays, axis=axis))
     stack = staticmethod(lambda arrays, axis=0: np.stack(arrays, axis=axis))
     transpose = staticmethod(lambda a, axes: np.transpose(a, axes))
-    einsum = staticmethod(np.einsum)
+    @staticmethod
+    def einsum(subs, *ops):
+        """np.einsum through BLAS, with the contraction path cached.
+
+        Two separate costs are at stake.  Without ``optimize`` numpy runs its
+        own nested loops and never reaches BLAS (387 us against 76 us on an
+        AMEn local matvec, r=34).  With ``optimize=True`` it searches for a
+        contraction path on *every* call, which for the tiny cores of a QTT
+        problem costs more than the contraction itself.  Caching the path by
+        (subscripts, shapes) buys both: the search runs once per shape
+        combination and the contraction goes to BLAS every time.
+        """
+        return np.einsum(subs, *ops,
+                         optimize=_einsum_path(subs, tuple(o.shape for o in ops)))
     diag = staticmethod(np.diag)
     tril = staticmethod(np.tril)
     triu = staticmethod(np.triu)
@@ -411,8 +424,52 @@ def transpose(a, axes):
     return backend_of(a).transpose(a, axes)
 
 
-def einsum(subscripts, *operands):
-    return same_backend(operands, "operands").einsum(subscripts, *operands)
+@lru_cache(maxsize=None)
+def _einsum_path(subs: str, shapes: tuple):
+    """Contraction path for these subscripts and shapes (computed once).
+
+    ``broadcast_to`` gives arrays of the right shape without allocating, and
+    ``einsum_path`` only looks at shapes.
+    """
+    dummies = [np.broadcast_to(np.zeros((), dtype=np.float64), s) for s in shapes]
+    return np.einsum_path(subs, *dummies, optimize="optimal")[0]
+
+
+@lru_cache(maxsize=None)
+def _classic_subscripts(pattern: str) -> str:
+    """einops-style pattern -> classic np.einsum subscripts.
+
+    ``"a n m b, i m j -> a i n b j"`` becomes ``"abcd,ecf->aebdf"``.  Axis names
+    may be words, not just letters; ``...`` passes through.
+    """
+    lhs, _, rhs = pattern.partition("->")
+    groups = [g.split() for g in lhs.split(",")]
+    out = rhs.split()
+    pool = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    names: dict[str, str] = {}
+    for token in [t for g in groups for t in g] + out:
+        if token == "...":
+            continue
+        if token not in names:
+            if len(names) >= len(pool):
+                raise ValueError(f"einsum pattern {pattern!r} has too many axes")
+            names[token] = pool[len(names)]
+    render = lambda g: "".join("..." if t == "..." else names[t] for t in g)
+    return ",".join(render(g) for g in groups) + "->" + render(out)
+
+
+def einsum(*operands_and_pattern):
+    """Contract with an einops-style pattern, through BLAS.
+
+    Signature matches ``einops.einsum``: the tensors first, the pattern last.
+    einops hands its pattern to ``np.einsum`` without ``optimize=True``, which
+    keeps even a plain binary contraction out of BLAS; this routes it back in.
+    """
+    *operands, pattern = operands_and_pattern
+    if not isinstance(pattern, str):
+        raise TypeError("the einsum pattern must come last, as in einops.einsum")
+    return same_backend(operands, "operands").einsum(
+        _classic_subscripts(pattern), *operands)
 
 
 def diag(a):

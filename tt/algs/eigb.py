@@ -26,6 +26,16 @@ Sweeps run ``d -> 1`` and ``1 -> d``; the stopping indicator is the largest
 relative drop of ``sum(lambda)`` observed during a full sweep, exactly as in the
 Fortran original.
 
+That indicator says how much the iteration still *moves*, which is not the same
+as being right, and one-site ALS has a standard way of not being right: it
+cannot grow a rank.  The block index is the only enrichment, so with ``B = 1``
+and a rank-1 initial guess the iterate is trapped on the rank-1 manifold, the
+Ritz value stops moving to 1e-14 and the run looks converged while being wrong
+by a factor of 50.  For that reason the returned block always comes with its
+measured eigenresidual (:func:`block_residuals`, ``history.res``), and a large
+one warns -- the answer of an eigensolver is a pair, and the residual is the
+only evidence that it is one.
+
 Local eigensolver
 -----------------
 ``r_k n_k r_{k+1} <= max_full_size``: the local matrix is built densely and sent
@@ -52,7 +62,8 @@ import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
-from einops import einsum, rearrange
+from einops import rearrange
+from ..backend import einsum   # BLAS-routed; einops' own skips optimize=True
 
 from .. import backend as bk
 from ..core import _ops
@@ -79,6 +90,11 @@ class EigbHistory:
         ermax: The stopping indicator of the last sweep -- the largest relative
             drop of ``sum(lambda)`` over the sweep.  It measures how much the
             iteration still moves, not the distance to the true eigenvalues.
+        res: ``||A y_i - lam_i y_i||`` for each returned eigenvector, or None if
+            ``check_residual=False``.  This -- not ``ermax`` -- is the evidence
+            that the answer is an eigenpair: a stagnating alternating iteration
+            reports ``ermax = 0`` at a point that is not one.
+        res_rel: ``res_i / ||A y_i||``, the scale-free version.
         max_local_res: Largest local eigenresidual seen (iterative solver only).
         ranks: TT ranks of the returned block vector.
         nswp_done: Number of full sweeps performed.
@@ -91,15 +107,76 @@ class EigbHistory:
     lam: np.ndarray = None
     converged: bool = False
     ermax: float = float("nan")
+    res: np.ndarray = None
+    res_rel: np.ndarray = None
     max_local_res: float = 0.0
     ranks: list = field(default_factory=list)
     nswp_done: int = 0
     time: float = 0.0
 
     def __repr__(self):
+        res = "n/a" if self.res_rel is None else f"{float(np.max(self.res_rel)):.2e}"
         return (f"EigbHistory(sweeps={self.nswp_done}, converged={self.converged}, "
                 f"ermax={self.ermax:.2e}, max_rank={max(self.ranks) if self.ranks else 0}, "
+                f"max_rel_res={res}, "
                 f"max_local_res={self.max_local_res:.2e}, time={self.time:.2f}s)")
+
+
+def block_residuals(A, y, lam):
+    """``(||A y_i - lam_i y_i||, ||A y_i||)`` for every column of a block vector.
+
+    The only evidence that the returned pairs are eigenpairs.  ``ermax``, the
+    stopping indicator of the sweep, says how much the iteration still *moves*;
+    an alternating iteration that stalls at a non-stationary starting frame (a
+    rank-deficient or zero initial guess is the standard way to produce one)
+    reports ``ermax = 0`` while sitting on a vector with residual O(1).
+
+    Everything is done in the TT format: one matvec (ranks ``r_A r_y``), one
+    addition (ranks ``r_A r_y + r_y``) and two block dots -- about one sweep's
+    worth of work, never a dense vector.  The residual vector is *formed* and
+    then normed instead of expanding ``||z||^2 - 2 lam <z, y> + lam^2 ||y||^2``:
+    that expansion cancels down to ``sqrt(eps) ||A y||`` and would report 1e-9
+    where the truth is 1e-16.
+
+    Args:
+        A: The TT-matrix.
+        y: The block TT-vector, ``y.r[-1] == B``.
+        lam: The ``B`` Ritz values.
+
+    Returns:
+        ``(res, znorm)``, two numpy arrays of length ``B``: the residual norms
+        and ``||A y_i||``.
+    """
+    nblock = int(y.r[-1])
+    dt = bk.result_dtype(A.dtype, y.dtype)
+    ycores = _ops.to_dtype(list(y.cores), dt)
+    acores = lo.operator_cores(A, ycores[0], dt)
+    z = _ops.matvec_cores(acores, ycores)
+
+    # -lam on the block index of the last core: (A y - y diag(lam))_i
+    minus_lam = bk.asarray(-np.asarray(lam, dtype=np.float64), dt,
+                           backend=bk.backend_of(ycores[0]))
+    scaled = list(ycores)
+    scaled[-1] = scaled[-1] * minus_lam
+    return _block_norms(_ops.add(z, scaled)), _block_norms(z)
+
+
+def _block_norms(cores):
+    """Per-column norms of a block TT-vector, computed through a QR sweep.
+
+    Squaring first (``diag(dot(w, w))``) would be cheaper and wrong: the cores
+    of a residual are *not* small even when the residual is, so the sum of
+    products cancels and the answer saturates at ``sqrt(eps) ||w's cores||``.
+    Orthogonalizing left to right pushes the norm into the last core, where the
+    block index still sits, and costs one QR sweep.
+    """
+    cores = list(cores)
+    for k in range(len(cores) - 1):
+        q, s = lo.left_orthogonalize(cores[k])
+        cores[k] = q
+        cores[k + 1] = _apply_left(s, cores[k + 1])
+    last = bk.to_numpy(cores[-1])
+    return np.sqrt(np.sum(np.abs(np.asarray(last)) ** 2, axis=(0, 1)))
 
 
 def _symmetry_defect(m):
@@ -153,12 +230,17 @@ def _local_eig_lobpcg(left, acore, right, nblock, guess, tol, maxiter):
         w, v = lobpcg(op, x0, largest=False, tol=tol, maxiter=maxiter)
     res = matmat(v) - v * w[None, :]
     res_max = float(np.max(np.linalg.norm(res, axis=0)))
-    return (bk.asarray(w, bk.dtype_of(src), backend=bk.backend_of(src)),
+    # the eigenvalues of a Hermitian problem are real: casting them to the
+    # (possibly complex) dtype of the eigenvectors only earns a ComplexWarning
+    # from the caller, which converts them back to float64
+    return (bk.asarray(np.real(w), bk.real_dtype(bk.dtype_of(src)),
+                       backend=bk.backend_of(src)),
             bk.asarray(v, bk.dtype_of(src), backend=bk.backend_of(src)), res_max)
 
 
 def eigb(A, y0, eps, rmax=150, nswp=20, max_full_size=1000, verb=1,
-         return_history=False, lobpcg_maxiter=200, sym_tol=1e-8):
+         return_history=False, lobpcg_maxiter=200, sym_tol=None,
+         check_residual=True, res_warn=1e-2):
     """The ``B`` smallest eigenpairs of a symmetric TT-matrix.
 
     ``B = y0.r[-1]``: the last rank of the initial guess is the number of
@@ -181,6 +263,18 @@ def eigb(A, y0, eps, rmax=150, nswp=20, max_full_size=1000, verb=1,
         lobpcg_maxiter: iteration cap for the matrix-free local solver.
         sym_tol: relative asymmetry of a local matrix above which the run stops
             with an error instead of returning eigenvalues of ``(B + B^H)/2``.
+            ``None`` (default) means ``sqrt(eps_machine)`` of the working dtype
+            -- 1.5e-8 in float64, 3.5e-4 in float32.  A fixed 1e-8 would reject
+            every float32 problem, whose projected local matrices are asymmetric
+            at the 1e-7 level from rounding alone.
+        check_residual: measure ``||A y_i - lam_i y_i||`` on the returned block
+            (one TT matvec plus three dots, see :func:`block_residuals`) and put
+            it in the history.  ``ermax`` cannot see a stalled iteration; this
+            can, so leave it on unless the cost matters.
+        res_warn: warn when the largest *relative* residual
+            ``||A y_i - lam_i y_i|| / ||A y_i||`` exceeds this.  Pure reporting:
+            the numbers are in ``history.res`` / ``history.res_rel`` whatever
+            the threshold, and a well converged run reaches ``~sqrt(eps)``.
 
     Returns:
         ``(y, lam)``, or ``(y, lam, history)`` if ``return_history``.  ``y`` is
@@ -193,7 +287,10 @@ def eigb(A, y0, eps, rmax=150, nswp=20, max_full_size=1000, verb=1,
 
     Note:
         Non-convergence is *reported*, never hidden: ``history.converged`` is
-        False and a ``RuntimeWarning`` carries the achieved indicator.
+        False and a ``RuntimeWarning`` carries the achieved indicator.  The
+        converse is reported too: ``converged=True`` only says the Ritz values
+        stopped moving, so the residual is measured as well and a large one
+        warns even on a "converged" run.
     """
     if not isinstance(A, matrix):
         raise TypeError(f"eigb needs a tt.matrix, got {type(A)!r}")
@@ -213,8 +310,10 @@ def eigb(A, y0, eps, rmax=150, nswp=20, max_full_size=1000, verb=1,
     nblock = int(y0.r[-1])
     n = [int(v) for v in y0.n]
     dt = bk.result_dtype(A.dtype, y0.dtype)
-    acores = [bk.asarray(c, dt) for c in matrix.to_list(A)]
     cores = [bk.asarray(c, dt) for c in y0.cores]
+    acores = lo.operator_cores(A, cores[0], dt)
+    if sym_tol is None:
+        sym_tol = float(np.sqrt(bk.eps_of(dt)))
     hist = EigbHistory(eps=float(eps))
 
     if verb > 0:
@@ -227,10 +326,11 @@ def eigb(A, y0, eps, rmax=150, nswp=20, max_full_size=1000, verb=1,
         right = lo.ones_interface(cores[0], dt)
         lam, v, _ = _local_eig_dense(left, acores[0], right, nblock, sym_tol)
         y = vector.from_list([v.reshape((1, n[0], nblock))])
-        hist.lam = np.asarray(bk.to_numpy(lam))
+        hist.lam = np.asarray(bk.to_numpy(lam), dtype=np.float64)
         hist.converged = True
         hist.ranks = list(y.r)
         hist.nswp_done = 0
+        _record_residual(hist, A, y, hist.lam, check_residual, res_warn, nswp)
         hist.time = time.time() - t_start
         out = (y, hist.lam)
         return out + (hist,) if return_history else out
@@ -362,11 +462,37 @@ def eigb(A, y0, eps, rmax=150, nswp=20, max_full_size=1000, verb=1,
     y = vector.from_list(cores)
     hist.lam = lam
     hist.ranks = [int(v) for v in y.r]
+    _record_residual(hist, A, y, lam, check_residual, res_warn, nswp)
     hist.time = time.time() - t_start
     if verb > 0:
         print(f"Total local solves: {len(hist.steps)}")
+        if hist.res is not None:
+            print(f"Eigenresiduals ||A y - lam y||: "
+                  f"{np.array2string(hist.res, precision=3)}")
     out = (y, lam)
     return out + (hist,) if return_history else out
+
+
+def _record_residual(hist, A, y, lam, check_residual, res_warn, nswp):
+    """Measure the eigenresidual of the returned block and report a bad one."""
+    if not check_residual:
+        return
+    res, znorm = block_residuals(A, y, lam)
+    hist.res = res
+    hist.res_rel = res / np.where(znorm > 0, znorm, 1.0)
+    worst = float(np.max(hist.res_rel))
+    if worst > res_warn:
+        warnings.warn(
+            f"eigb returned pairs with a relative eigenresidual up to "
+            f"{worst:.3E} (absolute {float(np.max(res)):.3E}); the Ritz values "
+            f"are not eigenvalues of A to that accuracy. The sweep indicator "
+            f"({hist.ermax:.3E} over {nswp} allowed sweeps) cannot see this: an "
+            "alternating iteration can stall at a point that is not an "
+            "eigenvector -- a rank-deficient or zero initial guess, too small "
+            "an rmax, or a local solver that did not converge "
+            f"(largest local residual {hist.max_local_res:.3E}). Start from a "
+            "random guess of larger rank, or raise rmax.",
+            RuntimeWarning, stacklevel=3)
 
 
 # --- small shape-shuffling helpers ------------------------------------------

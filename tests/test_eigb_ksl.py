@@ -6,15 +6,22 @@ invariant (residual, orthonormality, observed convergence order).  Nothing here
 compares against the legacy Fortran output.
 
 A note on the KSL order test.  Comparing one step against ``expm(tau A) y0``
-cannot show the temporal order of the integrator, and the test suite proves why:
-on a manifold that contains the exact trajectory (full ranks) the projector
-splitting is *exact* -- see :func:`test_ksl_is_exact_when_the_manifold_is_full`,
-error 1e-14 for every step size -- while on a manifold that does not contain it,
-the tau-independent modelling error swamps the splitting error (that error is
-what :func:`test_ksl_reports_the_rank_it_cannot_follow` measures, and the
-integrator reports it).  The order is therefore measured the standard way, by
-Richardson/self-convergence against a reference run with a 16x smaller step,
-which is a statement about the discretization alone.
+cannot show the temporal order of the integrator: on a manifold that contains
+the exact trajectory (full ranks) the projector splitting is *exact* -- see
+:func:`test_ksl_is_exact_when_the_manifold_is_full`, error 1e-14 for every step
+size -- while on a manifold that does not contain it, the tau-independent
+modelling error swamps the splitting error (that error is what
+:func:`test_ksl_reports_the_rank_it_cannot_follow` measures, and the integrator
+reports it).  The order below is therefore measured by Richardson
+self-convergence, which is a statement about the discretization alone.
+
+That is not the last word, and this file used to claim it was.  The right
+reference is neither ``expm(tau A) y0`` nor the integrator itself but the
+solution of the ODE KSL actually discretizes, ``y' = P_{T_y M} A y``; integrated
+densely it is an independent oracle, and against it the observed orders are 1.00
+and 2.00 with the modelling error 25x larger than the splitting error being
+fitted.  See
+``tests/test_verify_eigb_ksl.py::test_ksl_order_against_the_dense_projected_flow``.
 """
 
 from __future__ import annotations

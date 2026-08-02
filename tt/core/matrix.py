@@ -13,7 +13,8 @@ from __future__ import annotations
 from numbers import Number
 
 import numpy as np
-from einops import einsum, rearrange
+from einops import rearrange
+from ..backend import einsum   # BLAS-routed; einops' own skips optimize=True
 
 from .. import backend as bk
 from . import _ops

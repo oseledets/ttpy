@@ -453,3 +453,35 @@ def test_dot_fast_path_and_general_path_agree():
     fast = _ops.dot(x.cores, y.cores)
     ref = float(np.sum(np.asarray(x.full()) * np.asarray(y.full())))
     assert abs(fast - ref) < 1e-10 * abs(ref)
+
+
+# --- einsum routing ----------------------------------------------------------
+
+@pytest.mark.parametrize("pattern, shapes", [
+    ("a n b, b m c -> a n m c", [(2, 3, 4), (4, 5, 6)]),
+    ("a n m b, i m j -> a i n b j", [(2, 3, 4, 5), (6, 4, 7)]),
+    ("i n j, k n l -> i k n j l", [(2, 3, 4), (5, 3, 6)]),
+    ("c b p, b j f -> c p j f", [(3, 4, 2), (4, 5, 6)]),
+    ("a b i j, i n p -> a b j n p", [(2, 3, 4, 5), (4, 6, 7)]),
+    ("a n b, b c -> a n c", [(2, 3, 4), (4, 5)]),
+])
+def test_backend_einsum_matches_einops(pattern, shapes):
+    """Our einsum must be a drop-in for einops.einsum, only faster.
+
+    einops forwards to np.einsum without optimize=True, which keeps even binary
+    contractions out of BLAS (measured 5.1x on an AMEn local matvec). The
+    replacement rewrites the pattern into classic subscripts; this pins that the
+    rewrite is faithful.
+    """
+    from einops import einsum as einops_einsum
+    from tt import backend as bk
+
+    rng = np.random.default_rng(0)
+    ops = [rng.standard_normal(s) for s in shapes]
+    assert rel(bk.einsum(*ops, pattern), einops_einsum(*ops, pattern)) < 1e-13
+
+
+def test_backend_einsum_rejects_a_misplaced_pattern():
+    from tt import backend as bk
+    with pytest.raises(TypeError):
+        bk.einsum("a b, b c -> a c", np.zeros((2, 2)), np.zeros((2, 2)))

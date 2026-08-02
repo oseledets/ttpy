@@ -59,6 +59,7 @@ Differences from the legacy implementation
 from __future__ import annotations
 
 import time
+import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -93,6 +94,21 @@ class CompletionHistory:
         empty_slices: Number of (core, slice) pairs that no sample touched in
             the last sweep; those slices are undetermined by the data and keep
             whatever the initial guess had.
+        underdetermined_slices: Number of (core, slice) pairs whose local least
+            squares problem was rank deficient in the last sweep -- fewer
+            independent samples than the ``r_k r_{k+1}`` unknowns of the slice.
+            Those are filled with the minimum-norm solution, which reproduces
+            the samples exactly and is arbitrary in every direction the data
+            does not see.  **A run with a nonzero count can reach
+            ``fit = 1e-31`` and still be 100 % wrong away from the samples**;
+            measured, on a rank-4 tensor of shape ``6x6x6`` fitted from 38
+            samples (144 parameters): ``fit = 4.9e-31``, ``converged = True``,
+            relative error against the truth 5.8.  The run warns when this
+            happens.
+        determined: ``underdetermined_slices == 0 and empty_slices == 0``, i.e.
+            the data pins down every parameter of the model.  ``converged and
+            determined`` is the pair that means "solved"; ``converged`` alone
+            only means "reproduces the samples".
         ranks: TT ranks of the returned tensor.
         time: Total wall-clock seconds.
 
@@ -106,8 +122,14 @@ class CompletionHistory:
     stop_reason: str = ""
     monotone: bool = True
     empty_slices: int = 0
+    underdetermined_slices: int = 0
     ranks: list = field(default_factory=list)
     time: float = 0.0
+
+    @property
+    def determined(self):
+        """Whether the samples pin down every parameter of the model."""
+        return self.empty_slices == 0 and self.underdetermined_slices == 0
 
     def __getitem__(self, key):
         """Legacy dict access (``info['fit']``)."""
@@ -120,6 +142,7 @@ class CompletionHistory:
         last = f"{self.fit[-1]:.3e}" if self.fit else "n/a"
         return (f"CompletionHistory(sweeps={len(self.fit)}, fit={last}, "
                 f"stop={self.stop_reason!r}, monotone={self.monotone}, "
+                f"determined={self.determined}, "
                 f"max_rank={max(self.ranks) if self.ranks else 0}, "
                 f"time={self.time:.2f}s)")
 
@@ -132,7 +155,15 @@ def _unpack(cooP, shape=None):
             f"and 'values' ((P,) array); got {type(cooP)!r} with "
             f"{sorted(cooP) if isinstance(cooP, dict) else '-'}")
     indices = np.array(cooP["indices"], dtype=np.int64, copy=True)
-    values = np.array(cooP["values"], dtype=np.float64, copy=True).ravel()
+    raw = np.asarray(cooP["values"])
+    if np.iscomplexobj(raw):
+        # A silent cast to float64 would drop the imaginary part and then fit a
+        # tensor to half the data while reporting a small residual on it.
+        raise TypeError(
+            "cooP['values'] is complex; this solver is real (the local systems "
+            "are real least squares problems).  Fit the real and imaginary "
+            "parts separately, or use a real-valued formulation.")
+    values = np.array(raw, dtype=np.float64, copy=True).ravel()
     if indices.ndim != 2:
         raise ValueError(f"cooP['indices'] must be 2d (P, d), got {indices.shape}")
     if indices.shape[0] != values.size:
@@ -202,12 +233,23 @@ def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20,
         :class:`CompletionHistory` (also indexable like the legacy dict:
         ``info['fit']``).
 
+    Warns:
+        RuntimeWarning: some slice of some core was not determined by the data
+            (``info.determined is False``).  The fit is then meaningless away
+            from the samples, however small it is.
+
     Note:
         A small ``info.fit`` says the sampled entries are reproduced; it says
         nothing about the rest of the tensor.  With ``P`` samples and
         ``sum_k r_k n_k r_{k+1}`` parameters, only the ratio of those two
         numbers makes the result meaningful, and the honest check is the error
-        on entries that were not in ``cooP``.
+        on entries that were not in ``cooP``.  The code no longer leaves that
+        to the reader: it counts the local systems the samples failed to
+        determine (``info.underdetermined_slices``, ``info.empty_slices``),
+        exposes ``info.determined``, and warns.  Measured, rank-4 tensor of
+        shape ``6x6x6`` from 38 samples: ``fit = 4.9e-31``,
+        ``converged = True``, ``determined = False``, and the returned tensor
+        is off by 580 % of the norm of the truth.
 
     Note:
         ALS on this functional is not globally convergent: the problem is not
@@ -243,6 +285,11 @@ def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20,
             f"the samples have {indices.shape[1]} modes, the tensor has {d}")
     hist.initTime = time.perf_counter() - t0
 
+    if bk.is_complex(x.cores[0]):
+        raise TypeError(
+            "x0 is complex; this solver is real (the local systems are real "
+            "least squares problems).  Casting would drop the imaginary part "
+            "and then report a small residual on half the data.")
     cores = [np.array(bk.to_numpy(c), dtype=np.float64, copy=True) for c in x.cores]
     if cores[0].shape[0] != 1 or cores[-1].shape[2] != 1:
         raise ValueError("ttSparseALS needs boundary ranks equal to 1")
@@ -254,6 +301,13 @@ def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20,
     if norm_p == 0.0:
         raise ValueError("all sampled values are zero: the problem is degenerate")
     scaled = values / norm_p
+    # ``x0`` is a guess for the data, and the sweep fits the data scaled to unit
+    # norm -- so the guess has to be scaled with it.  Without this the function
+    # returns ``||values|| * x0`` when no sweep runs, and "start from the exact
+    # solution" starts from ``||values||`` times the exact solution.  The factor
+    # goes into core 0, which the first local solve overwrites in full, so any
+    # run of one sweep or more is bit-identical either way.
+    cores[0] = cores[0] / norm_p
 
     rcond = None if alpha is None or alpha <= 0 else float(alpha)
     if verbose:
@@ -267,6 +321,7 @@ def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20,
     for sweep in range(maxnsweeps):
         t_sweep = time.perf_counter()
         empty = 0
+        undet = 0
 
         # Right interfaces for the whole sweep: cores k+1..d-1 are untouched
         # until the sweep reaches them, so these stay valid while we move right.
@@ -289,7 +344,15 @@ def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20,
                 design = rearrange(
                     np.einsum("pa,bp->pab", lft[rows], rgt[k + 1][:, rows]),
                     "p a b -> p (b a)")
-                sol = np.linalg.lstsq(design, scaled[rows], rcond=rcond)[0]
+                sol, _, lsrank, _ = np.linalg.lstsq(design, scaled[rows],
+                                                    rcond=rcond)
+                if lsrank < design.shape[1]:
+                    # Fewer independent samples than unknowns in this slice.
+                    # lstsq answers with the minimum-norm solution, which fits
+                    # the data exactly and is *arbitrary* in the null space --
+                    # a plausible number substituted for something the data
+                    # does not determine.  Count it; the run reports it.
+                    undet += 1
                 core[:, i, :] = rearrange(sol, "(b a) -> a b", a=r1)
             cores[k] = core
             lft = _idx.left_step(lft, core, indices[:, k])
@@ -299,6 +362,7 @@ def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20,
         hist.fit.append(fit)
         hist.sweepTime.append(time.perf_counter() - t_sweep)
         hist.empty_slices = empty
+        hist.underdetermined_slices = undet
         if len(hist.fit) > 1 and fit > hist.fit[-2] * (1.0 + 1e-12) + 1e-300:
             hist.monotone = False
         if verbose:
@@ -320,6 +384,16 @@ def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20,
     x = norm_p * x
     hist.ranks = [int(r) for r in x.r]
     hist.time = time.perf_counter() - t0
+    if not hist.determined:
+        total = sum(c.shape[1] for c in cores)
+        last = f"{hist.fit[-1]:.2e}" if hist.fit else "n/a"
+        warnings.warn(
+            f"ttSparseALS: of {total} slices, {hist.underdetermined_slices} had "
+            f"fewer independent samples than unknowns and {hist.empty_slices} "
+            "had none at all, so those parts of the tensor are not determined "
+            f"by the data (info.determined is False).  The reported fit ({last}) "
+            "measures the sampled entries only and says nothing about the rest.",
+            RuntimeWarning, stacklevel=2)
     if verbose:
         last = f"{hist.fit[-1]:.5e}" if hist.fit else "n/a"
         print(f"Total: {hist.time:.3f} s, stop: {hist.stop_reason}, fit: {last}")

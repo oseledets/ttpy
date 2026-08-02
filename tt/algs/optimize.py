@@ -62,7 +62,7 @@ import time
 from dataclasses import dataclass, field
 
 import numpy as np
-from einops import einsum
+from ..backend import einsum   # BLAS-routed; einops' own skips optimize=True
 
 from .. import backend as bk
 from ..core.vector import vector
@@ -170,6 +170,12 @@ def _search(evaluate, n, rmax, nswp, smooth_fun, verb, rng, label):
         ``(value, multi_index, history)``.
     """
     d = len(n)
+    if int(nswp) < 1:
+        raise ValueError(
+            f"nswp must be at least 1, got {nswp}: with no sweep the search "
+            "has looked at no entry at all and there is nothing to return")
+    if rmax is not None and int(rmax) < 1:
+        raise ValueError(f"rmax must be at least 1 (or None for no cap), got {rmax}")
     hist = MinHistory()
     t0 = time.perf_counter()
 
@@ -183,7 +189,7 @@ def _search(evaluate, n, rmax, nswp, smooth_fun, verb, rng, label):
     # -- and it is the only source of randomness in the whole method.
     for k in range(d - 1):
         cand = _idx.extend_left(left[k], n[k])
-        take = min(rmax, cand.shape[0])
+        take = cand.shape[0] if rmax is None else min(rmax, cand.shape[0])
         sel = np.sort(rng.permutation(cand.shape[0])[:take])
         left[k + 1] = cand[sel]
 
@@ -243,6 +249,13 @@ def _search(evaluate, n, rmax, nswp, smooth_fun, verb, rng, label):
                          None if right[k] is None else right[k].shape[0])
                         for k in range(d + 1)]
     hist.time = time.perf_counter() - t0
+    if best_idx is None:
+        # Only reachable when no entry ever compared smaller than +inf, i.e.
+        # every value examined was NaN.  Returning "the best seen" would then
+        # mean returning nothing at all, dressed up as an answer.
+        raise FloatingPointError(
+            f"no finite value was found in {hist.evaluations} entries examined: "
+            "the objective returned NaN everywhere the sweep looked")
     return best_val, best_idx, hist
 
 
@@ -252,9 +265,10 @@ def min_tens(tens, rmax=10, nswp=10, verb=True, smooth_fun=None, *,
 
     Args:
         tens: A :class:`tt.vector` with boundary ranks 1.
-        rmax: Cap on the number of singular vectors kept at every site.  The
-            index sets end up somewhat larger (see :func:`_search`); their
-            actual sizes are in ``history.index_sizes``.
+        rmax: Cap on the number of singular vectors kept at every site;
+            ``None`` means no cap.  The index sets end up somewhat larger (see
+            :func:`_search`); their actual sizes are in
+            ``history.index_sizes``.
         nswp: Number of sweeps.
         verb: Print every new record.
         smooth_fun: ``smooth_fun(block, lam)``, a decreasing function of the
@@ -308,7 +322,7 @@ def min_tens(tens, rmax=10, nswp=10, verb=True, smooth_fun=None, *,
     if d == 1:
         vals = np.asarray(bk.to_numpy(cores[0])).reshape(-1)
         i = int(np.argmin(vals))
-        hist = MinHistory(evaluations=vals.size, sweeps=0, index_sizes=[1, 1],
+        hist = MinHistory(evaluations=vals.size, sweeps=0, index_sizes=[(1, None), (None, 1)],
                           value=float(vals[i]), point=np.array([i]),
                           consistency=0.0)
         return (hist.value, hist.point, hist) if return_history else (hist.value, hist.point)
@@ -341,7 +355,8 @@ def min_func(fun, bounds_min, bounds_max, d=None, rmax=10, nswp=10, n0=64,
         bounds_min, bounds_max: Box of the search.  Either two scalars together
             with ``d``, or two length-``d`` sequences (then ``d`` is inferred).
         d: Number of dimensions; required when the bounds are scalars.
-        rmax: Cap on the number of singular vectors kept at every site.
+        rmax: Cap on the number of singular vectors kept at every site;
+            ``None`` means no cap.
         nswp: Number of sweeps.
         n0: Number of grid points per dimension.
         rho: Steepness of the default ``smooth_fun``: the smaller ``rho``, the
@@ -409,7 +424,7 @@ def min_func(fun, bounds_min, bounds_max, d=None, rmax=10, nswp=10, n0=64,
         j = np.arange(n[0], dtype=np.int64).reshape(-1, 1)
         vals = call(j)
         i = int(np.argmin(vals))
-        hist = MinHistory(evaluations=vals.size, sweeps=0, index_sizes=[1, 1],
+        hist = MinHistory(evaluations=vals.size, sweeps=0, index_sizes=[(1, None), (None, 1)],
                           value=float(vals[i]), point=points(j[i:i + 1])[0],
                           consistency=0.0)
         return (hist.value, hist.point, hist) if return_history else (hist.value, hist.point)

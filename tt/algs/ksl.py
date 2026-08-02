@@ -21,8 +21,14 @@ sweep is its exact reverse ``K_d S_{d-1} K_{d-1} ... S_1 K_1``.  ``scheme='first
 does the right-to-left sweep with the full ``tau`` (Lie-Trotter, order 1);
 ``scheme='symm'`` does right-to-left with ``tau/2`` followed by left-to-right
 with ``tau/2``, a palindromic composition (Strang, order 2).  The order is
-verified numerically in ``tests/test_eigb_ksl.py`` -- it is the sharpest
-statement one can make about an integrator.
+verified numerically against the dense solution of the *projected* ODE
+``y' = P_{T_y M} A y`` -- the equation this integrator discretizes, and the only
+reference against which a splitting order is visible at all
+(``tests/test_verify_eigb_ksl.py::test_ksl_order_against_the_dense_projected_flow``,
+observed 1.00 and 2.00).  Measured against ``expm(tau A) y0`` instead, the two
+schemes are indistinguishable: either the manifold contains the trajectory and
+both are exact, or it does not and the tau-independent modelling error hides the
+splitting error.
 
 The local exponentials
 ----------------------
@@ -33,6 +39,15 @@ substep, and -- the point of that estimate -- rejecting a substep costs only one
 ``expm`` of an ``(m+1)x(m+1)`` matrix, because the Krylov basis does not depend
 on ``h``.  A step that cannot reach the requested tolerance within
 ``max_substeps`` raises; it never returns a quietly wrong vector.
+
+The estimate is normalized by the norm of the *input*, and the substep control
+compares it with ``tol`` times the norm of the current iterate.  When the flow
+grows or decays by orders of magnitude over one call, that normalization and the
+error of the *answer* part company: on a strongly non-normal operator with
+``||exp(A) x|| / ||x|| ~ 1e5``, asking for ``tol = 1e-10`` delivers 5.5e-8
+relative to the result and reports ``err_est = 6.4e-2``
+(``tests/test_verify_eigb_ksl.py::test_expmv_krylov_on_a_strongly_non_normal_operator``).
+Inside KSL, where ``tau ||B||`` is small, the two agree.
 
 What the fixed rank cannot see
 ------------------------------
@@ -65,12 +80,12 @@ import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
-from einops import einsum, rearrange
+from einops import rearrange
+from ..backend import einsum   # BLAS-routed; einops' own skips optimize=True
 
 from .. import backend as bk
 from ..core import _ops
 from ..core.matrix import matrix
-from ..core.tools import matvec
 from ..core.vector import vector
 from . import _localops as lo
 
@@ -82,7 +97,9 @@ class KslHistory:
     """What the step knows about itself; recorded even with ``verb=0``.
 
     Attributes:
-        tau: The step size.
+        tau: The step size, exactly as passed (complex for a Schroedinger step
+            -- recording only its real part would make the history lie about
+            what was integrated).
         scheme: ``'symm'`` (order 2) or ``'first'`` (order 1).
         steps: One dict per local exponential, with keys ``sweep, site, kind
             ('K' or 'S'), size, substeps, krylov, err_est, time``.
@@ -99,7 +116,7 @@ class KslHistory:
         time: Wall-clock seconds.
     """
 
-    tau: float
+    tau: complex
     scheme: str
     steps: list = field(default_factory=list)
     max_local_err: float = 0.0
@@ -111,7 +128,7 @@ class KslHistory:
     time: float = 0.0
 
     def __repr__(self):
-        return (f"KslHistory(scheme={self.scheme}, tau={self.tau:.3E}, "
+        return (f"KslHistory(scheme={self.scheme}, tau={self.tau}, "
                 f"substeps={self.total_substeps}, "
                 f"max_local_err={self.max_local_err:.2e}, "
                 f"defect_rel={self.defect_rel:.2e}, "
@@ -283,13 +300,11 @@ def tangent_defect(A, y):
     Returns:
         ``(defect, ||A y||)``, both floats.
     """
-    z = matvec(A, y)
-    zc = z.cores
     yc = _ops.orthogonalize(y.cores, center=0)   # cores 1..d-1 right-orthogonal
     d = len(yc)
-    dt = bk.result_dtype(bk.dtype_of(yc[0]), bk.dtype_of(zc[0]))
+    dt = bk.result_dtype(A.dtype, y.dtype)
     yc = _ops.to_dtype(yc, dt)
-    zc = _ops.to_dtype(zc, dt)
+    zc = _ops.matvec_cores(lo.operator_cores(A, yc[0], dt), yc)
 
     mr = [None] * (d + 1)
     mr[d] = bk.eye(1, 1, dtype=dt, like=yc[0])
@@ -436,9 +451,9 @@ def ksl(A, y0, tau, verb=1, scheme="symm", space=8, rmax=2000, use_normest=1,
     dt = bk.result_dtype(A.dtype, y0.dtype)
     if isinstance(tau, complex) and tau.imag != 0:
         dt = bk.complex_dtype(dt)
-    acores = [bk.asarray(c, dt) for c in matrix.to_list(A)]
     cores = [bk.asarray(c, dt) for c in y0.cores]
-    hist = KslHistory(tau=float(np.real(tau)), scheme=scheme)
+    acores = lo.operator_cores(A, cores[0], dt)
+    hist = KslHistory(tau=tau, scheme=scheme)
     if verb > 0:
         kind = "complex" if bk.is_complex(cores[0]) else "real"
         tau_str = str(tau) if isinstance(tau, complex) else f"{tau:.1E}"

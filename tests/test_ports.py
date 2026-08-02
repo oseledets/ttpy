@@ -45,6 +45,16 @@ def dense_tangent_projector(X, tol=1e-10):
           - sum_k  P_{<=k} (x) P_{>k}
 
     (Lubich, Oseledets, Vandereycken 2015, Thm 3.1).
+
+    Complex case: the projector onto the *row* space of an unfolding is built
+    from ``vh[:r].T`` -- the rows of ``vh`` placed as columns, **not**
+    conjugated.  ``vh[:r].conj().T`` projects onto the complex conjugate of the
+    row space instead; it is Hermitian, idempotent and has the right trace, so
+    every invariant test still passes, and it disagrees with the truth by 74 %
+    on the first case below that is not of maximal rank.  Verified against a
+    basis of the tangent space assembled straight from its definition
+    (``span_k tau(C_1, ..., dC_k, ..., C_d)``): this version agrees to 2.6e-15,
+    the conjugated one does not even fix the tangent space (0.47).
     """
     n = [int(v) for v in X.n]
     d = len(n)
@@ -56,7 +66,7 @@ def dense_tangent_projector(X, tol=1e-10):
         u, s, vh = np.linalg.svd(unf, full_matrices=False)
         r = max(1, int(np.sum(s > s[0] * tol)))
         left[k] = u[:, :r] @ u[:, :r].conj().T
-        v = vh[:r].conj().T
+        v = vh[:r].T
         right[k - 1] = v @ v.conj().T
     proj = np.zeros((full.size, full.size), dtype=full.dtype)
     for k in range(d):
@@ -65,6 +75,20 @@ def dense_tangent_projector(X, tol=1e-10):
     for k in range(d - 1):
         proj = proj - kron_f([left[k + 1], right[k]])
     return proj
+
+
+def tangent_dimension(X):
+    """``sum_k r_k n_k r_{k+1} - sum_{k=1}^{d-1} r_k^2``.
+
+    A comparison against a dense projector is worthless when this equals
+    ``prod(n)``: the tangent space is then the whole space, ``P = I``, and any
+    formula of the right shape passes.  Tests that use the dense oracle assert
+    that the case is not degenerate.
+    """
+    r = [int(v) for v in X.r]
+    n = [int(v) for v in X.n]
+    return (sum(r[k] * n[k] * r[k + 1] for k in range(len(n)))
+            - sum(r[k] ** 2 for k in range(1, len(n))))
 
 
 def random_tangent(X, rng):
@@ -390,9 +414,13 @@ def test_completion_empty_slice_keeps_previous_value():
     coo = {"indices": idx, "values": dense[tuple(idx[:, m] for m in range(3))]}
     x0 = low_rank_tt(n, 2, rng)
     before = np.asarray(x0.cores[2])[:, 3, :].copy()
-    x, info = ttSparseALS(coo, n, x0=x0, tol=0.0, maxnsweeps=1, verbose=False,
-                          alpha=0.0)
+    # an untouched slice is by definition not determined by the data, and the
+    # run is required to say so
+    with pytest.warns(RuntimeWarning, match="not determined by the data"):
+        x, info = ttSparseALS(coo, n, x0=x0, tol=0.0, maxnsweeps=1,
+                              verbose=False, alpha=0.0)
     assert info.empty_slices == 1
+    assert not info.determined
     got = np.asarray(x.cores[2])[:, 3, :]
     assert np.linalg.norm(got) > 0.0
     assert rel(got, before) < 1e-12       # the data scaling lives in core 0
@@ -414,23 +442,44 @@ def test_completion_rejects_bad_input():
 # 3. tt.algs.riemannian -- project / projector_splitting_add / tt_qr
 # =============================================================================
 
-@pytest.mark.parametrize("n,ranks", [([4, 4, 4], [1, 4, 4, 1]),
+@pytest.mark.parametrize("n,ranks", [([4, 4, 4], [1, 2, 2, 1]),
                                      ([2, 3, 4], [1, 2, 3, 1]),
                                      ([3, 3, 3, 3], [1, 3, 3, 3, 1])])
 def test_project_matches_dense_projector(n, ranks):
     X = tt.rand(n, r=ranks).round(0.0)
+    # A degenerate case (tangent space = whole space, P = I) would let any
+    # formula of the right shape through; refuse to call that a test.
+    assert tangent_dimension(X) < int(np.prod(n)), "degenerate case, P = I"
     Z = tt.rand(n, r=2)
     got = flat(project(X, Z))
     want = dense_tangent_projector(X) @ flat(Z)
     assert rel(got, want) < 1e-10
 
 
+def test_project_is_the_identity_at_a_point_of_maximal_rank():
+    """The complementary case: when the tangent space is the whole space the
+    projection must be the identity, whatever the formula does internally."""
+    n = [4, 4, 4]
+    X = tt.rand(n, r=[1, 4, 4, 1]).round(0.0)
+    assert tangent_dimension(X) == int(np.prod(n))
+    Z = tt.rand(n, r=2)
+    assert rel(flat(project(X, Z)), flat(Z)) < 1e-10
+
+
 def test_dense_projector_is_a_projector():
-    """Sanity of the oracle itself, so a failure above is not its fault."""
-    X = tt.rand([3, 4, 3], r=[1, 3, 3, 1]).round(0.0)
-    p = dense_tangent_projector(X)
-    assert rel(p @ p, p) < 1e-10
-    assert rel(p.T, p) < 1e-10
+    """Sanity of the oracle itself, so a failure above is not its fault.
+
+    Checked at a point that is *not* of maximal rank -- at a maximal-rank point
+    the oracle is the identity and the assertions below are free.
+    """
+    for X in (tt.rand([3, 4, 3], r=[1, 2, 2, 1]).round(0.0),
+              tt.rand([3, 4, 3], r=[1, 2, 2, 1]).round(0.0).astype("complex128")):
+        assert tangent_dimension(X) < int(np.prod([int(v) for v in X.n]))
+        p = dense_tangent_projector(X)
+        assert rel(p @ p, p) < 1e-10
+        assert rel(p.conj().T, p) < 1e-10               # Hermitian, not symmetric
+        assert abs(np.trace(p).real - tangent_dimension(X)) < 1e-8
+        assert rel(p @ flat(X), flat(X)) < 1e-10        # X is its own tangent
 
 
 def test_project_is_idempotent_and_fixes_tangent_vectors():
@@ -459,7 +508,8 @@ def test_project_residual_is_orthogonal_to_the_tangent_space():
 
 
 def test_project_of_a_list_is_the_projection_of_the_sum():
-    X = tt.rand([4, 4, 4], r=[1, 4, 4, 1]).round(0.0)
+    X = tt.rand([4, 4, 4], r=[1, 2, 2, 1]).round(0.0)
+    assert tangent_dimension(X) < 64, "degenerate case, P = I"
     zs = [tt.rand([4, 4, 4], r=2) for _ in range(5)]
     got = flat(project(X, zs))
     total = zs[0]
@@ -470,9 +520,19 @@ def test_project_of_a_list_is_the_projection_of_the_sum():
 
 
 def test_project_complex():
+    """Regime: complex128, ``d = 3``, ``n = [3, 4, 5]``, TT rank 2.
+
+    The rank matters.  This test used to run at ``n = [3, 4, 3]`` with rank 3,
+    where the tangent space is all 36 dimensions and ``P = I`` -- so it passed
+    for any projector-shaped formula, including one built on the conjugate of
+    the row space.  The case below has a 24-dimensional tangent space inside a
+    60-dimensional space and separates them by 74 %.
+    """
     rng = np.random.default_rng(5)
-    X = low_rank_tt([3, 4, 3], 3, rng, dtype=np.complex128)
-    Z = low_rank_tt([3, 4, 3], 2, rng, dtype=np.complex128)
+    n = [3, 4, 5]
+    X = low_rank_tt(n, 2, rng, dtype=np.complex128)
+    assert tangent_dimension(X) < int(np.prod(n)), "degenerate case, P = I"
+    Z = low_rank_tt(n, 2, rng, dtype=np.complex128)
     got = flat(project(X, Z))
     want = dense_tangent_projector(X) @ flat(Z)
     assert rel(got, want) < 1e-10

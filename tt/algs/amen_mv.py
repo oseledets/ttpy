@@ -64,7 +64,8 @@ import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
-from einops import einsum, rearrange
+from einops import rearrange
+from ..backend import einsum   # BLAS-routed; einops' own skips optimize=True
 
 from .. import backend as bk
 from ..core import _ops
@@ -142,6 +143,12 @@ def _gram_svd(a):
     is exactly what an ALS sweep depends on.  Never use ``renorm='gram'`` when
     the blocks may be ill-conditioned; see the ``amen_mv`` docstring for the
     end-to-end number.
+
+    An exactly zero ``a`` (which happens whenever a block of ``x`` or of ``A``
+    is zero) has no singular direction to normalize by; the factorization
+    ``e_1 * 0 * e_1^H`` is returned, which is exact and has an orthonormal
+    ``u``.  Dividing by ``s[0] = 0`` instead would poison the whole sweep with
+    ``NaN`` -- see ``test_zero_input_is_zero_not_nan``.
     """
     ah = rearrange(a.conj(), "i j -> j i")
     w, v = bk.eigh(ah @ a)                    # ascending eigenvalues
@@ -149,6 +156,11 @@ def _gram_svd(a):
     order = np.arange(w.shape[0] - 1, -1, -1)
     s_np = np.sqrt(np.clip(np.asarray(bk.to_numpy(w), dtype=np.float64), 0.0,
                            None))[order]
+    if s_np[0] == 0.0:
+        dt = bk.dtype_of(a)
+        return (bk.eye(a.shape[0], 1, dtype=dt, like=a),
+                bk.zeros((1,), dtype=bk.real_dtype(dt), like=a),
+                bk.zeros((1, a.shape[1]), dtype=dt, like=a))
     keep = max(1, int(np.sum(s_np > s_np[0] * np.sqrt(bk.eps_of(bk.dtype_of(a))))))
     v = v[:, order[:keep]]
     s = bk.asarray(s_np[:keep], bk.real_dtype(bk.dtype_of(a)),
@@ -329,6 +341,20 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4, kickrank2=0,
         tol: Relative Frobenius accuracy.  Blocks are truncated at
             ``tol / sqrt(d)`` and the iteration stops when the largest relative
             change of a block over a forward half-sweep drops below ``tol``.
+            It is a per-block threshold, not a certificate on ``||y - Ax||``:
+            the delivered error is usually at or below ``tol`` but can exceed
+            it, because the ALS frames are not the optimal ones and because the
+            run starts from a *random* ``y0``.  Measured (float64, ``d=6``,
+            ``n=m=4``, ``r_A=r_x=4``, ``tol=1e-1``, 15 seeds, optimal SVD
+            truncation of the same product = ``6.0e-2``): 10 seeds land at
+            ``7.2e-2``, 5 seeds land at ``1.8e-1..2.0e-1`` -- twice the request.
+            Pin ``seed`` if a reproducible accuracy is needed at a loose
+            ``tol``.  The spread closes as ``tol`` tightens; on a product with a
+            decaying spectrum the delivered error tracks the optimal truncation
+            to three digits from ``tol=1e-2`` down (see
+            ``test_error_tracks_tol_where_truncation_is_active``).  ``tol=0``
+            disables truncation entirely (and never satisfies the stopping
+            test, so the run always spends ``nswp`` sweeps and warns).
         y: Initial guess (default: a random rank-2 TT).
         z: Initial guess for the residual ``A x - y`` (default: random of rank
             ``kickrank + kickrank2``).
@@ -380,10 +406,16 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4, kickrank2=0,
         ``z`` is the last approximation of the residual ``A x - y`` (scaled so
         that ``||y|| = 1``); pass it back as ``z0`` to warm-start a related
         matvec.  It is ``None`` when ``kickrank + kickrank2 == 0``.
+        Precisely, ``z`` is an orthogonal projection of ``r = (A x - y)/||y||``
+        onto a rank-``kickrank`` subspace, so ``<z, r> = ||z||^2`` -- measured
+        to four digits, and the only property that distinguishes a correct ``z``
+        from an arbitrary enrichment subspace, since the accuracy of ``y`` is
+        blind to it (``test_z_is_the_projection_of_the_residual``).
 
     Raises:
-        ValueError: on inconsistent shapes, or when ``init_qr=False`` is a
-            false promise.
+        ValueError: on inconsistent shapes (of ``A``, ``x``, ``y`` or ``z``),
+            on ``nswp < 1``, ``tol < 0`` or a negative kick rank, and when
+            ``init_qr=False`` is a false promise.
 
     Warns:
         UserWarning: when ``nswp`` sweeps were spent without reaching ``tol``.
@@ -394,6 +426,17 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4, kickrank2=0,
     t_start = time.time()
     if renorm not in ("direct", "gram"):
         raise ValueError(f"renorm must be 'direct' or 'gram', got {renorm!r}")
+    # These three used to be accepted and silently reinterpreted: nswp < 1 never
+    # hit the ``swp == nswp`` stop and looped forever on a problem that does not
+    # converge, and a negative tol turned both the truncation and the stopping
+    # test into no-ops while the warning printed "max_dx > tol=-1e-08".
+    if int(nswp) < 1:
+        raise ValueError(f"nswp must be at least 1, got {nswp}")
+    if float(tol) < 0.0:
+        raise ValueError(f"tol must be non-negative, got {tol}")
+    if int(kickrank) < 0 or int(kickrank2) < 0:
+        raise ValueError(f"kickrank and kickrank2 must be non-negative, got "
+                         f"{kickrank}, {kickrank2}")
 
     xc, x_was_vector = _vector_cores(x)
     d = len(xc)
@@ -434,6 +477,13 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4, kickrank2=0,
         else:
             zc, _ = _vector_cores(z)
             zc = _ops.to_dtype(zc, dtype)
+            # z0 used to be taken on trust: a wrong mode size surfaced as an
+            # einops error inside the sweep, a wrong length as an IndexError.
+            if len(zc) != d:
+                raise ValueError(f"z has {len(zc)} cores, x has {d}")
+            if [int(c.shape[1]) for c in zc] != n:
+                raise ValueError(f"z has modes {[int(c.shape[1]) for c in zc]}, "
+                                 f"A has row modes {n}")
         rz = _ops.ranks(zc)
     else:
         zc, rz = None, None
@@ -451,7 +501,11 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4, kickrank2=0,
         phizy[0] = flat_one
         phizy[d] = flat_one
 
-    nrms = np.ones(d)
+    # A plain Python list, not an np.ones(d): under NEP 50 dividing a float32
+    # core by an np.float64 element (``crz / nrms[i]``, ``extnrm=nrms[i]``)
+    # promotes it, and the whole run silently ran -- and returned -- in
+    # float64 for a float32 problem.  Python floats are weak.
+    nrms = [1.0] * d
     hist = AmenMvHistory(tol=float(tol))
 
     # --- initial left-to-right orthogonalization of y (and z) ----------------
@@ -623,7 +677,7 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4, kickrank2=0,
                 if max_dx < tol:
                     hist.converged = True
                     break
-                if swp == nswp:
+                if swp >= nswp:
                     break
             yc[i] = cry
             if direct > 0:
@@ -650,7 +704,11 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4, kickrank2=0,
 
     # Put the accumulated scale back, spread evenly over the cores: the stored
     # cores are all O(1), so this cannot overflow the way prod(nrms) could.
-    scale = np.exp(np.sum(np.log(nrms)) / d)
+    # ``float(...)``, not the numpy scalar: under NEP 50 a np.float64 scalar
+    # promotes a float32 core to float64, so the numpy backend used to return a
+    # float64 answer for a float32 problem while the torch backend returned
+    # float32.  A Python float is weak and keeps the working dtype.
+    scale = float(np.exp(np.sum(np.log(nrms)) / d))
     yc = [c * scale for c in yc]
 
     hist.ranks = _ops.ranks(yc)
@@ -669,9 +727,18 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4, kickrank2=0,
     return yc, zc
 
 
-def _check_left_orthogonal(core, k, tol=1e-8):
-    """Fail loudly if ``init_qr=False`` was a false promise."""
+def _check_left_orthogonal(core, k, tol=None):
+    """Fail loudly if ``init_qr=False`` was a false promise.
+
+    The threshold has to follow the working precision: a genuinely orthogonal
+    float32 core comes out of a QR at ``||Q^H Q - I|| ~ 5e-8``, so the fixed
+    ``1e-8`` of the first version rejected correct input in float32.  ``1e3 *
+    eps`` is 1.2e-4 in float32 and stays at the old 1e-8 in float64, while a
+    core that is not orthogonal at all misses by O(1).
+    """
     q = rearrange(core, "a n b -> (a n) b")
+    if tol is None:
+        tol = max(1e-8, 1e3 * bk.eps_of(bk.dtype_of(q)))
     qh = rearrange(q.conj(), "i j -> j i")
     err = float(bk.norm(qh @ q - bk.eye(q.shape[1], dtype=bk.dtype_of(q),
                                         like=q)))

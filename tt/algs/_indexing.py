@@ -39,7 +39,7 @@ through :mod:`einops` and work unchanged on torch.
 from __future__ import annotations
 
 import numpy as np
-from einops import einsum
+from ..backend import einsum   # BLAS-routed; einops' own skips optimize=True
 
 from .. import backend as bk
 

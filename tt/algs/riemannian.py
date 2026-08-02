@@ -53,7 +53,8 @@ References
 from __future__ import annotations
 
 import numpy as np
-from einops import einsum, rearrange
+from einops import rearrange
+from ..backend import einsum   # BLAS-routed; einops' own skips optimize=True
 
 from .. import backend as bk
 from ..core import _ops
@@ -110,21 +111,80 @@ def _check_boundary(cores, what):
             f"{cores[0].shape[0]}, r[d]={cores[-1].shape[2]}")
 
 
+def _require_full_rank(cores, what):
+    """Fail unless every unfolding of the tensor really has the stated TT rank.
+
+    The tangent space of the fixed-rank manifold is only defined at a point of
+    *exactly* that rank; at a rank-deficient representation the manifold has a
+    corner and the closed-form projector below returns a projection onto a
+    strictly larger space, which is not the orthogonal projection onto anything
+    the caller asked for.  Measured on a rank-1 tensor written with TT ranks
+    ``(1, 2, 2, 1)``: the formula returns an answer that differs from the dense
+    tangent projector at that point by 31 % of its norm, silently.
+
+    The test is exact rather than heuristic.  Orthogonalize right to left, then
+    sweep left to right with a QR: at site ``k`` the triangular factor ``R_k``
+    of the QR has *exactly* the singular values of the ``(k+1)``-st unfolding of
+    the tensor, because the accumulated left frame and every remaining right
+    frame are orthonormal.  So a rank drop of an unfolding is a small singular
+    value of ``R_k``, measured against the largest one -- which is the ordinary
+    numerical-rank criterion, at the ordinary LAPACK threshold.
+
+    Args:
+        cores: Core list; not modified.
+        what: Name of the caller, used in the message.
+
+    Raises:
+        ValueError: some unfolding is numerically rank deficient.  The message
+            carries the site, the stated rank and the measured singular value
+            ratio, so the caller can decide whether to ``round`` the point onto
+            its true rank or to move it off the corner.
+    """
+    d = len(cores)
+    if d < 2:
+        return
+    work = _ops.orthogonalize([c for c in cores], center=0)
+    for k in range(d - 1):
+        q, s = lo.left_orthogonalize(work[k])
+        sv = np.asarray(bk.to_numpy(bk.svd(s)[1]), dtype=np.float64)
+        tol = max(s.shape) * bk.eps_of(bk.dtype_of(s))
+        if sv.size and sv[-1] <= tol * sv[0]:
+            raise ValueError(
+                f"{what}: unfolding {k + 1} of X has TT rank "
+                f"{work[k].shape[2]} but numerical rank "
+                f"{int(np.sum(sv > tol * sv[0]))} (smallest/largest singular "
+                f"value = {sv[-1] / sv[0]:.2e} <= {tol:.2e}).  The tangent "
+                "space of the fixed-rank manifold is not defined at a "
+                "rank-deficient point; round X onto its true rank first "
+                "(X.round(1e-14), not X.round(0) -- rounding to eps = 0 keeps "
+                "every singular value by definition and removes nothing).")
+        work[k] = q
+        work[k + 1] = einsum(s, work[k + 1], "c a, a n b -> c n b")
+
+
 def project(X, Z):
     """Orthogonal projection of ``Z`` onto the tangent space of the manifold at ``X``.
 
     Args:
         X: A :class:`tt.vector`; the point of the fixed-rank manifold.  Its
-            ranks are made minimal first (``X.round(0)``), because a redundant
-            rank is a point where the manifold is not smooth and the formula
-            below stops meaning anything.
+            representation must have exactly the rank it claims: a redundant
+            rank is a corner of the manifold, where the tangent space is not
+            defined and the formula below silently projects onto a larger
+            space.  This is checked (:func:`_require_full_rank`) and refused,
+            because the wrong answer is otherwise indistinguishable from the
+            right one -- measured 31 % relative error on a rank-1 tensor
+            written with TT ranks ``(1, 2, 2, 1)``.
         Z: A :class:`tt.vector`, or a list of them.  For a list the projection
             of the *sum* is returned, ``P_X(sum_i Z_i)``, computed without ever
             forming the sum (whose rank would be the sum of the ranks).
 
     Returns:
         tt.vector: ``P_X Z``, with TT ranks ``2 r(X)`` (the representation is
-        not rank-minimal; call ``.round(0)`` if the minimal one is wanted).
+        not rank-minimal; call ``.round(1e-14)`` if the minimal one is wanted).
+
+    Raises:
+        ValueError: ``X`` is rank deficient (see above), the mode sizes of
+            ``X`` and ``Z`` differ, or a boundary rank is not 1.
 
     Note:
         ``P_X`` is a projector: ``P_X P_X = P_X``, ``P_X z = z`` for tangent
@@ -142,11 +202,16 @@ def project(X, Z):
     if not isinstance(X, vector):
         raise TypeError(f"project expects a tt.vector X, got {type(X)!r}")
 
+    # round(0) only drops ranks that are structurally impossible (r_{k+1} above
+    # r_k n_k); it cannot drop a numerically deficient one, because "discarded
+    # tail below eps = 0" is false for every nonzero tail by definition.  The
+    # numerical check is _require_full_rank below.
     X = X.round(eps=0)
     _check_same_modes(X, z_list, "project")
     d, n = X.d, [int(v) for v in X.n]
     coresX = list(X.cores)
     _check_boundary(coresX, "project")
+    _require_full_rank(coresX, "project")
     for z in z_list:
         _check_boundary(list(z.cores), "project")
     coresZ = [list(z.cores) for z in z_list]
@@ -247,6 +312,15 @@ def projector_splitting_add(Y, delta):
         the result *is* ``Y + delta``, in exact arithmetic and to roundoff in
         practice.  Otherwise it is a first-order accurate retraction:
         ``psa(Y, t Z) = Y + t P_Y Z + O(t^2)``.  Both are tested.
+
+    Note:
+        Unlike :func:`project`, a numerically rank-deficient ``Y`` is *not*
+        refused here: the splitting only ever needs the frames themselves, not
+        the space they are supposed to span exactly, and exactness was measured
+        to hold at such a point (1.3e-15 relative, rank-1 ``Y`` written with TT
+        ranks ``(1, 2, 2, 1)``, ``d = 3``, ``n = 4``, float64).  The retraction
+        is then onto the manifold of the *stated* rank, which is what the
+        caller asked for.
     """
     if not isinstance(Y, vector) or not isinstance(delta, vector):
         raise TypeError("projector_splitting_add expects two tt.vectors, got "
@@ -319,9 +393,15 @@ def tt_qr(X, left_to_right=True):
         ``X = Q x_last R`` (or ``R x_first Q``).
 
     Note:
-        Redundant ranks are removed first (``X.round(0)``); a QR of a
-        rank-deficient representation would silently return cores whose
-        columns are not independent.
+        Structurally impossible ranks are removed first (``X.round(0)``).  A
+        *numerically* rank-deficient representation is left alone and is not an
+        error here: ``bk.qr`` still returns cores with orthonormal columns and
+        ``X = Q R`` still holds to roundoff -- only the columns of ``Q`` that
+        correspond to a zero on the diagonal of ``R`` are arbitrary.  Verified
+        on a rank-1 tensor written with TT ranks ``(1, 2, 2, 1)``:
+        orthogonality and reconstruction both hold to 1e-15.  (:func:`project`
+        does refuse such a point, because there the deficiency changes the
+        answer.)
     """
     if not isinstance(X, vector):
         raise TypeError(f"tt_qr expects a tt.vector, got {type(X)!r}")
