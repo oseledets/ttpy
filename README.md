@@ -7,8 +7,10 @@ pip install ttpy          # or: uv pip install ttpy
 ```
 
 No Fortran, no `f2py`, no `numpy.distutils`, no compiler, no git submodules.
-The wheel is `py3-none-any` and weighs 26 KB; installing it into a fresh
-environment takes under a second.
+The wheel is `py3-none-any`, 128 KB, and installs into a fresh environment in a
+quarter of a second. For comparison, building ttpy 1.x on a current machine
+needs six separate workarounds — they are written down in
+[docs/LEGACY_BUILD.md](docs/LEGACY_BUILD.md).
 
 ```python
 import tt
@@ -68,6 +70,19 @@ python bench/bench_core.py --backends numpy torch --out bench/results/core.json
 
 Requirements live in [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) and are the
 source of truth: the code should be reproducible from them and the tests.
+
+## Where it stands
+
+521 tests, all against dense ground truth or a mathematical invariant — never
+against the old implementation. Measured against the Fortran ttpy on one host
+(details and raw data in [docs/PERFORMANCE.md](docs/PERFORMANCE.md)): faster on
+rounding (1.2-1.5x), on `dot` (2x), on `tt_svd` (11.9x) and on `amen_solve`
+(2.8x, and 60x more accurate on the same problem).
+
+Testing against dense truth also turned up four defects in the old package
+(transposed `Toeplitz` and `qshift`, a plainly wrong `IpaS`, a broken K/S order
+in the real branch of the KSL integrator) and three in this one, all fixed and
+documented in [docs/COMPAT.md](docs/COMPAT.md).
 
 ## References
 
