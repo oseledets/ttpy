@@ -249,7 +249,13 @@ def randomized_round(cores, rmax, oversampling=10, seed=None, return_error=False
         # pattern straight to np.einsum, which without optimize=True evaluates a
         # 3-operand contraction by brute force (measured: 316x slower here)
         tmp = einsum(cores[k], W[k + 1], "a n b, b c -> a n c")
-        W[k] = einsum(tmp, sketch[k], "a n c, l n c -> a l")
+        wk = einsum(tmp, sketch[k], "a n c, l n c -> a l")
+        # Normalize the partial sketch. The product of d Gaussian cores grows
+        # like l^(d/2) and overflows (float32 at d=60, l=110; float64 is only a
+        # few hundred dimensions behind). Scaling is free: the QR below uses
+        # only the column space of the sketch, which a scalar cannot change.
+        scale = bk.norm(wk)
+        W[k] = wk / scale if scale > 0 else wk
 
     out = []
     carry = None  # (l_{k-1}, r_{k-1}) factor pushed into the next core
