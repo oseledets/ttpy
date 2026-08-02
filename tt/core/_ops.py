@@ -21,7 +21,8 @@ from einops import einsum, rearrange
 from .. import backend as bk
 
 __all__ = [
-    "chop", "tt_svd", "full", "orthogonalize", "round_cores", "add", "scale",
+    "chop", "tt_svd", "full", "orthogonalize", "round_cores", "randomized_round",
+    "add", "scale",
     "hadamard", "dot", "norm", "kron", "sub", "ranks", "modes", "check_cores",
     "to_dtype", "matvec_cores", "matmat_cores",
 ]
@@ -177,6 +178,97 @@ def round_cores(cores, eps=1e-14, rmax=None):
         p0, pn, p1 = out[k + 1].shape
         out[k + 1] = (tail @ out[k + 1].reshape((p0, pn * p1))).reshape((rnew, pn, p1))
     return out
+
+
+def random_tt(modes, ranks, dtype="float64", like=None, seed=None):
+    """Gaussian TT with the given mode sizes and ranks (the sketch tensor)."""
+    rng = np.random.default_rng(seed)
+    cores = []
+    for k, n in enumerate(modes):
+        shape = (int(ranks[k]), int(n), int(ranks[k + 1]))
+        if like is None:
+            cores.append(bk.randn(shape, dtype=dtype, rng=rng))
+        else:
+            cores.append(bk.asarray(rng.standard_normal(shape), dtype,
+                                    backend=bk.backend_of(like)))
+    return cores
+
+
+def randomized_round(cores, rmax, oversampling=10, seed=None, return_error=False):
+    """Round to a fixed maximal rank by randomized sketching.
+
+    "Randomize-then-orthogonalize" (Al Daas, Ballard, Cazeaux, Hallman,
+    Miedlar, Pasha, Reid, Saibaba, *Randomized algorithms for rounding in the
+    Tensor-Train format*, SIAM J. Sci. Comput. 45(1), 2023, arXiv:2110.04393).
+
+    Instead of one SVD per core, the tensor is sketched against a random TT and
+    only QR factorizations of ``(r*n, l)`` blocks are taken.  That replaces the
+    O(d n r^3) SVD chain by matrix multiplications, which is what makes this the
+    fast path on a GPU: it is bandwidth- and GEMM-bound rather than
+    LAPACK-latency-bound.
+
+    The tensor is first sketched to rank ``rmax + oversampling`` and then
+    truncated deterministically to ``rmax``; the second step is cheap because it
+    runs on the already-small sketched tensor, and it is what makes the result
+    quasi-optimal rather than merely "in the right subspace".
+
+    ``Y`` is an orthogonal projection of ``X``, so
+    ``||X - Y||^2 = ||X||^2 - ||Y||^2`` holds exactly in exact arithmetic.  In
+    floating point that difference cancels: when the error is small the computed
+    value is meaningless below ``||X|| * sqrt(eps)``.  ``return_error`` therefore
+    reports an **upper bound** clamped at that resolution floor — a saturated
+    bound is honest, a confident tiny number would not be.  If you need the true
+    error at that level, compute ``(x - y).norm()`` yourself and pay for it.
+
+    Args:
+        cores: core list to round.
+        rmax: target maximal TT rank of the result.
+        oversampling: extra sketch dimensions (sketch rank ``rmax + oversampling``).
+        seed: seed for the sketch; pass one to make a run reproducible.
+        return_error: also return the upper bound on the Frobenius error.
+
+    Returns:
+        The rounded core list, or ``(cores, error_bound)`` if ``return_error``.
+    """
+    check_cores(cores)
+    d = len(cores)
+    if d == 1:
+        return (list(cores), 0.0) if return_error else list(cores)
+    n = modes(cores)
+    r = ranks(cores)
+    sketch_rank = int(rmax) + int(oversampling)
+    ell = [r[0]] + [min(sketch_rank, r[k]) for k in range(1, d)] + [r[d]]
+
+    sketch = random_tt(n, ell, dtype=bk.dtype_of(cores[0]), like=cores[0], seed=seed)
+
+    # right-to-left partial contractions W[k]: (r_k, l_k)
+    W = [None] * (d + 1)
+    W[d] = bk.eye(r[d], ell[d], dtype=bk.dtype_of(cores[0]), like=cores[0])
+    for k in range(d - 1, 0, -1):
+        W[k] = einsum(cores[k], W[k + 1], sketch[k],
+                      "a n b, b c, l n c -> a l")
+
+    out = []
+    carry = None  # (l_{k-1}, r_{k-1}) factor pushed into the next core
+    for k in range(d - 1):
+        cur = cores[k] if carry is None else einsum(carry, cores[k],
+                                                    "l a, a n b -> l n b")
+        sketched = einsum(cur, W[k + 1], "l n b, b c -> l n c")
+        q, _ = bk.qr(rearrange(sketched, "l n c -> (l n) c"))
+        rnew = q.shape[1]
+        out.append(rearrange(q, "(l n) k -> l n k", n=n[k]))
+        carry = einsum(rearrange(q, "(l n) k -> l n k", n=n[k]), cur,
+                       "l n k, l n b -> k b")
+    out.append(einsum(carry, cores[d - 1], "k a, a n b -> k n b"))
+    if max(ranks(out)) > int(rmax):
+        out = round_cores(out, 0.0, int(rmax))
+
+    if not return_error:
+        return out
+    nx, ny = norm(cores), norm(out)
+    gap = float(np.sqrt(max(nx ** 2 - ny ** 2, 0.0)))
+    floor = float(nx) * np.sqrt(bk.eps_of(bk.dtype_of(cores[0])))
+    return out, max(gap, floor)
 
 
 # --- arithmetic --------------------------------------------------------------

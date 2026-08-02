@@ -363,3 +363,37 @@ def test_bad_core_shape_raises():
 def test_reshape_size_mismatch_raises():
     with pytest.raises(ValueError):
         tt.reshape(tt.rand([4, 4], r=2), [3, 3])
+
+
+# --- randomized rounding -----------------------------------------------------
+
+def test_randomized_round_matches_svd_accuracy():
+    """A sketched rounding must be close to the quasi-optimal SVD rounding."""
+    rng = np.random.default_rng(5)
+    d, n, r = 12, 2, 20
+    ranks = [1] + [r] * (d - 1) + [1]
+    cores = [rng.standard_normal((ranks[k], n, ranks[k + 1])) for k in range(d)]
+    x = tt.vector.from_list(cores)
+    for target in (4, 8, 12):
+        svd = x.round(0.0, rmax=target)
+        rnd, err = x.round(rmax=target, method="randomized", seed=0,
+                           return_error=True)
+        assert max(rnd.r) <= target, (target, list(rnd.r))
+        e_svd = (x - svd).norm()
+        e_rnd = (x - rnd).norm()
+        assert e_rnd <= 3 * e_svd + 1e-12, (target, e_rnd, e_svd)
+        # the reported number is an upper bound that saturates at ||x||*sqrt(eps)
+        floor = x.norm() * np.sqrt(np.finfo(np.float64).eps)
+        assert err >= e_rnd - 1e-9 * x.norm(), (err, e_rnd)
+        assert err <= max(3 * e_rnd, 2 * floor), (err, e_rnd, floor)
+
+
+def test_randomized_round_is_exact_for_exactly_low_rank():
+    x = tt.rand([3, 4, 5, 4, 3], r=4)
+    y = x.round(rmax=4, method="randomized", seed=1)
+    assert rel(y.full(), x.full()) < 1e-10
+
+
+def test_randomized_round_demands_a_rank():
+    with pytest.raises(ValueError):
+        tt.rand([2, 2, 2], r=2).round(1e-8, method="randomized")

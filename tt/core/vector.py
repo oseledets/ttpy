@@ -247,10 +247,45 @@ class vector(object):
 
     # --- algebra -------------------------------------------------------------
 
-    def round(self, eps=1e-14, rmax=None):
-        """Truncate the ranks to relative Frobenius accuracy ``eps``."""
+    def round(self, eps=1e-14, rmax=None, method="svd", oversampling=10,
+              seed=None, return_error=False):
+        """Truncate the ranks to relative Frobenius accuracy ``eps``.
+
+        Args:
+            eps: relative Frobenius accuracy (ignored by the randomized method,
+                which targets a rank instead).
+            rmax: maximal TT rank; required for ``method="randomized"``.
+            method: ``"svd"`` (deterministic, quasi-optimal) or ``"randomized"``
+                (sketching, no SVD chain — much faster for large ranks and the
+                path that actually wins on a GPU; see
+                :func:`tt.core._ops.randomized_round`).
+            oversampling, seed: passed to the randomized method.
+            return_error: with the randomized method, also return the exact
+                absolute Frobenius error of the truncation.
+
+        Returns:
+            The rounded tensor, or ``(tensor, error)`` if ``return_error``.
+        """
         c = vector()
-        c.cores = _ops.round_cores(self.cores, eps, rmax)
+        if method == "svd":
+            if return_error:
+                raise ValueError(
+                    "return_error is only available for method='randomized'; "
+                    "for the SVD path compute (x - x.round(eps)).norm()")
+            c.cores = _ops.round_cores(self.cores, eps, rmax)
+            return c
+        if method != "randomized":
+            raise ValueError(f"unknown rounding method {method!r}; "
+                             "use 'svd' or 'randomized'")
+        if rmax is None:
+            raise ValueError("method='randomized' needs an explicit rmax: it "
+                             "targets a rank, it cannot honour eps by itself")
+        res = _ops.randomized_round(self.cores, rmax, oversampling, seed,
+                                    return_error)
+        if return_error:
+            c.cores, err = res
+            return c, err
+        c.cores = res
         return c
 
     def orthogonalize(self, center=0):

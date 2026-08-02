@@ -81,6 +81,21 @@ def bench_matvec_round(d, n, r, backend, dtype, repeats):
     return timeit(lambda: tt.matvec(A, x).round(1e-8), backend, repeats)
 
 
+def bench_round_fixed_rank(d, n, r, backend, dtype, repeats, rmax=None):
+    """Deterministic rounding to a fixed target rank (the reference path)."""
+    x = make_tt(d, n, r, backend, dtype)
+    rmax = rmax or max(1, r // 2)
+    return timeit(lambda: _ops.round_cores(x.cores, 0.0, rmax), backend, repeats)
+
+
+def bench_round_randomized(d, n, r, backend, dtype, repeats, rmax=None):
+    """Randomized rounding to the same target rank (sketch + one small QR/core)."""
+    x = make_tt(d, n, r, backend, dtype)
+    rmax = rmax or max(1, r // 2)
+    return timeit(lambda: _ops.randomized_round(x.cores, rmax, 10, 0),
+                  backend, repeats)
+
+
 def bench_tt_svd(d, n, r, backend, dtype, repeats):
     """Dense -> TT on a tensor with n**d elements."""
     rng = np.random.default_rng(1)
@@ -101,6 +116,14 @@ WORKLOADS = {
     ]),
     "matvec+round": (bench_matvec_round, [
         dict(d=30, n=2, r=50), dict(d=40, n=2, r=100), dict(d=60, n=2, r=150),
+    ]),
+    "round_fixed": (bench_round_fixed_rank, [
+        dict(d=30, n=2, r=100), dict(d=60, n=2, r=200), dict(d=20, n=4, r=300),
+        dict(d=10, n=8, r=400),
+    ]),
+    "round_rand": (bench_round_randomized, [
+        dict(d=30, n=2, r=100), dict(d=60, n=2, r=200), dict(d=20, n=4, r=300),
+        dict(d=10, n=8, r=400),
     ]),
     "tt_svd": (bench_tt_svd, [
         dict(d=10, n=4, r=0), dict(d=8, n=6, r=0), dict(d=14, n=3, r=0),
