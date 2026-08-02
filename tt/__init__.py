@@ -39,7 +39,7 @@ __all__ = [
 # names that were *functions* on the package (``tt.multifuncrs(...)``).  Keeping
 # the distinction is what makes old scripts run unchanged.
 _LEGACY_MODULES = ("maxvol", "cross", "amen", "eigb", "ksl", "optimize",
-                   "riemannian", "completion", "solvers", "multifuncrs2_mod")
+                   "riemannian", "completion", "solvers")
 _FUNCTIONS = {
     "multifuncrs": ("tt.algs.multifuncrs", "multifuncrs"),
     "multifuncrs2": ("tt.algs.multifuncrs", "multifuncrs2"),

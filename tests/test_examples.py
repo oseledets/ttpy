@@ -99,14 +99,35 @@ def test_eigb_matches_analytic_laplacian_eigenvalues():
 
 # --- examples/test_common.py -------------------------------------------------
 
-def test_gmres_solves_the_laplacian():
+def test_gmres_solves_a_well_conditioned_system():
+    """Restarted GMRES without a preconditioner needs a decent condition number.
+
+    The bare QTT Laplacian on 2^8 points has cond ~ 2.6e4, where GMRES(20)
+    stagnates -- that is a property of the method, not a defect, so it is tested
+    separately below. Here the operator is shifted to cond ~ 1.4.
+    """
+    solvers = pytest.importorskip("tt.algs.solvers")
+    d = 8
+    A = (tt.eye(2, d) + 0.1 * tt.qlaplace_dd([d])).round(1e-14)
+    rhs = tt.ones(2, d)
+    x0 = tt.ones(2, d) * 0.0
+    x, res = solvers.GMRES(lambda v, eps: tt.matvec(A, v).round(eps),
+                           x0, rhs, eps=1e-8, maxit=100, m=20)
+    assert (tt.matvec(A, x) - rhs).norm() / rhs.norm() < 1e-6
+
+
+def test_gmres_reports_stagnation_instead_of_claiming_success():
+    """On the unpreconditioned Laplacian GMRES(20) stalls; it must say so."""
     solvers = pytest.importorskip("tt.algs.solvers")
     d = 8
     A = tt.qlaplace_dd([d])
     rhs = tt.ones(2, d)
-    x, res = solvers.GMRES(lambda v, eps: tt.matvec(A, v).round(eps),
-                           tt.rand(2, d, r=1) * 0.0, rhs, eps=1e-8, maxit=200, m=20)
-    assert (tt.matvec(A, x) - rhs).norm() / rhs.norm() < 1e-6
+    with pytest.warns(RuntimeWarning, match="GMRES"):
+        x, res = solvers.GMRES(lambda v, eps: tt.matvec(A, v).round(eps),
+                               tt.ones(2, d) * 0.0, rhs, eps=1e-8, maxit=60, m=20)
+    true_res = (tt.matvec(A, x) - rhs).norm() / rhs.norm()
+    assert true_res > 1e-8                       # it really did not converge
+    assert res == pytest.approx(true_res, rel=0.5)   # and the number it reports is real
 
 
 def test_cross_recovers_a_low_rank_tensor():
