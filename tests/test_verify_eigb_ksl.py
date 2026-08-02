@@ -338,11 +338,18 @@ def test_eigb_residuals_match_a_dense_computation(d, nblock):
     cols = block_columns(y)
     ref = np.array([np.linalg.norm(dense @ cols[:, b] - lam[b] * cols[:, b])
                     for b in range(nblock)])
-    assert np.allclose(hist.res, ref, rtol=1e-6, atol=1e-16), f"{hist.res} vs {ref}"
+    # A converged eigenpair here has a residual of ~1e-16, i.e. pure rounding
+    # noise, and two ways of computing noise agree only in order of magnitude.
+    # The absolute floor is what that noise costs: eps * ||A||_2 * ||y||, with a
+    # factor for the O(d) operations that build the residual in TT.  Above the
+    # floor the relative check still bites.
+    floor = 50 * np.finfo(float).eps * np.linalg.norm(dense, 2)
+    assert np.allclose(hist.res, ref, rtol=1e-6, atol=floor), (
+        f"{hist.res} vs {ref} (floor {floor:.2e})")
     assert np.max(hist.res_rel) < 1e-3
     # and block_residuals is callable on its own, on any block vector
     res2, znorm = block_residuals(A, y, lam)
-    assert np.allclose(res2, ref, rtol=1e-6, atol=1e-16)
+    assert np.allclose(res2, ref, rtol=1e-6, atol=floor)   # same noise floor
     assert np.all(znorm > 0)
 
 

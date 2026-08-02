@@ -321,6 +321,7 @@ class TorchBackend(Backend):
         return self.torch.linalg.matrix_exp(a)
 
 
+_NUMPY_F64 = NumpyBackend("float64")
 _default = NumpyBackend()
 
 
@@ -354,7 +355,16 @@ def backend_of(a) -> Backend:
 
 
 def same_backend(arrays, what="cores"):
-    """Assert all arrays live on one backend/device; return it. Loud on mixture."""
+    """Assert all arrays live on one backend/device; return it. Loud on mixture.
+
+    The fast path is a type check: this sits in front of every contraction, and
+    building a Backend object per operand to compare them showed up at 5% of an
+    AMEn solve.
+    """
+    arrays = tuple(arrays)
+    if all(type(a) is np.ndarray for a in arrays):
+        return _NUMPY_F64 if arrays[0].dtype == np.float64 else NumpyBackend(
+            canon_dtype(arrays[0].dtype))
     backends = {}
     for a in arrays:
         b = backend_of(a)
@@ -458,16 +468,108 @@ def _classic_subscripts(pattern: str) -> str:
     return ",".join(render(g) for g in groups) + "->" + render(out)
 
 
+@lru_cache(maxsize=None)
+def _binary_plan(pattern: str):
+    """Compile a two-operand pattern into transpose + batched matmul.
+
+    Even with a cached contraction path, ``np.einsum`` re-parses and re-validates
+    the subscripts on every call: 18425 calls cost 0.42 s of a 1.75 s AMEn solve.
+    A contraction of two operands without repeated or diagonal indices is just
+
+        (batch, left, k) @ (batch, k, right)
+
+    after a permutation, so the permutation is worked out once per pattern and
+    the call itself becomes two transposes and one matmul.  Patterns that do not
+    fit this shape (one operand, three operands, a repeated index) return None
+    and fall back to ``einsum``.
+    """
+    lhs, _, rhs = pattern.partition("->")
+    groups = [g.split() for g in lhs.split(",")]
+    out = rhs.split()
+    if len(groups) != 2 or not rhs:
+        return None
+    left, right = groups
+    if any(len(set(g)) != len(g) for g in (left, right, out)):
+        return None            # repeated index: a diagonal, not a contraction
+    if "..." in left + right + out:
+        return None
+    ls, rs, os_ = set(left), set(right), set(out)
+    if not os_ <= (ls | rs):
+        return None
+    batch = [x for x in left if x in rs and x in os_]
+    contracted = [x for x in left if x in rs and x not in os_]
+    free_l = [x for x in left if x not in rs and x in os_]
+    free_r = [x for x in right if x not in ls and x in os_]
+    if len(batch) + len(contracted) + len(free_l) != len(left):
+        return None
+    if len(batch) + len(contracted) + len(free_r) != len(right):
+        return None
+    if sorted(batch + free_l + free_r) != sorted(out):
+        return None
+    perm_l = [left.index(x) for x in batch + free_l + contracted]
+    perm_r = [right.index(x) for x in batch + contracted + free_r]
+    mid = batch + free_l + free_r
+    perm_out = [mid.index(x) for x in out]
+    ident = lambda p: p == list(range(len(p)))
+    return (tuple(perm_l), tuple(perm_r), tuple(perm_out),
+            len(batch), len(free_l), len(free_r), len(contracted),
+            ident(perm_l), ident(perm_r), ident(perm_out))
+
+
+def _matmul_contract(a, b, plan):
+    """Execute a compiled binary contraction, or return None to fall back.
+
+    numpy's einsum broadcasts an axis of size 1 against a larger one carrying
+    the same label.  A matmul cannot, so a shape mismatch on a batch or a
+    contracted axis sends the call back to einsum instead of being forced.
+    """
+    (perm_l, perm_r, perm_out, nb, nl, nr, nk,
+     id_l, id_r, id_out) = plan
+    sa, sb = a.shape, b.shape
+    shape_a = [sa[i] for i in perm_l]
+    shape_b = [sb[i] for i in perm_r]
+    if (shape_a[:nb] != shape_b[:nb]
+            or shape_a[nb + nl:] != shape_b[nb:nb + nk]):
+        return None                      # size-1 broadcast: einsum handles it
+    # plain loops, not np.prod: these lists hold two or three small ints and
+    # np.prod on them cost 0.11 s of a 1.0 s AMEn solve (42635 calls).
+    batch = tuple(shape_a[:nb])
+    m = 1
+    for i in range(nb, nb + nl):
+        m *= shape_a[i]
+    k = 1
+    for i in range(nb + nl, len(shape_a)):
+        k *= shape_a[i]
+    n = 1
+    for i in range(nb + nk, len(shape_b)):
+        n *= shape_b[i]
+    at = (a if id_l else transpose(a, perm_l)).reshape(batch + (m, k))
+    bt = (b if id_r else transpose(b, perm_r)).reshape(batch + (k, n))
+    out = (at @ bt).reshape(batch + tuple(shape_a[nb:nb + nl])
+                            + tuple(shape_b[nb + nk:]))
+    return out if id_out else transpose(out, perm_out)
+
+
 def einsum(*operands_and_pattern):
     """Contract with an einops-style pattern, through BLAS.
 
     Signature matches ``einops.einsum``: the tensors first, the pattern last.
-    einops hands its pattern to ``np.einsum`` without ``optimize=True``, which
-    keeps even a plain binary contraction out of BLAS; this routes it back in.
+    einops hands its pattern to ``np.einsum`` without ``optimize``, which keeps
+    even a plain binary contraction out of BLAS; and ``np.einsum`` re-parses the
+    subscripts on every call.  Two-operand patterns are therefore compiled once
+    into a permutation plus a batched matmul; anything else goes to einsum with
+    a cached contraction path.
     """
     *operands, pattern = operands_and_pattern
     if not isinstance(pattern, str):
         raise TypeError("the einsum pattern must come last, as in einops.einsum")
+    if len(operands) == 2:
+        plan = _binary_plan(pattern)
+        if plan is not None:
+            same_backend(operands, "operands")
+            out = _matmul_contract(operands[0], operands[1], plan)
+            if out is not None:
+                return out
     return same_backend(operands, "operands").einsum(
         _classic_subscripts(pattern), *operands)
 

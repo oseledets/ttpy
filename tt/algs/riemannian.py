@@ -111,55 +111,55 @@ def _check_boundary(cores, what):
             f"{cores[0].shape[0]}, r[d]={cores[-1].shape[2]}")
 
 
-def _require_full_rank(cores, what):
-    """Fail unless every unfolding of the tensor really has the stated TT rank.
+def _left_step_checked(cores, k, what):
+    """The left-to-right QR step of :func:`project`, refusing a rank drop.
 
-    The tangent space of the fixed-rank manifold is only defined at a point of
-    *exactly* that rank; at a rank-deficient representation the manifold has a
-    corner and the closed-form projector below returns a projection onto a
-    strictly larger space, which is not the orthogonal projection onto anything
-    the caller asked for.  Measured on a rank-1 tensor written with TT ranks
-    ``(1, 2, 2, 1)``: the formula returns an answer that differs from the dense
-    tangent projector at that point by 31 % of its norm, silently.
+    The tangent space of the fixed-rank manifold is defined only at a point of
+    *exactly* that rank.  At a rank-deficient representation the closed-form
+    projector still returns a Hermitian idempotent of the right trace -- it
+    just projects onto a strictly larger space than the caller asked for, so
+    no invariant can see the mistake.  Measured on a rank-1 tensor written with
+    TT ranks ``(1, 2, 2, 1)``, ``d = 3``, ``n = 4``, float64: 31 % relative
+    error against the dense tangent projector, idempotence 1.6e-16.
 
-    The test is exact rather than heuristic.  Orthogonalize right to left, then
-    sweep left to right with a QR: at site ``k`` the triangular factor ``R_k``
-    of the QR has *exactly* the singular values of the ``(k+1)``-st unfolding of
-    the tensor, because the accumulated left frame and every remaining right
-    frame are orthonormal.  So a rank drop of an unfolding is a small singular
-    value of ``R_k``, measured against the largest one -- which is the ordinary
-    numerical-rank criterion, at the ordinary LAPACK threshold.
+    The test is exact rather than heuristic and costs nothing beyond the QR the
+    sweep performs anyway.  Once the cores right of ``k`` are right-orthogonal
+    and the cores left of ``k`` have been made left-orthogonal, the triangular
+    factor ``R_k`` of this step carries *exactly* the singular values of the
+    ``(k+1)``-st unfolding of the tensor -- both surrounding frames are
+    orthonormal and change nothing.  So a rank drop of that unfolding is a
+    small singular value of ``R_k``, measured against its largest, at the
+    ordinary LAPACK numerical-rank threshold.
 
     Args:
-        cores: Core list; not modified.
+        cores: Core list, mutated at ``k`` and ``k + 1`` like
+            :func:`cores_orthogonalization_step`.
+        k: Site to orthogonalize; ``0 <= k < d - 1``.
         what: Name of the caller, used in the message.
 
+    Returns:
+        The same list.
+
     Raises:
-        ValueError: some unfolding is numerically rank deficient.  The message
-            carries the site, the stated rank and the measured singular value
-            ratio, so the caller can decide whether to ``round`` the point onto
-            its true rank or to move it off the corner.
+        ValueError: unfolding ``k + 1`` is numerically rank deficient.  The
+            message carries the stated rank, the numerical rank and the
+            measured singular value ratio.
     """
-    d = len(cores)
-    if d < 2:
-        return
-    work = _ops.orthogonalize([c for c in cores], center=0)
-    for k in range(d - 1):
-        q, s = lo.left_orthogonalize(work[k])
-        sv = np.asarray(bk.to_numpy(bk.svd(s)[1]), dtype=np.float64)
-        tol = max(s.shape) * bk.eps_of(bk.dtype_of(s))
-        if sv.size and sv[-1] <= tol * sv[0]:
-            raise ValueError(
-                f"{what}: unfolding {k + 1} of X has TT rank "
-                f"{work[k].shape[2]} but numerical rank "
-                f"{int(np.sum(sv > tol * sv[0]))} (smallest/largest singular "
-                f"value = {sv[-1] / sv[0]:.2e} <= {tol:.2e}).  The tangent "
-                "space of the fixed-rank manifold is not defined at a "
-                "rank-deficient point; round X onto its true rank first "
-                "(X.round(1e-14), not X.round(0) -- rounding to eps = 0 keeps "
-                "every singular value by definition and removes nothing).")
-        work[k] = q
-        work[k + 1] = einsum(s, work[k + 1], "c a, a n b -> c n b")
+    q, s = lo.left_orthogonalize(cores[k])
+    sv = np.asarray(bk.to_numpy(bk.svd(s)[1]), dtype=np.float64)
+    tol = max(s.shape) * bk.eps_of(bk.dtype_of(s))
+    if sv.size and sv[-1] <= tol * sv[0]:
+        raise ValueError(
+            f"{what}: unfolding {k + 1} of X has TT rank {cores[k].shape[2]} "
+            f"but numerical rank {int(np.sum(sv > tol * sv[0]))} "
+            f"(smallest/largest singular value = {sv[-1] / sv[0]:.2e} <= "
+            f"{tol:.2e}).  The tangent space of the fixed-rank manifold is not "
+            "defined at a rank-deficient point; round X onto its true rank "
+            "first -- X.round(1e-14), not X.round(0), which keeps every "
+            "singular value by definition and removes nothing.")
+    cores[k] = q
+    cores[k + 1] = einsum(s, cores[k + 1], "c a, a n b -> c n b")
+    return cores
 
 
 def project(X, Z):
@@ -211,7 +211,6 @@ def project(X, Z):
     d, n = X.d, [int(v) for v in X.n]
     coresX = list(X.cores)
     _check_boundary(coresX, "project")
-    _require_full_rank(coresX, "project")
     for z in z_list:
         _check_boundary(list(z.cores), "project")
     coresZ = [list(z.cores) for z in z_list]
@@ -261,7 +260,9 @@ def project(X, Z):
     lhs = [bk.eye(1, 1, dtype=dtype, like=coresX[0]) for _ in z_list]
     for k in range(d):
         if k < d - 1:
-            coresX = cores_orthogonalization_step(coresX, k, left_to_right=True)
+            # the same QR as cores_orthogonalization_step, plus the check that
+            # the point really has the rank it claims (see _left_step_checked)
+            coresX = _left_step_checked(coresX, k, "project")
             if coresX[k].shape[2] != rx[k + 1]:
                 raise RuntimeError(
                     f"left orthogonalization dropped rank at site {k}: "

@@ -485,3 +485,23 @@ def test_backend_einsum_rejects_a_misplaced_pattern():
     from tt import backend as bk
     with pytest.raises(TypeError):
         bk.einsum("a b, b c -> a c", np.zeros((2, 2)), np.zeros((2, 2)))
+
+
+@pytest.mark.parametrize("pattern, shapes", [
+    ("a n b c, c d e -> a n b d e", [(2, 2, 2, 1), (1, 1, 1)]),   # size-1 broadcast
+    ("a b, b c -> a c", [(3, 1), (4, 5)]),                        # broadcast on k
+    ("a n b, a n b -> a", [(2, 3, 4), (2, 3, 4)]),                # everything summed
+    ("a b, c d -> a b c d", [(2, 3), (4, 5)]),                    # outer product
+])
+def test_backend_einsum_handles_broadcast_and_degenerate_patterns(pattern, shapes):
+    """numpy's einsum broadcasts size-1 axes; a matmul plan must not force them."""
+    from einops import einsum as einops_einsum
+    from tt import backend as bk
+
+    rng = np.random.default_rng(1)
+    ops = [rng.standard_normal(s) for s in shapes]
+    try:
+        ref = einops_einsum(*ops, pattern)
+    except Exception:
+        pytest.skip("einops itself rejects this pattern")
+    assert rel(bk.einsum(*ops, pattern), ref) < 1e-13
