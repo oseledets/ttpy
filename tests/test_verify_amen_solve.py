@@ -116,7 +116,8 @@ def test_reported_residual_is_not_optimistic(d, eps):
     20-30%.  Anything above 1 would be a report of accuracy that is not there.
     """
     A, rhs = tt.qlaplace_dd([d]), tt.ones(2, d)
-    x, info = amen_solve(A, rhs, None, eps, verb=0, seed=0, return_info=True)
+    x, info = amen_solve(A, rhs, None, eps, verb=0, seed=0,
+                         check_true_res=True, return_info=True)
     exact = exact_residual(A, x, rhs)
     assert info.converged
     assert exact <= eps, f"reported {info.true_res:.3E}, really {exact:.3E}"
@@ -138,7 +139,8 @@ def test_matches_the_analytic_laplacian_solution(d):
     """
     N = 2 ** d
     A, rhs = tt.qlaplace_dd([d]), tt.ones(2, d)
-    x, info = amen_solve(A, rhs, None, 1e-8, verb=0, seed=0, return_info=True)
+    x, info = amen_solve(A, rhs, None, 1e-8, verb=0, seed=0,
+                         check_true_res=True, return_info=True)
     assert info.converged
     i = np.arange(1, N + 1, dtype=float)
     analytic = i * (N + 1 - i) / 2.0
@@ -437,7 +439,7 @@ def test_failure_message_names_the_right_culprit():
 
     with pytest.warns(UserWarning, match="did NOT reach"):
         x, info = amen_solve(A, rhs, None, eps, verb=0, seed=0,
-                             return_info=True)
+                             check_true_res=True, return_info=True)
     assert not info.converged
     assert exact_residual(A, x, rhs) <= 10 * floor
     assert ("local GMRES" in info.message
@@ -457,7 +459,7 @@ def test_history_describes_the_returned_vector():
     A, rhs = tt.qlaplace_dd([d]), tt.ones(2, d)
     with pytest.warns(UserWarning):
         x, info = amen_solve(A, rhs, None, eps, verb=0, seed=0,
-                             return_info=True)
+                             check_true_res=True, return_info=True)
     assert info.ranks == [int(r) for r in x.r]
     best = info.sweeps[info.best_sweep - 1]
     measured = [s["true_res"] for s in info.sweeps if np.isfinite(s["true_res"])]
@@ -476,6 +478,7 @@ def test_silent_run_stays_silent_on_the_failure_path(capsys):
     A, rhs = tt.qlaplace_dd([d]), tt.ones(2, d)
     with pytest.warns(UserWarning):
         x, info = amen_solve(A, rhs, None, 1e-10, verb=0, seed=0, nswp=3,
+                             check_true_res=True,
                              return_info=True)
     captured = capsys.readouterr()
     assert captured.out == "" and captured.err == ""

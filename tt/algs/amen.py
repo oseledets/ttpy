@@ -38,8 +38,16 @@ What is reported
 ----------------
 Every sweep records ``max_dx`` (largest relative block update), ``max_res``
 (largest *local* relative residual seen before the local solves), ``max_rank``,
-the true relative residual ``||A x - f|| / ||f||`` (computed in the TT format,
-not estimated), and the wall time.  The history is on the returned vector as
+and the wall time.  ``max_res`` is the default stopping criterion: it is the
+residual of the incoming iterate at every block, so it costs nothing beyond the
+sweep that was happening anyway.
+
+The exact global residual ``||A x - f|| / ||f||`` is available behind
+``check_true_res=True`` and is **off by default**, because forming ``A x``
+multiplies the ranks -- measured on a preconditioned 2D QTT system
+(``r_A = 161``, ``r_x = 122``): rank 19642, 12.3 GB in a single core, 91.8 GB
+peak, for a number that is only reported.  The same product rounded to 1e-12
+has rank 256.  The history is on the returned vector as
 ``x.amen_info`` and, with ``return_info=True``, returned alongside it.  If the
 requested accuracy is not reached within ``nswp`` sweeps the solver **warns
 with the residual it actually achieved** and marks ``info.converged = False``;
@@ -231,6 +239,24 @@ def _jacobi_c_inverse(phiL, acore, phiR):
     """The central block-Jacobi inverse, laid out as ``(n, n, b, f)``."""
     prec = _jacobi("c", phiL, acore, phiR)
     return getattr(prec, "invT", None)
+
+
+def _residual_bytes(acores, xcores):
+    """Bytes of the largest core of ``A x``, which is what forming it costs.
+
+    Core ``k`` of the product has shape ``(rA_k rx_k, n_k, rA_{k+1} rx_{k+1})``:
+    the ranks *multiply*.  For a well conditioned QTT problem that is harmless
+    (rank 4 times rank 20), and for a preconditioned one it is not -- measured
+    on a 2D BPX system with ``r_A = 161`` and ``r_x = 122``, the product has
+    rank 19642 and one core is 12.3 GB, while the same product rounded to 1e-12
+    has rank 256.  Nothing here needs the full-rank object; it exists only long
+    enough to be orthogonalized away.
+    """
+    worst = 0
+    for a, x in zip(acores, xcores):
+        worst = max(worst, (a.shape[0] * x.shape[0]) * a.shape[1]
+                    * (a.shape[3] * x.shape[2]))
+    return worst * 8
 
 
 def _local_operator(phiL, acore, phiR):
@@ -681,8 +707,8 @@ def _canon_trunc(trunc_norm):
 
 def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='c',
                local_iters=2, local_restart=40, trunc_norm=1, max_full_size=200,
-               verb=1, *, rmax=None, seed=None, check_true_res=True,
-               return_info=False):
+               verb=1, *, rmax=None, seed=None, check_true_res=False,
+               true_res_budget=2 * 1024 ** 3, return_info=False):
     """Solve ``A x = f`` in the TT format by the AMEn iteration.
 
     Args:
@@ -726,11 +752,25 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='c',
             ``x0`` are drawn from two *independent* streams spawned from it,
             so they never coincide.
         check_true_res: Compute ``||A x - f|| / ||f||`` exactly in the TT
-            format after every sweep and use it as the stopping criterion.
-            With ``False`` the criterion is the legacy one (``max_res`` for
-            ``trunc_norm=1``, ``max_dx`` for ``trunc_norm=0``), which is a
-            *local* quantity and can be optimistic; ``info.true_res`` is then
-            ``nan``, never a guess.
+            format after a sweep and use it as the stopping criterion.  **Off
+            by default**, because forming it multiplies the ranks: core ``k``
+            of ``A x`` has shape ``(rA_k rx_k, n_k, rA_{k+1} rx_{k+1})``, and
+            on a preconditioned 2D QTT system with ``r_A = 161``, ``r_x = 122``
+            that is rank 19642 and 12.3 GB in one core -- measured peak 91.8 GB
+            for a number that is only reported.  (The same product rounded to
+            1e-12 has rank 256, so none of it is needed; it exists only long
+            enough to be orthogonalized away.)
+
+            With ``False`` the criterion is ``max_res`` (``max_dx`` for
+            ``trunc_norm=0``): the local residual ``||B_k x_k - rhs_k||`` of
+            every block *before* it is solved, i.e. how wrong the incoming
+            iterate is.  It is a local quantity and can be optimistic, so
+            ``info.true_res`` stays ``nan`` -- never a guess.  Turn this on for
+            a certificate when the ranks are small enough to afford it; the run
+            warns if the product would exceed ``true_res_budget``.
+        true_res_budget: Bytes above which ``check_true_res=True`` warns before
+            forming the product.  Reporting only -- it never silently skips the
+            computation the caller asked for.
         return_info: Return ``(x, info)`` instead of ``x``.
 
     Returns:
@@ -758,7 +798,7 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='c',
         >>> A = tt.qlaplace_dd([10])
         >>> rhs = tt.ones(2, 10)
         >>> x, info = amen_solve(A, rhs, None, 1e-10, verb=0, seed=0,
-        ...                      return_info=True)
+        ...                      check_true_res=True, return_info=True)
         >>> bool(info.true_res < 1e-10)
         True
     """
@@ -768,6 +808,7 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='c',
     _check_positive(kickrank=(kickrank, 0), nswp=(nswp, 1), rmax=(rmax, 1),
                     local_iters=(local_iters, 1), local_restart=(local_restart, 1))
     kickrank = int(kickrank)
+    warned_budget = False
     tol = float(eps)
     if not np.isfinite(tol) or tol < 0.0:
         raise ValueError(f"eps={eps!r}: expected a finite non-negative accuracy")
@@ -1004,6 +1045,17 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='c',
         worth_measuring = max_res <= 10 * tol
         last_sweep = swp + 1 >= int(nswp)
         if check_true_res and (worth_measuring or last_sweep):
+            nbytes = _residual_bytes(acores, xcores)
+            if nbytes > true_res_budget and not warned_budget:
+                warned_budget = True
+                warnings.warn(
+                    f"check_true_res=True is about to form A x, whose largest "
+                    f"core is {nbytes / 1024 ** 3:.1f} GiB (the ranks of A and "
+                    f"x multiply). The stopping criterion does not need it -- "
+                    f"max_res, the local residual before each block solve, is "
+                    f"free. Pass check_true_res=False, or raise "
+                    f"true_res_budget to silence this.",
+                    RuntimeWarning, stacklevel=2)
             true_res = float(_ops.norm(_ops.sub(
                 _ops.matvec_cores(acores, xcores), fcores)) / fnorm)
         entry = {"sweep": swp + 1, "max_dx": max_dx, "max_res": max_res,
@@ -1032,21 +1084,24 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='c',
         # with a stalling local solver the sweeps can oscillate, and returning
         # the last one instead of the best one would throw away a better answer
         # for no reason.  Only possible when the true residual is known.
-        if check_true_res and true_res < best_res:
+        score = true_res if check_true_res else max_res
+        if score < best_res:
             # A shallow copy of the *list* is enough: every step of the sweep
             # rebinds ``xcores[k]`` to a freshly allocated array, nothing is
             # ever written into a core in place.
-            best_cores, best_res = list(xcores), true_res
+            best_cores, best_res = list(xcores), score
             info.best_sweep = swp + 1
         if converged:
             info.converged = True
             break
 
-    if best_cores is not None and best_res < info.true_res:
+    current = info.true_res if check_true_res else info.max_res
+    if best_cores is not None and best_res < current:
         # The whole summary must describe the vector that is handed back, not
         # the last one computed: a history that mixes two iterates is a lie.
         xcores = best_cores
-        info.true_res = best_res
+        if check_true_res:
+            info.true_res = best_res
         best = info.sweeps[info.best_sweep - 1]
         info.max_dx, info.max_res = best["max_dx"], best["max_res"]
     info.ranks = [int(r) for r in _ops.ranks(xcores)]

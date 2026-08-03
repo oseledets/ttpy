@@ -6,6 +6,8 @@ solve / a full matrix-vector product) or against a mathematical invariant
 identity of the preconditioner).  Nothing is compared to the legacy output.
 """
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -223,7 +225,8 @@ def test_qlaplace_residual(d, eps):
     """
     A = tt.qlaplace_dd([d])
     rhs = tt.ones(2, d)
-    x, info = amen_solve(A, rhs, None, eps, verb=0, seed=0, return_info=True)
+    x, info = amen_solve(A, rhs, None, eps, verb=0, seed=0,
+                         check_true_res=True, return_info=True)
     measured = tt_residual(A, x, rhs)
     assert measured <= eps, f"residual {measured:.3E} > eps {eps:.3E}"
     assert info.converged
@@ -352,7 +355,7 @@ def test_als_without_enrichment_reports_its_failure():
     x0 = tt.ones(2, d)                                  # rank 1
     with pytest.warns(UserWarning, match="did NOT reach"):
         x, info = amen_solve(A, rhs, x0, eps, kickrank=0, nswp=8, verb=0,
-                             return_info=True)
+                             check_true_res=True, return_info=True)
     assert not info.converged
     assert max(info.ranks) == 1
     measured = tt_residual(A, x, rhs)
@@ -382,7 +385,7 @@ def test_illconditioned_qlaplace_reports_failure():
 
     with pytest.warns(UserWarning, match="did NOT reach"):
         x, info = amen_solve(A, rhs, None, eps, verb=0, seed=0,
-                             return_info=True)
+                             check_true_res=True, return_info=True)
     assert not info.converged
     measured = tt_residual(A, x, rhs)
     assert measured > eps                                # it really did fail
@@ -409,7 +412,8 @@ def test_shifted_qlaplace_d12():
 def test_history_is_recorded_even_when_silent(capsys):
     """``verb=0`` prints nothing but the history is complete."""
     A, rhs = tt.qlaplace_dd([8]), tt.ones(2, 8)
-    x, info = amen_solve(A, rhs, None, 1e-8, verb=0, seed=0, return_info=True)
+    x, info = amen_solve(A, rhs, None, 1e-8, verb=0, seed=0,
+                         check_true_res=True, return_info=True)
     captured = capsys.readouterr()
     assert captured.out == "" and captured.err == ""
     assert info.nswp_done >= 1
@@ -573,3 +577,61 @@ def test_x0_is_used():
     x, info = amen_solve(A, rhs, x_ref, eps, verb=0, seed=0, return_info=True)
     assert info.nswp_done == 1
     assert residual(A, x, rhs) <= eps
+
+
+def test_the_default_criterion_is_the_local_residual():
+    """``check_true_res`` is off by default, and the run still converges.
+
+    The local residual ``max_res`` is the norm of ``B_k x_k - rhs_k`` at every
+    block *before* it is solved, so it is already computed by the sweep that was
+    happening anyway. The exact global residual costs a tensor whose ranks are
+    the product of those of ``A`` and ``x``; on a preconditioned 2D QTT system
+    that was measured at 12.3 GB in one core and a 91.8 GB peak, for a number
+    that only gets printed.
+    """
+    A, rhs = tt.qlaplace_dd([10]), tt.ones(2, 10)
+    x, info = amen_solve(A, rhs, None, 1e-8, verb=0, seed=0, return_info=True)
+
+    assert info.converged
+    assert np.isnan(info.true_res), "the exact residual must not be guessed"
+    assert all(np.isnan(s["true_res"]) for s in info.sweeps)
+    assert np.isfinite(info.max_res) and info.max_res < 1e-8
+    # and it really did solve the system, whatever criterion it stopped on
+    assert tt_residual(A, x, rhs) < 1e-7
+
+
+def test_asking_for_the_exact_residual_warns_when_it_is_expensive():
+    """The caller who turns it on is told what it costs, not silently obeyed.
+
+    The threshold is on the bytes of the largest core of ``A x``, which is what
+    forming it actually allocates.
+    """
+    d = 8
+    A, rhs = tt.qlaplace_dd([d]), tt.ones(2, d)
+    with pytest.warns(RuntimeWarning, match="check_true_res=True is about to"):
+        _, info = amen_solve(A, rhs, None, 1e-8, verb=0, seed=0,
+                             check_true_res=True, true_res_budget=1,
+                             return_info=True)
+    assert np.isfinite(info.true_res)          # it still did what was asked
+
+    # with a sane budget the same run is silent
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        amen_solve(A, rhs, None, 1e-8, verb=0, seed=0, check_true_res=True)
+
+
+def test_the_best_iterate_is_kept_without_the_exact_residual():
+    """The 'never return a worse iterate' guarantee must survive the default.
+
+    With the exact residual off, the sweep score is ``max_res``; the run must
+    still hand back the best sweep it saw rather than the last one.
+    """
+    d = 12
+    A, rhs = tt.qlaplace_dd([d]), tt.ones(2, d)
+    with pytest.warns(UserWarning, match="did NOT reach"):
+        x, info = amen_solve(A, rhs, None, 1e-12, verb=0, seed=0, nswp=4,
+                             return_info=True)
+    assert info.best_sweep >= 1
+    seen = [s["max_res"] for s in info.sweeps]
+    assert info.max_res == min(seen), f"{info.max_res} vs {seen}"
+    assert list(x.r) == info.ranks
