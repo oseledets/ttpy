@@ -261,7 +261,11 @@ def expmv_krylov(op, x, t, space=8, tol=1e-8, anorm=None, max_substeps=4096):
     """
     beta0 = float(bk.norm(x))
     if beta0 == 0.0 or t == 0:
-        return x, dict(substeps=0, err_est=0.0, krylov=0)
+        # ``underflow`` distinguishes "you handed me a zero vector" from "the
+        # norm of a subnormal input underflowed on the way in"; both give an
+        # exact answer, only one is worth knowing about.
+        return x, dict(substeps=0, err_est=0.0, krylov=0,
+                       underflow=beta0 == 0.0 and t != 0)
 
     tmag = abs(t)
     phase = t / tmag                      # +-1, or a complex phase
@@ -271,7 +275,16 @@ def expmv_krylov(op, x, t, space=8, tol=1e-8, anorm=None, max_substeps=4096):
     h = max(h, tmag * 1e-12)
     err_total, nsteps, kmax = 0.0, 0, 0
 
+    underflowed = False
     while done < tmag * (1 - 1e-14):
+        if float(bk.norm(v)) == 0.0:
+            # A strongly contracting flow can drive the iterate to exactly zero
+            # part-way through the substeps.  exp(tA) 0 = 0, so the rest of the
+            # step is done and the answer is exact -- but the Arnoldi below
+            # would divide by ||v|| = 0, produce NaN, and then report a failure
+            # blaming the caller's operator for it.  Say what happened instead.
+            underflowed = True
+            break
         basis, hmat, beta, happy = _arnoldi(op, v, space)
         k = len(basis)
         kmax = max(kmax, k)
@@ -304,7 +317,8 @@ def expmv_krylov(op, x, t, space=8, tol=1e-8, anorm=None, max_substeps=4096):
                 f"expmv_krylov: more than {max_substeps} substeps for t={t}; "
                 f"covered {done / tmag:.3%} of the step. Increase `space`, "
                 "loosen `tol`, or take a smaller time step.")
-    return v, dict(substeps=nsteps, err_est=err_total / beta0, krylov=kmax)
+    return v, dict(substeps=nsteps, err_est=err_total / beta0, krylov=kmax,
+                   underflow=underflowed)
 
 
 def _norm_estimate(op, v, iters=4):

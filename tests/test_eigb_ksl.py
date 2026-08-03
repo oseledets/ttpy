@@ -486,3 +486,27 @@ def test_block_vector_columns_are_orthonormal_after_eigb():
     y, _ = eigb(A, x, 1e-10, verb=0)
     gram = np.asarray(_ops.dot(y.cores, y.cores)).reshape((nblock, nblock))
     assert np.abs(gram - np.eye(nblock)).max() < 1e-10
+
+
+def test_krylov_exponential_survives_an_iterate_that_underflows_to_zero():
+    """A contracting flow can zero the iterate mid-substep; exp(tA) 0 = 0.
+
+    Without a guard the next Arnoldi divides by ||v|| = 0, returns NaN and then
+    raises a message blaming the caller's operator. Found while specifying the
+    BUG integrator (docs/plans/bug-integrator.md).
+    """
+    from tt.algs.ksl import expmv_krylov
+
+    n = 4
+    a = -400.0 * np.eye(n)     # contracts by exp(-400) = 2e-174 over the step
+    x = np.zeros(n)
+    x[0] = 1e-160              # the norm survives the entry check; the flow does not
+    w, info = expmv_krylov(lambda v: a @ v, x, 1.0, space=4, tol=1e-8)
+    assert np.all(np.isfinite(w)), "the exponential must not return NaN"
+    assert float(np.linalg.norm(w)) == 0.0
+    assert info["underflow"] is True          # and it says so
+    assert info["substeps"] >= 1              # it really entered the loop
+
+    # a genuinely zero input is exact and unremarkable, not an underflow
+    _, info0 = expmv_krylov(lambda v: a @ v, np.zeros(n), 1.0, space=4)
+    assert info0["underflow"] is True and info0["substeps"] == 0
