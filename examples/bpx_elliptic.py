@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 """BPX multilevel preconditioning in QTT -- the most advanced example here.
 
-    python examples/bpx_elliptic.py            # all three parts, ~1 min
-    python examples/bpx_elliptic.py 1d
-    python examples/bpx_elliptic.py 2d 12      # 2D solve on a 2^12 x 2^12 grid
+    python examples/bpx_elliptic.py            # all three parts, ~4 min
+    python examples/bpx_elliptic.py 1d         # ~40 s, up to 2^30 unknowns
+    python examples/bpx_elliptic.py cond       # ~15 s, dense eigenvalues
+    python examples/bpx_elliptic.py 2d 10      # ~2.5 min
+    python examples/bpx_elliptic.py 2d 12      # ~5 min, 16.8M unknowns
 
 [BK20] M. Bachmayr, V. Kazeev, *Stability of Low-Rank Tensor Representations and
 Structured Multilevel Preconditioning for Elliptic PDEs*, Found. Comput. Math.
@@ -16,6 +18,13 @@ Three parts:
   cond   the conditioning claim itself, in 1D and 2D, against dense eigenvalues;
   2d     a genuinely two-dimensional problem with three sharp Gaussian peaks,
          built by cross approximation, on a fine grid.
+
+The 2D part is the slow one, and honestly so: ``amen_solve`` needs a matrix, so
+``B`` has to be *assembled* at TT rank 161 instead of applying the rank-24
+factors of ``bpx_theta`` one at a time.  The sweep algebra is linear in that
+rank and it dominates -- the local solves themselves take 3.6 GMRES iterations
+per block, exactly what ``kappa(B) ~ 7`` predicts.  Teaching the solver to take
+a factored operator is the open item.
 
 The one idea worth taking away is in part 1d: the preconditioned operator must
 never be *assembled* as ``C A C``.  Its entries cancel over ``4^d``, so rounding
@@ -165,7 +174,7 @@ def main(argv):
     if what in ("all", "cond"):
         part_cond()
     if what in ("all", "2d"):
-        part_2d(int(argv[2]) if len(argv) > 2 and what == "2d" else 12)
+        part_2d(int(argv[2]) if len(argv) > 2 and what == "2d" else 10)
 
 
 if __name__ == "__main__":
