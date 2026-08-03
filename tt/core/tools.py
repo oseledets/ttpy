@@ -18,6 +18,7 @@ __all__ = [
     "zmeshgrid", "zaffine", "concatenate", "sum", "ones", "zeros", "rand",
     "eye", "Toeplitz", "qlaplace_dd", "xfun", "linspace", "sin", "cos",
     "delta", "stepfun", "qshift", "shift", "unit", "IpaS", "reshape", "permute",
+    "qdiff", "qtri_ones", "qlaplace_dn", "level_major_order",
 ]
 
 
@@ -651,6 +652,147 @@ def qshift(d):
     return shift(d, -1)
 
 
+# --- the QTT kit for elliptic problems ---------------------------------------
+#
+# Three thin constructions that everything in docs/plans/qtt-elliptic-bpx.md is
+# assembled from.  They are here rather than in the solver module because they
+# are operators, not algorithms, and because a second copy of "what is the
+# difference operator" is how the two would drift apart.
+
+def qdiff(d, kind="backward"):
+    """QTT difference operator on ``2^d`` nodes, unscaled (no ``h^-1``).
+
+    ``kind='backward'`` gives ``I - S`` with ``S`` the down-shift of
+    :func:`qshift`, i.e. ``(Mv)_i = v_i - v_{i-1}``; ``'forward'`` gives its
+    transpose.  TT rank 2.
+
+    This is the factor ``M`` of ``A = M^T diag(a) M``: every elliptic operator
+    in the QTT kit is built from it, so it has exactly one owner.
+    """
+    d = int(d)
+    m = (eye(2, d) - qshift(d)).round(1e-14)
+    if kind == "backward":
+        return m
+    if kind == "forward":
+        return m.T
+    raise ValueError(f"kind must be 'backward' or 'forward', got {kind!r}")
+
+
+def qtri_ones(d, upper=False):
+    """QTT lower- (or upper-) triangular all-ones matrix of size ``2^d``.
+
+    This is exactly the inverse of :func:`qdiff`: ``T (I - S) = I``, which is
+    why a 1D problem can be solved in closed form rather than iterated (see
+    ``tt.algs.qtt_ell.solve_direct_1d``).  TT rank 2.
+    """
+    d = int(d)
+    t = Toeplitz(ones(2, d), d, kind="L")
+    return t.T if upper else t
+
+
+def qlaplace_dn(d, bc="DN", order="dim"):
+    """QTT Laplacian on ``2^d`` nodes per dimension with mixed boundaries.
+
+    ``d`` is an int or a list of per-dimension level counts, as in
+    :func:`qlaplace_dd`; for ``D > 1`` the result is the Kronecker sum of the 1D
+    operators.  ``bc`` is a two-letter string (one letter per end, ``'D'`` or
+    ``'N'``) applied to every dimension, or a sequence of ``D`` such strings.
+    Unscaled: no ``h^-2`` factor.
+
+    ``order`` decides the index layout for ``D > 1`` and is *not* cosmetic:
+
+    * ``'dim'`` (default) is dimension-major, the layout of :func:`kron` and of
+      :func:`qlaplace_dd`, so this function drops into existing code;
+    * ``'level'`` is level-major -- the bits of one level of all dimensions
+      adjacent -- which is the layout ([BK20] eq. (49)) in which the multilevel
+      preconditioner has TT rank ``2^(2D+1)`` independent of the level count.
+
+    The two are the same operator under a permutation of the flat index, but an
+    operator and a preconditioner in *different* layouts do not compose, and the
+    resulting nonsense is silent. Hence an argument rather than a default: see
+    ``docs/plans/qtt-elliptic-bpx.md``.
+
+    ``'DN'`` -- Dirichlet at 0, Neumann at 1 -- is the reason this function
+    exists.  It is the only combination with exactly ``2^l`` degrees of freedom
+    on every level, so it is the one the multilevel prolongations of [BK20] are
+    built for; ``qlaplace_dd`` cannot be used there.  Measured: ``M^T M`` with
+    ``M = qdiff(d)`` equals ``tridiag(-1, 2, -1)`` with the last diagonal entry
+    1 to 2.0e-15 at ``d = 3``, and its smallest eigenvalue matches the analytic
+    ``4 sin^2(pi / (2(2N+1)))`` to 1e-15.  TT ranks 4 (``D = 1``) and 5
+    (``D > 1``, measured at ``D = 2, 3``).
+
+    ``'NN'`` is refused: it is singular (constants are in its kernel), it plays
+    no part in the [BK20] construction, and returning a singular operator from a
+    function whose other outputs are SPD would be a trap.
+    """
+    dims = [int(d)] if isinstance(d, (int, np.integer)) else [int(v) for v in d]
+    ndim = len(dims)
+    if isinstance(bc, str):
+        bcs = [bc] * ndim
+    else:
+        bcs = [str(v) for v in bc]
+        if len(bcs) != ndim:
+            raise ValueError(
+                f"bc has {len(bcs)} entries for {ndim} dimensions")
+
+    blocks = []
+    for dk, bck in zip(dims, bcs):
+        bck = bck.upper()
+        if bck == "DD":
+            blocks.append(qlaplace_dd([dk]))
+            continue
+        if bck == "NN":
+            raise ValueError(
+                "bc='NN' is singular (the constant vector is in its kernel) "
+                "and is not part of the multilevel construction; build it "
+                "explicitly if you really want it")
+        m = qdiff(dk)
+        if bck == "DN":
+            blocks.append((m.T @ m).round(1e-14))
+        elif bck == "ND":
+            blocks.append((m @ m.T).round(1e-14))
+        else:
+            raise ValueError(
+                f"bc must be one of 'DD', 'DN', 'ND' per dimension, got {bck!r}")
+
+    if order not in ("dim", "level"):
+        raise ValueError(f"order must be 'dim' or 'level', got {order!r}")
+    if ndim == 1:
+        return blocks[0]
+
+    total = None
+    for k in range(ndim):
+        term = None
+        for j in range(ndim):
+            factor = blocks[j] if j == k else eye(2, dims[j])
+            term = factor if term is None else kron(term, factor)
+        total = term if total is None else total + term
+    total = total.round(1e-14)
+    if order == "dim":
+        return total
+    if len(set(dims)) != 1:
+        raise ValueError(
+            "order='level' needs the same number of levels in every dimension, "
+            f"got {dims}")
+    return permute(total, level_major_order(dims), 1e-14)
+
+
+def level_major_order(dims):
+    """The permutation taking a dimension-major mode list to level-major.
+
+    ``dims`` is the per-dimension level count. Mode ``k`` of dimension ``j``
+    sits at slot ``j * L + k`` in dimension-major order and at ``k * D + j`` in
+    level-major, so this returns the index list that :func:`permute` wants.
+    Exposed because a preconditioner and its operator must agree on the layout,
+    and the only way to check that is to be able to name it.
+    """
+    dims = [int(v) for v in dims]
+    if len(set(dims)) != 1:
+        raise ValueError(f"all dimensions must have the same depth, got {dims}")
+    ndim, depth = len(dims), dims[0]
+    return [j * depth + k for k in range(depth) for j in range(ndim)]
+
+
 # --- reshape / permute -------------------------------------------------------
 
 def _reverse(cores):
@@ -809,7 +951,24 @@ def reshape(tt_array, shape, eps=1e-14, rl=1, rr=1):
 
 
 def permute(x, order, eps=1e-14, return_cores=False):
-    """Permute the modes of a TT-vector by adjacent transpositions."""
+    """Permute the modes of a TT-vector, or of a TT-matrix, by transpositions.
+
+    A TT-matrix is a TT-vector over the merged mode ``s = i + n j``, so the same
+    machinery reorders it; only the ``(n, m)`` bookkeeping has to follow. Having
+    one owner here matters because the multilevel constructions of
+    ``docs/plans/qtt-elliptic-bpx.md`` need exactly this on operators: their
+    rank bounds hold in *level-major* order (all dimensions' bits of one level
+    adjacent), while ``kron`` and :func:`qlaplace_dd` produce dimension-major.
+    """
+    if isinstance(x, matrix):
+        if return_cores:
+            raise ValueError("return_cores is for TT-vectors, not TT-matrices")
+        order = [int(v) for v in np.asarray(order, dtype=np.int64).ravel()]
+        out = matrix()
+        out.n = np.asarray(x.n, dtype=np.int32)[order].copy()
+        out.m = np.asarray(x.m, dtype=np.int32)[order].copy()
+        out.tt = permute(x.tt, order, eps)
+        return out
     order = [int(v) for v in np.asarray(order, dtype=np.int64).ravel()]
     d = x.d
     if sorted(order) != list(range(d)):

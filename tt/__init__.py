@@ -16,8 +16,9 @@ from __future__ import annotations
 from .backend import get_backend, set_backend
 from .core.matrix import matrix
 from .core.tools import (IpaS, Toeplitz, col, concatenate, cos, delta, diag,
-                         dot, eye, kron, linspace, matvec, mkron, ones,
-                         permute, qlaplace_dd, qshift, rand, reshape, sin,
+                         dot, eye, kron, level_major_order, linspace, matvec,
+                         mkron, ones, permute, qdiff, qlaplace_dd, qlaplace_dn,
+                         qshift, qtri_ones, rand, reshape, sin,
                          shift, stepfun, sum, unit, xfun, zaffine, zeros, zkron,
                          zkronv, zmeshgrid)
 from .core.vector import tensor, vector
@@ -28,7 +29,8 @@ __all__ = [
     "vector", "tensor", "matrix", "set_backend", "get_backend",
     "matvec", "col", "kron", "dot", "diag", "mkron", "zkron", "zkronv",
     "zmeshgrid", "zaffine", "concatenate", "sum", "ones", "zeros", "rand",
-    "eye", "Toeplitz", "qlaplace_dd", "xfun", "linspace", "sin", "cos",
+    "eye", "Toeplitz", "qlaplace_dd", "qlaplace_dn", "qdiff", "qtri_ones",
+    "level_major_order", "xfun", "linspace", "sin", "cos",
     "delta", "stepfun", "qshift", "shift", "unit", "IpaS", "reshape", "permute",
     "multifuncrs", "multifuncrs2", "GMRES", "amen_solve", "amen_mv",
     "cross", "rect_cross", "maxvol", "eigb", "ksl", "__version__",
