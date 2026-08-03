@@ -27,6 +27,31 @@ of the number of levels**.  Assembled this way there is no intermediate rank
 growth and no rounding anywhere in the construction.  It is the same mechanism
 that makes a triangular Toeplitz matrix ``sum_k S^k`` rank 2 in QTT.
 
+The second thing, which is what you actually solve with
+-------------------------------------------------------
+Having ``C_L`` is not enough.  The preconditioned operator ``C A C`` must never
+be *assembled*: its entries cancel over ``4^d``, so rounding the triple product
+represents a matrix with error growing like ``4^d eps``, and its rank grows too
+(measured 96, 135, 185 at ``d = 10, 14, 18``).  :func:`bpx_theta` gives the
+fused factor ``Theta`` of [BK20] Lemma 5 with ``B = Theta^T Theta``, the same
+matrix in exact arithmetic, at TT rank 6 and ``B`` at rank 17, flat in ``d``.
+
+The difference, end to end, on ``-u'' = 1`` with ``u(0) = 0, u'(1) = 0``, AMEn
+at ``eps = 1e-10``, b300/numpy/float64, interleaved runs:
+
+======  ==========================  ============================
+``d``   unpreconditioned            ``B = Theta^T Theta``
+======  ==========================  ============================
+10      30 sweeps, 0.63 s, 4.1e-10  7 sweeps, 0.07 s, 2.3e-14
+18      30 sweeps, 2.51 s, 8.6e-06  7 sweeps, 0.18 s, 8.1e-14
+26      30 sweeps, 11.1 s, 4.1e-01  7 sweeps, 0.41 s, 1.7e-13
+30      30 sweeps, 23.3 s, 1.03     7 sweeps, 0.51 s, 1.8e-13
+======  ==========================  ============================
+
+At ``d = 30`` that is 2^30 unknowns, 46x faster, and the unpreconditioned answer
+is simply wrong (relative error 1.03) -- reported as such by ``amen_solve``,
+which does not converge and says so.  The sweep count and the rank are flat.
+
 Two conventions have to be kept straight
 ----------------------------------------
 *Level order.* [BK20] numbers level 1 as the **coarsest** scale, the most
@@ -52,7 +77,7 @@ import numpy as np
 from ..core.matrix import matrix
 from ..core.tools import level_major_order, qdiff, qtri_ones
 
-__all__ = ["bpx", "prolongation", "solve_direct_1d"]
+__all__ = ["bpx", "bpx_theta", "prolongation", "solve_direct_1d"]
 
 _I2 = np.eye(2)
 _J = np.array([[0.0, 1.0], [0.0, 0.0]])     # [BK20] (37): J upper, J.T lower
@@ -122,6 +147,13 @@ _X = 0.5 * _core([[[[1.], [2.]], [[0.], [1.]]],
                   [[[1.], [0.]], [[2.], [1.]]]])                      # (67), 2x1
 _PHAT = _core([[[[1.]]], [[[0.]]]])                                   # (67), 2x1
 _AHAT = _core([[[[1.]], [[0.]]]])                                     # (75), 1x2
+
+# [BK20] (78): the cores of the difference operator M_{L,1}, used by the fused
+# construction of Lemma 5 -- the one that never represents C A C.
+_T1 = _core([[[[1.0]]], [[[-1.0]]]])                                  # rank 2x1
+_IHAT = _core([[[[1.0]], [[0.0]]], [[[0.0]], [[1.0]]]])               # rank 2x2
+_Y1 = 0.5 * _core([[[[1.0], [1.0]]]])                                 # mode 2x1
+_N1 = _core([[[[1.0]]]])
 
 
 def _bpx_blocks(ndim):
@@ -217,6 +249,70 @@ def bpx(d, D=1, weight=1, scaled=True):
     # 2^d elementwise).  Make the normalization explicit rather than folded
     # into the cores, where it would be one more thing to rediscover.
     return out * (2.0 ** ((weight - 1) * d if scaled else -d))
+
+
+def bpx_theta(d, D=1):
+    """The fused factor ``Theta`` of [BK20] Lemma 5, with ``B = Theta^T Theta``.
+
+    ``Theta = M C_L`` where ``M`` is the difference operator, so ``B`` is the
+    preconditioned operator ``C_L A C_L`` -- **the same matrix** as
+    ``bpx(d) @ qlaplace_dn(d) @ bpx(d)`` in exact arithmetic, and not at all the
+    same object in floating point.
+
+    That difference is the entire practical content of [BK20]. Forming the
+    product of three QTT factors and rounding it represents a matrix whose
+    entries cancel over ``4^d``, so the representation error grows like
+    ``4^d * eps``: measured 1.3e-10 at ``d = 10``, 6.0e-04 at ``d = 20``,
+    4.8e+14 at ``d = 50``, while this form stays at 1.4e-14. The rank tells the
+    same story -- ``round(C A C)`` was measured at 96, 135, 185 for
+    ``d = 10, 14, 18``, growing with ``d``, while ``Theta`` has TT rank 6 for
+    ``D = 1`` whatever ``d`` is, because it is the same level automaton as
+    :func:`bpx` with the difference operator fused into its cores rather than
+    multiplied on afterwards.
+
+    Args:
+        d: number of levels.
+        D: spatial dimensions.  Only ``D = 1`` is implemented; for ``D > 1``
+            [BK20] gives one factor per direction and they must be applied as
+            ``sum_k Theta_k^T round(Theta_k v)`` rather than assembled.
+
+    Returns:
+        A ``tt.matrix`` ``Theta`` with ``Theta^T Theta`` the preconditioned
+        operator, scaled to pair with the **unscaled** :func:`tt.qlaplace_dn`.
+    """
+    d, D = int(d), int(D)
+    if d < 1:
+        raise ValueError(f"d must be at least 1, got {d}")
+    if D != 1:
+        raise NotImplementedError(
+            "bpx_theta is implemented for D = 1 only. For D > 1 [BK20] Lemma 5 "
+            "gives one factor per direction, to be applied as "
+            "sum_k Theta_k^T round(Theta_k v); assembling B in 2D was measured "
+            "at rank <= 1152 and is usually a mistake. See "
+            "docs/plans/qtt-elliptic-bpx.md")
+
+    a_b = _cdot(_AHAT, _AHAT)
+    u_b = _cdot(_U, _ctr(_U))
+    w1 = _cdot(_T1, _IHAT)                      # [BK20] (83)
+    z1 = _cdot(_Y1, _ctr(_X))
+    k1 = _cdot(_N1, _PHAT)
+
+    # Same automaton as bpx, but the switch core w1 carries a 1x1 mode: it sits
+    # *between* sites rather than on one, so it is fused into the first z1 of
+    # state 2.  Chain sum: sum_{l=0..d} A_b U_b^l W1 Z1^{d-l} K1, every scalar 1.
+    wz = _skron(w1, z1)
+    # the two states have *different* ranks here (4 and 2), unlike in bpx where
+    # both are 4, so the boundary blocks have to be sized from the cores
+    left = np.concatenate(
+        [a_b, np.zeros(a_b.shape[:3] + (z1.shape[0],))], axis=3)
+    right = np.concatenate([_skron(w1, k1), k1], axis=0)
+    cores = [left] + [_block2(u_b, wz, z1) for _ in range(d)] + [right]
+    merged = [_skron(cores[0], cores[1])] + cores[2:-1]
+    merged[-1] = _skron(merged[-1], cores[-1])
+    # no scaling: the chain already carries exactly what makes Theta^T Theta
+    # equal C A C for the *scaled* C of bpx(..., scaled=True) -- checked
+    # elementwise against the dense product for d = 3..8
+    return _to_ttpy(merged)
 
 
 def prolongation(l, d, D=1):

@@ -1,5 +1,40 @@
 # QTT-ELL: elliptic problems in the QTT format, and multilevel (BPX) preconditioning
 
+> **Status: the D=1 core of this spec is implemented and tested**, not merely
+> proposed. `tt.algs.qtt_ell` ships `bpx`, `bpx_theta`, `prolongation` and
+> `solve_direct_1d`; `tt/core/tools.py` ships `qdiff`, `qtri_ones`,
+> `qlaplace_dn` and `level_major_order`, and `permute` now accepts a TT-matrix.
+> Tests in `tests/test_qtt_ell.py` (48 of them) check against the closed form of
+> [BK20] Lemma 4, against the per-level sum, and against dense linear algebra.
+>
+> Two things were learned in the implementation that this document had not
+> settled, and both are recorded where they belong (§1.4, §2.2):
+>
+> * The level automaton's switching core is `X_b`, not a scaled `U_b`; the level
+>   weight `2^{-l}` rides on `X_b`'s own scaling, so `weight=2` puts its extra
+>   `2^{-l}` on `U_b` instead. The chain then carries a fixed `2^d` for either
+>   weight. Rank comes out exactly 8 for `D = 1` at `d = 3 .. 40`.
+> * `Theta` is rank 6 and `Theta^T Theta` rank 17, both flat in `d` — and the
+>   end-to-end margin over the assembled triple product is larger than §2.2
+>   estimated, because the triple product's *rank* grows too (96, 135, 185 at
+>   `d = 10, 14, 18`), not only its error. Measured head-to-head below.
+>
+> | `d` | unpreconditioned | `B = Theta^T Theta` |
+> |---|---|---|
+> | 10 | 30 sweeps, 0.63 s, 4.1e-10 | 7 sweeps, 0.07 s, 2.3e-14 |
+> | 18 | 30 sweeps, 2.51 s, 8.6e-06 | 7 sweeps, 0.18 s, 8.1e-14 |
+> | 26 | 30 sweeps, 11.1 s, 4.1e-01 | 7 sweeps, 0.41 s, 1.7e-13 |
+> | 30 | 30 sweeps, 23.3 s, **1.03** | 7 sweeps, 0.51 s, 1.8e-13 |
+>
+> `-u'' = 1`, `u(0) = 0`, `u'(1) = 0`, AMEn at `eps = 1e-10`, interleaved runs,
+> b300/numpy/float64. `kappa(C A C)` reproduced independently of the way it was
+> first measured: 5.6674 at `d = 4`, 10.6617 at `d = 10`, `lam_min -> 2`.
+>
+> **Not implemented:** everything for `D > 1` (`bpx` builds the cores but only
+> `D = 1` is verified end to end; `bpx_theta` refuses `D > 1` loudly), variable
+> coefficients (`Lambda^{1/2}`, §3.2 K4/K6), `stiffness`, `load_vector`, and the
+> `solve` front end. See §7 for what that leaves open.
+
 Implementation spec for a new module `tt.algs.qtt_ell` (+ additions to
 `tt/core/tools.py`). Sources actually read, and what each one is:
 

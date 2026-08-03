@@ -15,7 +15,8 @@ import numpy as np
 import pytest
 
 import tt
-from tt.algs.qtt_ell import bpx, prolongation, solve_direct_1d
+from tt.algs.amen import amen_solve
+from tt.algs.qtt_ell import bpx, bpx_theta, prolongation, solve_direct_1d
 
 
 def dense(a):
@@ -181,6 +182,77 @@ def test_bpx_bounds_the_condition_number_while_the_operator_loses_it():
     assert abs(kappa_b[10] - 10.6617) < 1e-3
     assert abs(lam_min[10] - 2.0) < 1e-4
     assert all(kappa_b[d] < 12.0 for d in kappa_b)
+
+
+# --- the fused form ----------------------------------------------------------
+
+@pytest.mark.parametrize("d", [3, 5, 8])
+def test_theta_squared_is_the_preconditioned_operator(d):
+    """``Theta^T Theta == C A C``, which is the whole point of the fused form.
+
+    The same matrix, assembled without ever representing the triple product.
+    """
+    got = dense((bpx_theta(d).T @ bpx_theta(d)).round(1e-14))
+    a = dense(tt.qlaplace_dn(d, "DN"))
+    c = dense(bpx(d, 1, weight=1, scaled=True))
+    want = c @ a @ c
+    assert np.abs(got - want).max() < 1e-12 * np.abs(want).max()
+
+
+@pytest.mark.parametrize("d", [4, 8, 16, 30])
+def test_theta_rank_is_flat_and_small(d):
+    """Rank 6 for ``Theta`` and 17 for ``Theta^T Theta``, whatever ``d`` is.
+
+    Contrast with the triple product, whose rank was measured at 96, 135, 185
+    for ``d = 10, 14, 18`` -- growing, which is what made it slow *and* what
+    made its entries cancel.
+    """
+    th = bpx_theta(d)
+    assert max(th.r) == 6
+    assert max((th.T @ th).round(1e-14).r) <= 17
+
+
+def test_bpx_theta_refuses_more_than_one_dimension():
+    with pytest.raises(NotImplementedError, match="D = 1"):
+        bpx_theta(4, D=2)
+    with pytest.raises(ValueError):
+        bpx_theta(0)
+
+
+def test_the_preconditioner_earns_its_keep():
+    """The claim, end to end: same problem, same tolerance, both solvers.
+
+    ``-u'' = 1`` with ``u(0) = 0``, ``u'(1) = 0`` on ``2^18`` nodes. Without a
+    preconditioner AMEn exhausts its sweeps and still has five wrong digits;
+    with one it converges in a handful and is at machine precision. Measured at
+    ``d = 30``: 30 sweeps / 23.3 s / relative error 1.03 against 7 sweeps /
+    0.51 s / 1.8e-13.
+    """
+    d = 18
+    n = 2 ** d
+    h = 1.0 / n
+    a = tt.qlaplace_dn(d, "DN")
+    rhs = (tt.ones(2, d) - 0.5 * tt.unit(2, d, j=n - 1)) * (h * h)
+    x = (tt.xfun(2, d) + tt.ones(2, d)) * h
+    exact = (x - 0.5 * (x * x)).round(1e-14)
+
+    # and the unpreconditioned run says so itself, which is half the point:
+    # a solver that quietly returned this iterate would be the real problem
+    with pytest.warns(UserWarning, match="did NOT reach"):
+        plain = amen_solve(a, rhs, tt.ones(2, d), 1e-10, nswp=30, verb=0)
+    err_plain = float((plain - exact).norm() / exact.norm())
+
+    th = bpx_theta(d)
+    c = bpx(d, 1, weight=1, scaled=True)
+    w, info = amen_solve((th.T @ th).round(1e-14),
+                         tt.matvec(c, rhs).round(1e-12), tt.ones(2, d), 1e-10,
+                         nswp=30, verb=0, return_info=True)
+    got = tt.matvec(c, w).round(1e-12)
+    err_prec = float((got - exact).norm() / exact.norm())
+
+    assert err_prec < 1e-10, f"preconditioned error {err_prec:.3E}"
+    assert err_plain > 1e-7, f"unpreconditioned error {err_plain:.3E} -- too good?"
+    assert info.nswp_done <= 12, f"took {info.nswp_done} sweeps"
 
 
 # --- the 1D direct solve -----------------------------------------------------
