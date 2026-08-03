@@ -84,10 +84,11 @@ from __future__ import annotations
 import numpy as np
 
 from ..core.matrix import matrix
+from ..core.vector import vector
 from ..core.tools import level_major_order, qdiff, qtri_ones
 
-__all__ = ["bpx", "bpx_operator", "bpx_theta", "invert", "prolongation",
-           "solve_direct_1d", "sqrt", "stiffness"]
+__all__ = ["bpx", "bpx_operator", "bpx_theta", "invert", "merge_levels",
+           "prolongation", "solve_direct_1d", "sqrt", "stiffness"]
 
 _I2 = np.eye(2)
 _J = np.array([[0.0, 1.0], [0.0, 0.0]])     # [BK20] (37): J upper, J.T lower
@@ -207,6 +208,48 @@ def _block2(top_left, top_right, bottom_right):
     out[:p, :, :, q:] = top_right
     out[p:, :, :, q:] = bottom_right
     return out
+
+
+def merge_levels(x, D):
+    """Group ``D`` adjacent modes into one of size ``2^D``, exactly.
+
+    The operators built here carry one core per *level*, with the ``D``
+    dimensions of that level merged into a single mode of size ``2^D``; the
+    generic constructions (:func:`tt.qlaplace_dn`, :func:`tt.zmeshgrid` inputs,
+    anything built by :func:`tt.kron`) carry one core per *bit*.  Both describe
+    the same tensor, but they will not contract with each other, so something
+    has to convert -- and it should be one function rather than a copy in every
+    caller.
+
+    Exact: merging two adjacent cores is a contraction, no truncation involved.
+    Accepts a ``tt.vector`` or a ``tt.matrix``; the mode ordering follows the
+    core order, so the first of each group is the *fast* index.
+
+    ``D = 1`` returns the input unchanged.
+    """
+    D = int(D)
+    if D == 1:
+        return x
+    if isinstance(x, matrix):
+        cs = [np.asarray(c) for c in matrix.to_list(x)]
+        out = []
+        for k in range(0, len(cs), D):
+            c = cs[k]
+            for j in range(1, D):
+                c = np.einsum("aijb,bklc->aikjlc", c, cs[k + j])
+                c = c.reshape(c.shape[0], c.shape[1] * c.shape[2],
+                              c.shape[3] * c.shape[4], c.shape[5])
+            out.append(c)
+        return matrix.from_list(out)
+    cs = [np.asarray(c) for c in x.cores]
+    out = []
+    for k in range(0, len(cs), D):
+        c = cs[k]
+        for j in range(1, D):
+            c = np.einsum("aib,bjc->aijc", c, cs[k + j])
+            c = c.reshape(c.shape[0], -1, c.shape[3])
+        out.append(c)
+    return vector.from_list(out)
 
 
 # --- the preconditioner ------------------------------------------------------

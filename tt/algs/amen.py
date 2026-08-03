@@ -366,8 +366,26 @@ def _jacobi(kind, phiL, acore, phiR):
     """
     r1, n, m, r2 = phiL.shape[1], acore.shape[1], acore.shape[2], phiR.shape[1]
     if kind == "c":
+        # Which way to build the blocks is a *cost* decision, not a "is numba
+        # available" one.  The compiled kernel fuses all six loops, so it costs
+        # r1 r2 n m R1 R2; the two-step contraction below costs
+        # r1 n m R1 R2 + r1 r2 n m R2.  The fused form is therefore worse by a
+        # factor ~min(r2, R1), and only wins when that factor is small enough
+        # for numpy's dispatch overhead to dominate.
+        #
+        # It matters: at the shapes the kernel was tuned for (r=34, n=2, R_A=4)
+        # the ratio is 3.6 and fusing wins.  On a BPX-preconditioned 2D system
+        # (r=175, n=4, R_A=161) it is 84, the fused loop does 1.3e10 multiply-
+        # adds where the staged one does 1.5e8, and building this preconditioner
+        # took 48% of the whole solve -- for a local system that BPX has already
+        # made well conditioned (measured: 6.7 GMRES iterations per block with
+        # it, 7.1 without).
+        big1, big2 = acore.shape[0], acore.shape[3]
+        fused = r1 * r2 * n * m * big1 * big2
+        staged = r1 * n * m * big1 * big2 + r1 * r2 * n * m * big2
         if (_fast.HAVE_NUMBA and type(phiL) is np.ndarray
-                and phiL.dtype == np.float64 and acore.dtype == np.float64):
+                and phiL.dtype == np.float64 and acore.dtype == np.float64
+                and fused <= 4 * staged):
             blocks = np.empty((phiL.shape[0], phiR.shape[0],
                                acore.shape[1], acore.shape[2]))
             _fast.jacobi_c_blocks(phiL, acore, phiR, blocks)

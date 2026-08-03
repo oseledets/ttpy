@@ -635,3 +635,48 @@ def test_the_best_iterate_is_kept_without_the_exact_residual():
     seen = [s["max_res"] for s in info.sweeps]
     assert info.max_res == min(seen), f"{info.max_res} vs {seen}"
     assert list(x.r) == info.ranks
+
+
+def test_jacobi_c_picks_the_cheaper_contraction(monkeypatch):
+    """Which way to build the Jacobi blocks is a cost decision, not a flag.
+
+    The compiled kernel fuses all six loops, so it costs ``r1 r2 n m R1 R2``;
+    the staged contraction costs ``r1 n m R1 R2 + r1 r2 n m R2``, i.e. less by
+    a factor ~``min(r2, R1)``. At the shapes the kernel was tuned for (r=34,
+    n=2, R=4) that factor is 3.6 and fusing wins on dispatch overhead. At a
+    BPX-preconditioned operator rank it is 84: measured 2708 ms per call
+    against 46.7 ms, and 48% of a whole 2D solve went into building a
+    preconditioner for local systems BPX had already made well conditioned.
+
+    Both must give the same numbers; only the expensive one must not be picked.
+    """
+    from tt.algs import _fast
+    if not _fast.HAVE_NUMBA:
+        pytest.skip("the fused path needs numba")
+
+    seen = []
+    real = _fast.jacobi_c_blocks
+
+    def counting(*args):
+        seen.append(1)
+        return real(*args)
+
+    monkeypatch.setattr(_fast, "jacobi_c_blocks", counting)
+    rng = np.random.default_rng(0)
+
+    for r, n, ra, fused_expected in ((8, 2, 3, True), (40, 4, 40, False)):
+        seen.clear()
+        phiL = rng.standard_normal((r, r, ra))
+        phiR = rng.standard_normal((r, r, ra))
+        acore = rng.standard_normal((ra, n, n, ra))
+        got = _jacobi("c", phiL, acore, phiR)
+        assert bool(seen) is fused_expected, (
+            f"r={r}, n={n}, R_A={ra}: took the "
+            f"{'fused' if seen else 'staged'} path")
+
+        # and the two paths are the same preconditioner
+        monkeypatch.setattr(_fast, "HAVE_NUMBA", False)
+        staged = _jacobi("c", phiL, acore, phiR)
+        monkeypatch.setattr(_fast, "HAVE_NUMBA", True)
+        w = rng.standard_normal((r, n, r))
+        assert rel(np.asarray(got(w)), np.asarray(staged(w))) < 1e-11
