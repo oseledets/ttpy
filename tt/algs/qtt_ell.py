@@ -13,19 +13,28 @@ The preconditioner is a sum over levels,
 and the whole point of [BK20] Theorem 3 is that this sum must **not** be
 assembled by adding ``L + 1`` TT matrices and rounding.  Every summand is a
 chain built from the *same two cores* -- ``U_b`` on the first ``l`` sites,
-``X_b`` on the remaining ones -- differing only in *where it switches* and by a
-scalar.  A sum of chains that differ in one bond position is a two-state
-automaton: state 1 = "still on ``U_b``", state 2 = "already switched", with the
-switch carrying weight ``2^{-l}``.  So the sum is *already* a TT matrix with a
-bidiagonal transfer core,
+``X_b`` on the remaining ones -- differing only in *where it switches*.  A sum
+of chains that differ in one bond position is a two-state automaton: state 1 =
+"still on ``U_b``", state 2 = "already switched to ``X_b``".  So the sum is
+*already* a TT matrix with a bidiagonal transfer core,
 
-    C_l = [ U_b   2^{-l} U_b ]
-          [  0    2^{-D} X_b ]
+    C_l = [ 2^{D-w} U_b   X_b ]
+          [      0        X_b ]
 
 of TT rank exactly ``2 * 4^D`` -- 8, 32, 128 for ``D = 1, 2, 3`` -- **independent
 of the number of levels**.  Assembled this way there is no intermediate rank
 growth and no rounding anywhere in the construction.  It is the same mechanism
 that makes a triangular Toeplitz matrix ``sum_k S^k`` rank 2 in QTT.
+
+The ``2^{D-w}`` is the one place ``D`` enters, and it is easy to lose: the bare
+chain for level ``l`` is not ``P_l P_l^T`` but ``2^{D(d-l)} P_l P_l^T``, since
+each of the ``d - l`` copies of ``X_b`` carries a ``2^{-D}``.  The automaton's
+built-in level weight is therefore ``2^{-D l}`` while ``C_{w,L}`` wants
+``2^{-w l}``, and the correction ``2^{(D-w) l}`` rides on ``U_b`` because ``l``
+is exactly the number of ``U_b`` factors.  At ``D = 1`` and ``w = 1`` the factor
+is 1 and the whole issue is invisible -- which is how a ``D > 1`` that produced
+the textbook ranks and preconditioned nothing survived a first round of tests.
+The chain sum is then ``2^{D d} C_{w,L}``, whence the final normalization.
 
 The second thing, which is what you actually solve with
 -------------------------------------------------------
@@ -228,23 +237,6 @@ def bpx(d, D=1, weight=1, scaled=True):
         raise ValueError(f"d must be at least 1, got {d}")
     if D < 1:
         raise ValueError(f"D must be at least 1, got {D}")
-    if D > 1:
-        raise NotImplementedError(
-            "bpx is verified for D = 1 only. The D-dimensional cores build and "
-            "give the expected TT rank 2*4^D (32 at D=2, 128 at D=3, flat in "
-            "d), but the result does not precondition: kappa(C A C) measured "
-            "24.6, 96.9, 385.3, 1537.0 at d = 3..6 in D = 2, growing by 4 per "
-            "level exactly as kappa(A) does. Ruled out as the cause: the index "
-            "layout (all four interleavings of level and dimension were tried, "
-            "the reversed ones are worse), an overall scalar on the X_b core "
-            "(five values, none flattens the growth), and four candidate "
-            "level-weight rules 2^(-l), 2^(l(D-2)), 2^(-2l/D), 2^(-lD) -- all "
-            "of them grow, including in a dense reference built from Kronecker "
-            "products of the 1D prolongations rather than from these cores. So "
-            "the error is in the D-dimensional level weighting itself and is "
-            "not yet found. See docs/plans/qtt-elliptic-bpx.md. Use D = 1, or "
-            "fix this and delete the check -- do not pass D > 1 expecting a "
-            "preconditioner.")
     if weight not in (1, 2):
         raise ValueError(
             f"weight must be 1 (two-sided, for solves) or 2 (left, for "
@@ -259,12 +251,17 @@ def bpx(d, D=1, weight=1, scaled=True):
     # sum_{l=0..d} A_b U_b^l X_b^{d-l} P_b -- the level sum, with no summation
     # of TT matrices and no rounding.
     #
-    # The level weight 2^{-l} of C_L is already carried by the scaling inside
-    # X_b (d - l copies of it), which is why nothing here is scaled per level
-    # for weight=1.  Weight 2 needs one extra 2^{-l}, and l is the number of
-    # U_b factors, so it goes on U_b.  Both are checked against a naive
-    # per-level sum in tests/test_qtt_ell.py rather than argued.
-    u_w = u_b if weight == 1 else (2.0 ** (-(weight - 1))) * u_b
+    # The bare chain for level l is NOT P_l P_l^T: measured, it is
+    # 2^{D(d-l)} P_l P_l^T, because each of the d - l copies of X_b carries a
+    # 2^{-D}.  So the automaton's built-in level weight is 2^{-D l}, while
+    # C_{w,L} wants 2^{-w l}.  The correction is 2^{(D-w) l}, and l is exactly
+    # the number of U_b factors, so it rides on U_b.
+    #
+    # At D = 1 this reduces to 2^{1-w} and the distinction is invisible --
+    # which is why a D > 1 that produced the right ranks and preconditioned
+    # nothing went unnoticed until the per-level chains were compared against
+    # P_l P_l^T directly.
+    u_w = u_b if D == weight else (2.0 ** (D - weight)) * u_b
     left = np.concatenate([a_b, np.zeros_like(a_b)], axis=3)   # start in state 1
     right = np.concatenate([p_b, p_b], axis=0)                 # accept either
     cores = [left]
@@ -278,11 +275,11 @@ def bpx(d, D=1, weight=1, scaled=True):
     merged[-1] = _skron(merged[-1], cores[-1])
 
     out = _to_ttpy(merged)
-    # The chain carries a fixed 2^d of its own, for either weight (verified
-    # against a per-level sum for d = 2..5, w = 1, 2: the ratio is exactly
-    # 2^d elementwise).  Make the normalization explicit rather than folded
-    # into the cores, where it would be one more thing to rediscover.
-    return out * (2.0 ** ((weight - 1) * d if scaled else -d))
+    # With that correction the chain sum is 2^{D d} C_{w,L}, so `scaled` (which
+    # means 2^{w d} C, pairing with the unscaled operators of qlaplace_dn) needs
+    # 2^{(w-D) d} and the unscaled form needs 2^{-D d}.  Explicit rather than
+    # folded into the cores: this is the factor that hid the D > 1 defect.
+    return out * (2.0 ** ((weight - D) * d if scaled else -D * d))
 
 
 def bpx_theta(d, D=1):

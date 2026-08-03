@@ -161,19 +161,51 @@ def test_bpx_refuses_arguments_it_cannot_honour():
         bpx(4, 0)
 
 
-def test_bpx_refuses_more_than_one_dimension():
-    """``D > 1`` builds and has the right rank, but does not precondition.
+@pytest.mark.parametrize("D, d", [(2, 2), (2, 3), (2, 4), (3, 2)])
+@pytest.mark.parametrize("weight", [1, 2])
+def test_bpx_in_several_dimensions(D, d, weight):
+    """``D > 1`` against the dense level sum, and the rank ``2 * 4^D``.
 
-    Measured in ``D = 2``: rank 32 as the theory says and flat in ``d``, yet
-    ``kappa(C A C)`` runs 24.6, 96.9, 385.3, 1537.0 at ``d = 3..6`` -- growing
-    by 4 per level, exactly like ``kappa(A)``. Returning that as a
-    preconditioner would be the silent-wrong-answer failure this project treats
-    as worse than a crash, so it raises until the cause is found.
+    The comparison is on *spectra*, which are invariant under the index
+    permutation that separates our level-major layout from the dimension-major
+    Kronecker product the reference is built with. That invariance is what
+    localized the ``D``-dependent scaling bug this test now pins: the cores were
+    right and the level weight was ``2^{-D l}`` instead of ``2^{-w l}``, which
+    at ``D = 1`` is the same thing.
     """
-    with pytest.raises(NotImplementedError, match="D = 1 only"):
-        bpx(4, 2)
-    with pytest.raises(NotImplementedError):
-        bpx(4, 3)
+    total = np.zeros((2 ** (D * d),) * 2)
+    for l in range(d + 1):
+        p = prolongation_reference(l, d)
+        p_d = p
+        for _ in range(D - 1):
+            p_d = np.kron(p_d, p)
+        total += 2.0 ** (-weight * l) * (p_d @ p_d.T)
+
+    c = bpx(d, D, weight=weight, scaled=False)
+    assert max(bpx(d, D, weight=weight).r) == 2 * 4 ** D
+    want = np.sort(np.linalg.eigvalsh(total))
+    got = np.sort(np.linalg.eigvalsh(dense(c)))
+    assert np.abs(got - want).max() < 1e-12 * np.abs(want).max()
+
+
+def test_bpx_bounds_the_condition_number_in_two_dimensions():
+    """The 2D claim, measured: ``kappa(A)`` grows 230x, ``kappa(B)`` under 3x.
+
+    Reference values ``kappa(B) = 4.5128, 5.8607, 7.5118, 9.2086`` at
+    ``d = 3..6`` (docs/plans/qtt-elliptic-bpx.md §2.2).
+    """
+    kappa_a, kappa_b = {}, {}
+    for d in (3, 4, 5, 6):
+        a = dense(tt.qlaplace_dn([d] * 2, "DN", order="level"))
+        c = dense(bpx(d, 2, weight=1, scaled=True))
+        wa = np.linalg.eigvalsh(a)
+        wb = np.linalg.eigvalsh(c @ a @ c)
+        kappa_a[d], kappa_b[d] = wa[-1] / wa[0], wb[-1] / wb[0]
+
+    assert kappa_a[6] / kappa_a[3] > 50
+    assert kappa_b[6] / kappa_b[3] < 3.0
+    for d, expected in ((3, 4.5128), (4, 5.8607), (5, 7.5118), (6, 9.2086)):
+        assert abs(kappa_b[d] - expected) < 1e-3, f"d={d}: {kappa_b[d]}"
 
 
 def test_bpx_bounds_the_condition_number_while_the_operator_loses_it():

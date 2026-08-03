@@ -39,23 +39,24 @@
 > the dense operator to 9e-15 at rank 6, and `solve_direct_1d` with that
 > coefficient agrees with `numpy.linalg.solve` to 3.4e-11 at rank 8.
 >
-> **`D > 1` is refused, and this is a real negative result.** The `D`-dimensional
-> cores now build (they used to crash: dimensions at one level combine by a
+> **`D > 1` works, after a bug that only `D > 1` could reveal.** Two fixes. The
+> `D`-dimensional cores used to crash: dimensions at one level combine by a
 > Kronecker product in *both* the rank and the mode index, not by the strong
-> Kronecker product, which contracts ranks) and the TT rank comes out exactly
-> `2*4^D` — 32 at `D = 2`, 128 at `D = 3`, flat in `d`. But it does not
-> precondition: `kappa(C A C)` measured 24.6, 96.9, 385.3, 1537.0 at
-> `d = 3..6`, growing by 4 per level exactly as `kappa(A)` does. Ruled out as
-> the cause: the index layout (all four interleavings of level and dimension;
-> the reversed ones are worse), an overall scalar on `X_b` (five values, none
-> flattens the growth), and four candidate level-weight rules — `2^{-l}`,
-> `2^{l(D-2)}`, `2^{-2l/D}`, `2^{-lD}` — every one of which grows, *including*
-> in a dense reference built from Kronecker products of the 1D prolongations
-> rather than from these cores. So the error is in the `D`-dimensional level
-> weighting itself and is not yet found; §2.2's `D = 2` table, which reports a
-> bounded `kappa(B)`, is not reproduced and one of the two measurements is
-> wrong. `bpx` raises `NotImplementedError` naming all of this rather than
-> returning something that has the right rank and does nothing.
+> Kronecker product, which contracts ranks. Fixed, they gave the textbook rank
+> `2*4^D` and preconditioned nothing — `kappa(C A C)` grew by 4 per level,
+> exactly like `kappa(A)`. Cause, found by comparing the *per-level chain*
+> against `P_l P_l^T` directly: the bare chain is `2^{D(d-l)} P_l P_l^T`,
+> because each of the `d - l` copies of `X_b` carries a `2^{-D}`, so the
+> automaton's built-in level weight is `2^{-Dl}` while `C_{w,L}` wants
+> `2^{-wl}`. The correction `2^{(D-w)l}` rides on `U_b`. At `D = 1, w = 1` the
+> factor is 1 — which is why every `D = 1` check passed.
+>
+> With that, spectra match the dense level sum to 1e-15 for `D = 1, 2, 3` and
+> both weights, at ranks 8, 32, 128, and §2.2's `D = 2` table is reproduced
+> exactly: `kappa(B) = 4.5128, 5.8607, 7.5118, 9.2086` at `d = 3..6`, against
+> `kappa(A)` going 1.1e+02 -> 6.7e+03. The spectra were the tool that localized
+> it: they are invariant under the level-major/dimension-major permutation, so
+> comparing them separated "wrong cores" from "wrong layout" in one run.
 >
 > **Also not implemented:** the coefficient-dependent fused factor
 > (`Lambda^{1/2} M C_L`, §3.2 K6), `load_vector`, and the `solve` front end.
