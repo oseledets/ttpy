@@ -32,8 +32,9 @@ import numpy as np
 import pytest
 import scipy.linalg as sla
 
+import hamiltonians as ham
 import tt
-from tt.algs.eigb import eigb
+from tt.algs.eigb import eigb, spectral_norm_estimate
 from tt.algs.ksl import diag_ksl, expmv_krylov, ksl, tangent_defect
 from tt.core import _ops
 
@@ -185,6 +186,98 @@ def test_eigb_refuses_what_it_cannot_do():
     nonsym = tt.matrix.from_list(cores)
     with pytest.raises(ValueError, match="Hermitian"):
         eigb(nonsym, x, 1e-8, verb=0)
+
+
+def test_eigb_warns_when_a_too_small_guess_rank_stalls_it():
+    """A converged-looking run that is wrong must still say so.
+
+    ``eigb`` cannot grow the TT rank past ``B * r_guess``, and at ``B == 1`` not
+    at all: both local SVD groupings bound the new rank by the old one.  Handed
+    a guess of rank 8 for a Heisenberg ground state that needs more, it happily
+    converges *inside* that manifold -- the Ritz value stops moving to 2.2e-09
+    while the eigenvalue is wrong in the 6th digit.  The sweep indicator cannot
+    see this; the eigenresidual can, and the threshold has to be tied to ``eps``
+    for it to fire.  A fixed 1e-2 (what this used to be) leaves six silent
+    decades exactly where such a run comes to rest.
+    """
+    d = 10
+    H = ham.heisenberg(d)
+    exact = np.linalg.eigvalsh(ham.dense(H))[0]
+    rng = np.random.default_rng(0)
+
+    y0 = tt.rand(2, d, r=[1] + [8] * (d - 1) + [1], samplefunc=rng.standard_normal)
+    with pytest.warns(RuntimeWarning, match="backward error"):
+        _, lam, hist = eigb(H, y0, 1e-8, nswp=60, verb=0, return_history=True)
+
+    # the run looks converged and is not: this is the pair the warning is about
+    assert hist.converged is True
+    assert hist.ermax < 1e-8
+    assert abs(lam[0] - exact) / abs(exact) > 1e-7      # requested 1e-8
+    assert max(hist.ranks) == 8                         # never grew past the guess
+
+    # and the other side of it: enough rank, no warning, no false alarm
+    y0 = tt.rand(2, d, r=[1] + [32] * (d - 1) + [1],
+                 samplefunc=np.random.default_rng(0).standard_normal)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        _, lam = eigb(H, y0, 1e-8, nswp=60, verb=0)
+    assert abs(lam[0] - exact) < 1e-10 * abs(exact)
+
+
+def test_spectral_norm_estimate_is_a_close_lower_bound():
+    """The warning's denominator, against a dense ``||A||_2``.
+
+    It must be a *lower* bound (a warning that goes quiet is worse than one
+    that is eager) and close enough that the threshold means something.  Both
+    operators below have a clustered top of the spectrum, the slow case for
+    power iteration, so this is near the worst it does.
+    """
+    for A in (tt.qlaplace_dd([10]), ham.heisenberg(10)):
+        exact = np.linalg.norm(ham.dense(A), 2)
+        est = spectral_norm_estimate(A)
+        assert est <= exact * (1 + 1e-10)          # a lower bound
+        assert est >= 0.9 * exact, f"{est} vs {exact}"
+        assert est == spectral_norm_estimate(A)    # deterministic
+
+    # the degenerate operator has no scale to divide by, and must not blow up
+    assert spectral_norm_estimate(0.0 * tt.qlaplace_dd([6])) == 0.0
+
+
+def test_eigb_does_not_cry_wolf_near_the_bottom_of_the_spectrum():
+    """Correct eigenpairs of a near-singular operator must not warn.
+
+    ``qlaplace_dd([10])`` has ``lam_1 = 9.4e-06`` against ``||A||_2 = 4``, so
+    the residual relative to ``||A y_1||`` is 3.0e-04 -- above any threshold
+    tied to ``eps=1e-8`` -- while the eigenvalues are right to 1e-9 absolute.
+    Normalizing by ``||A||`` instead of ``||A y_i||`` is what separates a wrong
+    answer from a small one; this test is the reason the denominator changed.
+    """
+    d, nblock = 10, 4
+    A = tt.qlaplace_dd([d])
+    rng = np.random.default_rng(d * 100 + nblock)
+    x = tt.rand([2] * d, r=[1] + [5] * (d - 1) + [nblock],
+                samplefunc=rng.standard_normal)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        _, lam, hist = eigb(A, x, 1e-8, verb=0, return_history=True)
+
+    exact = np.linalg.eigh(A.full())[0][:nblock]
+    assert np.allclose(lam, exact, atol=1e-6, rtol=0)
+    # the two measures disagree by four decades here -- that is the whole point
+    assert np.max(hist.res_rel) > 1e-5
+    assert np.max(hist.res_back) < 1e-8
+
+
+def test_tfim_ground_energy_matches_the_closed_form():
+    """The critical open TFIM has an exact ground-state energy; check the fixture.
+
+    An oracle that does not go through LAPACK, so it stays valid at chain
+    lengths where forming the dense matrix is impossible.
+    """
+    for d in (4, 8, 10):
+        dense_e0 = np.linalg.eigvalsh(ham.dense(ham.tfim(d, g=1.0)))[0]
+        assert abs(dense_e0 - ham.tfim_critical_ground_energy(d)) < 1e-13 * abs(dense_e0)
 
 
 def test_eigb_largest_eigenvalues_via_minus_a():

@@ -71,7 +71,7 @@ from ..core.matrix import matrix
 from ..core.vector import vector
 from . import _localops as lo
 
-__all__ = ["eigb", "EigbHistory"]
+__all__ = ["eigb", "EigbHistory", "spectral_norm_estimate"]
 
 
 @dataclass
@@ -94,7 +94,14 @@ class EigbHistory:
             ``check_residual=False``.  This -- not ``ermax`` -- is the evidence
             that the answer is an eigenpair: a stagnating alternating iteration
             reports ``ermax = 0`` at a point that is not one.
-        res_rel: ``res_i / ||A y_i||``, the scale-free version.
+        res_rel: ``res_i / ||A y_i||`` -- the *relative* accuracy of eigenvalue
+            ``i``.  Reported, but not what the warning fires on: near the bottom
+            of the spectrum ``||A y_i||`` is tiny and this is large even when
+            the answer is right to machine precision.
+        res_back: ``res_i / ||A||_2`` (see :func:`spectral_norm_estimate`) --
+            the backward error, and the quantity the warning uses: the returned
+            pair is exact for ``A + E`` with ``||E||/||A|| = res_back``.
+        anorm: The estimate of ``||A||_2`` used for ``res_back``.
         max_local_res: Largest local eigenresidual seen (iterative solver only).
         ranks: TT ranks of the returned block vector.
         nswp_done: Number of full sweeps performed.
@@ -109,17 +116,89 @@ class EigbHistory:
     ermax: float = float("nan")
     res: np.ndarray = None
     res_rel: np.ndarray = None
+    res_back: np.ndarray = None
+    anorm: float = float("nan")
     max_local_res: float = 0.0
     ranks: list = field(default_factory=list)
     nswp_done: int = 0
     time: float = 0.0
 
     def __repr__(self):
-        res = "n/a" if self.res_rel is None else f"{float(np.max(self.res_rel)):.2e}"
+        res = "n/a" if self.res_back is None else f"{float(np.max(self.res_back)):.2e}"
         return (f"EigbHistory(sweeps={self.nswp_done}, converged={self.converged}, "
                 f"ermax={self.ermax:.2e}, max_rank={max(self.ranks) if self.ranks else 0}, "
-                f"max_rel_res={res}, "
+                f"max_back_err={res}, "
                 f"max_local_res={self.max_local_res:.2e}, time={self.time:.2f}s)")
+
+
+def spectral_norm_estimate(A, its=12, eps=1e-3, seed=0):
+    """A cheap lower estimate of ``||A||_2``, by power iteration in TT.
+
+    This exists to give the eigenresidual a denominator that means something.
+    The obvious candidates both fail:
+
+    * ``||A y_i||`` (that is, ``lam_i``) asks every eigenvalue to be accurate
+      *relatively*.  No eigensolver working at truncation accuracy ``eps`` can
+      deliver that near the bottom of the spectrum: on ``qlaplace_dd([10])``
+      with ``B = 4`` the returned pairs are right to 1e-9 absolute, yet
+      ``res/||A y||`` is 3.0e-04 because ``lam_1 = 9.4e-06``.
+    * ``||A||_F`` overestimates badly in exactly the regime we care about --
+      measured 78.4 against ``||A||_2 = 4.0`` for the same operator, and 41.6
+      against 4.26 for a 10-site Heisenberg chain.  A denominator 10-20x too
+      large desensitizes the warning by the same factor.
+
+    ``||r||/||A||_2`` is the backward error: the returned pair is exact for
+    ``A + E`` with ``||E|| = ||r||``, so this is the perturbation of the
+    operator that the answer corresponds to, and for a symmetric ``A`` it also
+    bounds ``|lam - lam_exact|`` directly.
+
+    The estimate is a *lower* bound, so it can only make the warning more
+    eager, never quieter.  Measured against a dense ``||A||_2`` at ``its=12``:
+    0.94-0.97 of the truth on ``qlaplace_dd``, 0.97 on Heisenberg, in 25-40 ms
+    -- both operators have a clustered top of the spectrum, which is the slow
+    case for power iteration, so this is close to the worst it does.  One digit
+    is all a threshold needs.
+
+    Deterministic: the starting vector comes from a fixed seed, so two runs on
+    the same operator warn identically.
+
+    Args:
+        A: A :class:`tt.matrix`.
+        its: Power iterations.
+        eps: Rounding accuracy of the iterate (loose on purpose -- this is a
+            threshold, not an answer).
+        seed: Seed of the starting vector.
+
+    Returns:
+        ``float``, an estimate of ``||A||_2`` from below.  ``0.0`` if the
+        iterate collapses, which is what a zero operator does.
+    """
+    from ..core import tools as _tools
+
+    d = int(A.tt.d)
+    n = [int(v) for v in A.n]
+    # the starting vector must live where A lives, not on the default backend:
+    # this is an *operation* on a user's operator, and operations follow their
+    # input.  Going through tt.rand would build it on whatever set_backend last
+    # selected and then die in the first contraction on a mixture.
+    ab = bk.backend_of(A.tt.cores[0])
+    dt = A.dtype
+    rng = np.random.default_rng(seed)
+    ranks = [1] + [3] * (d - 1) + [1]
+    x = vector.from_list([ab.randn((ranks[k], n[k], ranks[k + 1]), dt, rng)
+                          for k in range(d)])
+    nrm = x.norm()
+    if nrm == 0.0:
+        return 0.0
+    x = x * (1.0 / nrm)
+    lam = 0.0
+    for _ in range(int(its)):
+        y = _tools.matvec(A, x).round(eps)
+        lam = float(y.norm())
+        if lam == 0.0:
+            return 0.0
+        x = y * (1.0 / lam)
+    return lam
 
 
 def block_residuals(A, y, lam):
@@ -240,7 +319,7 @@ def _local_eig_lobpcg(left, acore, right, nblock, guess, tol, maxiter):
 
 def eigb(A, y0, eps, rmax=150, nswp=20, max_full_size=1000, verb=1,
          return_history=False, lobpcg_maxiter=200, sym_tol=None,
-         check_residual=True, res_warn=1e-2):
+         check_residual=True, res_warn=None):
     """The ``B`` smallest eigenpairs of a symmetric TT-matrix.
 
     ``B = y0.r[-1]``: the last rank of the initial guess is the number of
@@ -271,10 +350,23 @@ def eigb(A, y0, eps, rmax=150, nswp=20, max_full_size=1000, verb=1,
             (one TT matvec plus three dots, see :func:`block_residuals`) and put
             it in the history.  ``ermax`` cannot see a stalled iteration; this
             can, so leave it on unless the cost matters.
-        res_warn: warn when the largest *relative* residual
-            ``||A y_i - lam_i y_i|| / ||A y_i||`` exceeds this.  Pure reporting:
-            the numbers are in ``history.res`` / ``history.res_rel`` whatever
-            the threshold, and a well converged run reaches ``~sqrt(eps)``.
+        res_warn: warn when the largest *backward error*
+            ``||A y_i - lam_i y_i|| / ||A||_2`` exceeds this.  Pure reporting:
+            the numbers are in ``history.res`` / ``history.res_rel`` /
+            ``history.res_back`` whatever the threshold.  The denominator is an
+            estimate (:func:`spectral_norm_estimate`) and costs about 12 TT
+            matvecs, only when ``check_residual`` is on.
+            ``None`` (default) means ``sqrt(eps)``, floored at
+            ``8 * eps_machine`` of the working dtype -- that is the residual a
+            converged run actually reaches, because the eigenvalue error is
+            quadratic in the eigenvector error while the residual is linear.
+            A *fixed* threshold is the wrong shape: 1e-2 left six silent decades
+            between an ``eps=1e-8`` request and the warning, and that is exactly
+            where a run whose rank never grows comes to rest -- ``eigb`` cannot
+            increase the rank at ``B == 1`` (both local SVD groupings bound the
+            new rank by ``B * r_old``), so a too-small guess rank stalls at a
+            non-eigenvector and used to return quietly.  See
+            ``docs/plans/eigenvalues.md``.
 
     Returns:
         ``(y, lam)``, or ``(y, lam, history)`` if ``return_history``.  ``y`` is
@@ -314,6 +406,8 @@ def eigb(A, y0, eps, rmax=150, nswp=20, max_full_size=1000, verb=1,
     acores = lo.operator_cores(A, cores[0], dt)
     if sym_tol is None:
         sym_tol = float(np.sqrt(bk.eps_of(dt)))
+    if res_warn is None:
+        res_warn = max(float(np.sqrt(eps)), 8.0 * float(bk.eps_of(dt)))
     hist = EigbHistory(eps=float(eps))
 
     if verb > 0:
@@ -480,18 +574,27 @@ def _record_residual(hist, A, y, lam, check_residual, res_warn, nswp):
     res, znorm = block_residuals(A, y, lam)
     hist.res = res
     hist.res_rel = res / np.where(znorm > 0, znorm, 1.0)
-    worst = float(np.max(hist.res_rel))
+    hist.anorm = spectral_norm_estimate(A)
+    # a zero operator has every vector for an eigenvector at lam = 0; there is
+    # nothing to scale by and nothing to warn about
+    hist.res_back = res / (hist.anorm if hist.anorm > 0 else 1.0)
+    worst = float(np.max(hist.res_back))
     if worst > res_warn:
         warnings.warn(
-            f"eigb returned pairs with a relative eigenresidual up to "
-            f"{worst:.3E} (absolute {float(np.max(res)):.3E}); the Ritz values "
+            f"eigb returned pairs with a backward error up to "
+            f"{worst:.3E} (residual {float(np.max(res)):.3E} against "
+            f"||A||~{hist.anorm:.3E}), above the "
+            f"{res_warn:.3E} expected for eps={hist.eps:.1E}; the Ritz values "
             f"are not eigenvalues of A to that accuracy. The sweep indicator "
             f"({hist.ermax:.3E} over {nswp} allowed sweeps) cannot see this: an "
             "alternating iteration can stall at a point that is not an "
             "eigenvector -- a rank-deficient or zero initial guess, too small "
             "an rmax, or a local solver that did not converge "
-            f"(largest local residual {hist.max_local_res:.3E}). Start from a "
-            "random guess of larger rank, or raise rmax.",
+            f"(largest local residual {hist.max_local_res:.3E}). The commonest "
+            f"cause is a guess rank that is simply too small: eigb never grows "
+            f"the rank beyond B * r_guess, and at B == 1 not at all, so it "
+            f"converges inside the manifold it was handed. Start from a random "
+            f"guess of larger rank (ranks used: {hist.ranks}), or raise rmax.",
             RuntimeWarning, stacklevel=3)
 
 

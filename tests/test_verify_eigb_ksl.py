@@ -286,7 +286,7 @@ def test_eigb_reports_a_stalled_iteration():
     """
     d = 5
     A = tt.qlaplace_dd([d])
-    with pytest.warns(RuntimeWarning, match="eigenresidual"):
+    with pytest.warns(RuntimeWarning, match="backward error"):
         y, lam, hist = eigb(A, tt.zeros([2] * d), 1e-8, verb=0, return_history=True)
 
     exact = np.linalg.eigh(np.asarray(A.full()))[0][0]
@@ -309,7 +309,7 @@ def test_eigb_reports_a_local_solver_that_did_not_converge():
     d, nblock = 10, 4
     A = tt.qlaplace_dd([d])
     x = rand_tt([2] * d, [1] + [6] * (d - 1) + [nblock], seed=11)
-    with pytest.warns(RuntimeWarning, match="eigenresidual"):
+    with pytest.warns(RuntimeWarning, match="backward error"):
         _, lam, hist = eigb(A, x, 1e-8, verb=0, max_full_size=30, lobpcg_maxiter=1,
                             return_history=True)
     exact = np.linalg.eigh(np.asarray(A.full()))[0][:nblock]
@@ -481,7 +481,7 @@ def test_eigb_from_a_rank_one_guess_is_wrong_and_says_so():
     """
     d = 8
     A = tt.qlaplace_dd([d])
-    with pytest.warns(RuntimeWarning, match="eigenresidual"):
+    with pytest.warns(RuntimeWarning, match="backward error"):
         _, lam, hist = eigb(A, rand_tt([2] * d, 1, seed=61), 1e-10, verb=0,
                             return_history=True)
     exact = np.linalg.eigh(np.asarray(A.full()))[0][0]
