@@ -234,37 +234,53 @@ def test_bpx_bounds_the_condition_number_while_the_operator_loses_it():
 
 # --- the fused form ----------------------------------------------------------
 
-@pytest.mark.parametrize("d", [3, 5, 8])
-def test_theta_squared_is_the_preconditioned_operator(d):
-    """``Theta^T Theta == C A C``, which is the whole point of the fused form.
+@pytest.mark.parametrize("D, d", [(1, 3), (1, 5), (1, 8), (2, 2), (2, 3), (3, 2)])
+def test_theta_factors_reproduce_the_preconditioned_operator(D, d):
+    """``sum_k Theta_k^T Theta_k == C A C``, the whole point of the fused form.
 
     The same matrix, assembled without ever representing the triple product.
+    Compared on spectra so the check is independent of the index layout.
     """
-    got = dense((bpx_theta(d).T @ bpx_theta(d)).round(1e-14))
-    a = dense(tt.qlaplace_dn(d, "DN"))
-    c = dense(bpx(d, 1, weight=1, scaled=True))
-    want = c @ a @ c
-    assert np.abs(got - want).max() < 1e-12 * np.abs(want).max()
+    total = None
+    for th in bpx_theta(d, D):
+        term = dense((th.T @ th).round(1e-14))
+        total = term if total is None else total + term
+    order = "level" if D > 1 else "dim"
+    a = dense(tt.qlaplace_dn([d] * D, "DN", order=order))
+    c = dense(bpx(d, D, weight=1, scaled=True))
+    want = np.sort(np.linalg.eigvalsh(c @ a @ c))
+    got = np.sort(np.linalg.eigvalsh(total))
+    # The tolerance has to allow for 4^d * eps, and the reason is the point of
+    # the whole construction: it is the *reference* that degrades. Forming
+    # C A C densely cancels over 4^d, so at d = 8 it is itself only good to
+    # ~1.5e-11 relative -- measured disagreement there is 3.9e-11, which a flat
+    # 1e-12 would blame on Theta.
+    tol = max(1e-12, 4.0 ** d * np.finfo(float).eps) * np.abs(want).max()
+    assert np.abs(got - want).max() < 10 * tol
 
 
-@pytest.mark.parametrize("d", [4, 8, 16, 30])
-def test_theta_rank_is_flat_and_small(d):
-    """Rank 6 for ``Theta`` and 17 for ``Theta^T Theta``, whatever ``d`` is.
+@pytest.mark.parametrize("D", [1, 2, 3])
+@pytest.mark.parametrize("d", [4, 12, 30])
+def test_theta_rank_is_flat_and_matches_theorem_4(D, d):
+    """Rank ``2^(2D) + 2^(2D-1)`` -- 6, 24, 96 -- whatever ``d`` is.
 
     Contrast with the triple product, whose rank was measured at 96, 135, 185
     for ``d = 10, 14, 18`` -- growing, which is what made it slow *and* what
     made its entries cancel.
     """
-    th = bpx_theta(d)
-    assert max(th.r) == 6
-    assert max((th.T @ th).round(1e-14).r) <= 17
+    factors = bpx_theta(d, D)
+    assert len(factors) == D
+    for th in factors:
+        assert max(th.r) == 4 ** D + 4 ** D // 2
+    if D == 1:
+        assert max((factors[0].T @ factors[0]).round(1e-14).r) <= 17
 
 
-def test_bpx_theta_refuses_more_than_one_dimension():
-    with pytest.raises(NotImplementedError, match="D = 1"):
-        bpx_theta(4, D=2)
+def test_bpx_theta_refuses_what_it_cannot_build():
     with pytest.raises(ValueError):
         bpx_theta(0)
+    with pytest.raises(ValueError):
+        bpx_theta(4, D=0)
 
 
 def test_the_preconditioner_earns_its_keep():
@@ -290,7 +306,7 @@ def test_the_preconditioner_earns_its_keep():
         plain = amen_solve(a, rhs, tt.ones(2, d), 1e-10, nswp=30, verb=0)
     err_plain = float((plain - exact).norm() / exact.norm())
 
-    th = bpx_theta(d)
+    th = bpx_theta(d, 1)[0]
     c = bpx(d, 1, weight=1, scaled=True)
     w, info = amen_solve((th.T @ th).round(1e-14),
                          tt.matvec(c, rhs).round(1e-12), tt.ones(2, d), 1e-10,

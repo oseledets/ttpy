@@ -58,8 +58,21 @@
 > it: they are invariant under the level-major/dimension-major permutation, so
 > comparing them separated "wrong cores" from "wrong layout" in one run.
 >
+> **The stable form is now `D`-dimensional too.** `bpx_theta(d, D)` returns the
+> `D` factors of [BK20] Theorem 4, `B = sum_k Theta_k^T Theta_k`, at the rank
+> the theorem states — `2^{2D} + 2^{2D-1}` = 6, 24, 96 for `D = 1, 2, 3`, flat
+> in `d`. It needed one more `D`-dependent scalar, `2^{1-D}` on the second
+> automaton state, found the same way as the `bpx` one: by requiring the sum to
+> equal a dense `C A C` and searching the two per-state scalars over powers of
+> two. Verified for `D = 1, 2, 3` to 1e-14.
+>
+> A note the tests now carry: past `d ≈ 8` the *dense* `C A C` is no longer an
+> accurate reference, because forming it cancels over `4^d` — exactly the
+> claim of §2.2, showing up in our own test tolerances rather than in a table.
+>
 > **Also not implemented:** the coefficient-dependent fused factor
-> (`Lambda^{1/2} M C_L`, §3.2 K6), `load_vector`, and the `solve` front end.
+> (`Lambda^{1/2} M C_L`, §3.2 K6 — the machinery now exists, `qtt_ell.sqrt`,
+> but the factor is not built), `load_vector`, and the `solve` front end.
 
 Implementation spec for a new module `tt.algs.qtt_ell` (+ additions to
 `tt/core/tools.py`). Sources actually read, and what each one is:

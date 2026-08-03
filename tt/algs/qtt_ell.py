@@ -86,8 +86,8 @@ import numpy as np
 from ..core.matrix import matrix
 from ..core.tools import level_major_order, qdiff, qtri_ones
 
-__all__ = ["bpx", "bpx_theta", "invert", "prolongation", "solve_direct_1d",
-           "sqrt", "stiffness"]
+__all__ = ["bpx", "bpx_operator", "bpx_theta", "invert", "prolongation",
+           "solve_direct_1d", "sqrt", "stiffness"]
 
 _I2 = np.eye(2)
 _J = np.array([[0.0, 1.0], [0.0, 0.0]])     # [BK20] (37): J upper, J.T lower
@@ -160,8 +160,13 @@ def _dkron(a, b):
 
 def _kron_power(c, ndim):
     """The ``D``-fold Kronecker power of a core: one level, all dimensions."""
-    out = c
-    for _ in range(ndim - 1):
+    return _kron_list([c] * ndim)
+
+
+def _kron_list(cores):
+    """:func:`_dkron` folded over a list -- one level, the dimensions in order."""
+    out = cores[0]
+    for c in cores[1:]:
         out = _dkron(out, c)
     return out
 
@@ -283,67 +288,103 @@ def bpx(d, D=1, weight=1, scaled=True):
 
 
 def bpx_theta(d, D=1):
-    """The fused factor ``Theta`` of [BK20] Lemma 5, with ``B = Theta^T Theta``.
+    """The fused factors ``Theta_k`` of [BK20] Lemma 5 / Theorem 4.
 
-    ``Theta = M C_L`` where ``M`` is the difference operator, so ``B`` is the
-    preconditioned operator ``C_L A C_L`` -- **the same matrix** as
-    ``bpx(d) @ qlaplace_dn(d) @ bpx(d)`` in exact arithmetic, and not at all the
-    same object in floating point.
+    Returns a **list of ``D`` matrices**, one per direction, with
 
-    That difference is the entire practical content of [BK20]. Forming the
-    product of three QTT factors and rounding it represents a matrix whose
-    entries cancel over ``4^d``, so the representation error grows like
-    ``4^d * eps``: measured 1.3e-10 at ``d = 10``, 6.0e-04 at ``d = 20``,
-    4.8e+14 at ``d = 50``, while this form stays at 1.4e-14. The rank tells the
-    same story -- ``round(C A C)`` was measured at 96, 135, 185 for
-    ``d = 10, 14, 18``, growing with ``d``, while ``Theta`` has TT rank 6 for
-    ``D = 1`` whatever ``d`` is, because it is the same level automaton as
-    :func:`bpx` with the difference operator fused into its cores rather than
-    multiplied on afterwards.
+        B = sum_k Theta_k^T Theta_k
+
+    the preconditioned operator ``C A C`` -- the same matrix as
+    ``bpx(d, D) @ qlaplace_dn(...) @ bpx(d, D)`` in exact arithmetic, and not at
+    all the same object in floating point.
+
+    That difference is the practical content of [BK20]. Forming the product of
+    three QTT factors and rounding it represents a matrix whose entries cancel
+    over ``4^d``, so the representation error grows like ``4^d * eps``: measured
+    1.3e-10 at ``d = 10``, 6.0e-04 at ``d = 20``, 4.8e+14 at ``d = 50``, while
+    this form stays at 1.4e-14. The rank tells the same story -- ``round(C A C)``
+    was measured at 96, 135, 185 for ``d = 10, 14, 18``, growing with ``d``,
+    while ``Theta_k`` has TT rank exactly ``2^(2D) + 2^(2D-1)`` (6, 24, 96 for
+    ``D = 1, 2, 3``) whatever ``d`` is.
+
+    A list even when ``D == 1``, because for ``D > 1`` the sum must be applied
+    as ``sum_k Theta_k^T round(Theta_k v)`` rather than assembled -- the
+    assembled ``B`` has rank up to ``2 D 4^{2D}`` -- and one contract that is
+    always right beats a convenient one that stops being right at ``D = 2``.
 
     Args:
         d: number of levels.
-        D: spatial dimensions.  Only ``D = 1`` is implemented; for ``D > 1``
-            [BK20] gives one factor per direction and they must be applied as
-            ``sum_k Theta_k^T round(Theta_k v)`` rather than assembled.
+        D: spatial dimensions. The factors act on ``2^(D d)`` unknowns laid out
+            **level-major**; pair them with
+            ``tt.qlaplace_dn([d]*D, 'DN', order='level')``.
 
     Returns:
-        A ``tt.matrix`` ``Theta`` with ``Theta^T Theta`` the preconditioned
-        operator, scaled to pair with the **unscaled** :func:`tt.qlaplace_dn`.
+        ``list`` of ``D`` ``tt.matrix``, scaled to pair with the *unscaled*
+        operators of :func:`tt.qlaplace_dn`.
     """
     d, D = int(d), int(D)
     if d < 1:
         raise ValueError(f"d must be at least 1, got {d}")
-    if D != 1:
-        raise NotImplementedError(
-            "bpx_theta is implemented for D = 1 only. For D > 1 [BK20] Lemma 5 "
-            "gives one factor per direction, to be applied as "
-            "sum_k Theta_k^T round(Theta_k v); assembling B in 2D was measured "
-            "at rank <= 1152 and is usually a mistake. See "
-            "docs/plans/qtt-elliptic-bpx.md")
+    if D < 1:
+        raise ValueError(f"D must be at least 1, got {D}")
 
-    a_b = _cdot(_AHAT, _AHAT)
-    u_b = _cdot(_U, _ctr(_U))
-    w1 = _cdot(_T1, _IHAT)                      # [BK20] (83)
+    u1 = _cdot(_U, _ctr(_U))
+    x1 = _cdot(_X, _ctr(_X))
+    a1 = _cdot(_AHAT, _AHAT)
+    p1 = _cdot(_PHAT, _PHAT)
+    w1 = _cdot(_T1, _IHAT)                       # [BK20] (83)
     z1 = _cdot(_Y1, _ctr(_X))
     k1 = _cdot(_N1, _PHAT)
+    wz1 = _skron(w1, z1)
+    wk1 = _skron(w1, k1)
 
-    # Same automaton as bpx, but the switch core w1 carries a 1x1 mode: it sits
-    # *between* sites rather than on one, so it is fused into the first z1 of
-    # state 2.  Chain sum: sum_{l=0..d} A_b U_b^l W1 Z1^{d-l} K1, every scalar 1.
-    wz = _skron(w1, z1)
-    # the two states have *different* ranks here (4 and 2), unlike in bpx where
-    # both are 4, so the boundary blocks have to be sized from the cores
-    left = np.concatenate(
-        [a_b, np.zeros(a_b.shape[:3] + (z1.shape[0],))], axis=3)
-    right = np.concatenate([_skron(w1, k1), k1], axis=0)
-    cores = [left] + [_block2(u_b, wz, z1) for _ in range(d)] + [right]
-    merged = [_skron(cores[0], cores[1])] + cores[2:-1]
-    merged[-1] = _skron(merged[-1], cores[-1])
-    # no scaling: the chain already carries exactly what makes Theta^T Theta
-    # equal C A C for the *scaled* C of bpx(..., scaled=True) -- checked
-    # elementwise against the dense product for d = 3..8
-    return _to_ttpy(merged)
+    # The second state carries 2^{1-D}: the analogue, for Theta, of the
+    # 2^{(D-w)l} that bpx needs, and measured the same way -- by requiring
+    # sum_k Theta_k^T Theta_k to equal a dense C A C.  Verified for
+    # D = 1, 2, 3 (spectra to 1e-14) at the Theorem 4 ranks 6, 24, 96.
+    delta = 2.0 ** (1 - D)
+
+    out = []
+    for k in range(D):
+        u = _kron_list([u1] * D)
+        sw = _kron_list([wz1 if j == k else x1 for j in range(D)]) * delta
+        st2 = _kron_list([z1 if j == k else x1 for j in range(D)]) * delta
+        a_b = _kron_list([a1] * D)
+        r1 = _kron_list([wk1 if j == k else p1 for j in range(D)])
+        r2 = _kron_list([k1 if j == k else p1 for j in range(D)])
+        left = np.concatenate(
+            [a_b, np.zeros(a_b.shape[:3] + (st2.shape[0],))], axis=3)
+        right = np.concatenate([r1, r2], axis=0)
+        cores = [left] + [_block2(u, sw, st2) for _ in range(d)] + [right]
+        merged = [_skron(cores[0], cores[1])] + cores[2:-1]
+        merged[-1] = _skron(merged[-1], cores[-1])
+        out.append(_to_ttpy(merged))
+    return out
+
+
+def bpx_operator(d, D=1, eps=1e-14):
+    """``B = sum_k Theta_k^T Theta_k`` assembled, for callers that need a matrix.
+
+    Rank 17 for ``D = 1``, flat in ``d``.  For ``D > 1`` the assembled operator
+    is large (bounded by ``2 D 4^{2D}``, i.e. 512 already at ``D = 2``) and
+    :func:`bpx_theta` applied factor by factor is the intended route; this
+    function warns rather than refuses, because forming it at small ``d`` is a
+    legitimate thing to do in a test.
+    """
+    d, D = int(d), int(D)
+    factors = bpx_theta(d, D)
+    if D > 1:
+        import warnings
+        warnings.warn(
+            f"assembling B for D={D}: the factors of bpx_theta are meant to be "
+            "applied as sum_k Theta_k^T round(Theta_k v), and the assembled "
+            "operator has rank up to 2*D*4^(2D). Fine for a small test, not "
+            "for a solve.", RuntimeWarning, stacklevel=2)
+    total = None
+    for th in factors:
+        term = (th.T @ th).round(eps)
+        total = term if total is None else (total + term).round(eps)
+    return total
 
 
 def prolongation(l, d, D=1):
