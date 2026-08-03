@@ -83,8 +83,17 @@ def chop(sv, eps):
 
     ``sv`` are singular values in non-increasing order, ``eps`` is *absolute*.
     Same contract as ``my_chop2`` in legacy ttpy.
+
+    Both arguments are pulled into numpy on the way in.  ``eps`` is routinely a
+    norm of the data, and on the torch backend that is a 0-d tensor (it has to
+    be, or gradients through ``||x||`` are silently lost -- see
+    ``TorchBackend.norm``); a tensor threshold would otherwise meet a numpy
+    array here and raise from inside a comparison.  Detaching is right rather
+    than merely convenient: the return value is a *rank*, a discrete choice,
+    and nothing differentiable passes through it.
     """
     sv = np.asarray(bk.to_numpy(sv), dtype=np.float64)
+    eps = float(eps)
     if eps <= 0.0 or sv.size == 0:
         return sv.size
     tail = np.cumsum(np.abs(sv[::-1]) ** 2)[::-1]
@@ -323,9 +332,9 @@ def add(a, b):
 def scale(cores, alpha):
     """Multiply the tensor by a scalar (applied to the first core)."""
     check_cores(cores)
-    dt = bk.result_dtype(bk.dtype_of(cores[0]),
-                         "complex128" if isinstance(alpha, complex)
-                         and alpha.imag != 0 else bk.dtype_of(cores[0]))
+    own = bk.dtype_of(cores[0])
+    adt = bk.scalar_dtype(alpha)      # None for a plain real: it has no opinion
+    dt = bk.result_dtype(own, own if adt is None else adt)
     out = to_dtype(cores, dt)
     out = list(out)
     out[0] = out[0] * alpha

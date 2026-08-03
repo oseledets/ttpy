@@ -219,7 +219,7 @@ class matrix(object):
         if isinstance(other, vector):
             from . import tools as _tools
             return _tools.matvec(self, other)
-        if isinstance(other, Number):
+        if bk.is_scalar(other):
             c = matrix()
             c.n, c.m = self.n.copy(), self.m.copy()
             c.tt = self.tt * other
@@ -242,7 +242,7 @@ class matrix(object):
     def __rmul__(self, other):
         if isinstance(other, matrix):
             return other.__matmul__(self)
-        if isinstance(other, Number):
+        if bk.is_scalar(other):
             return self.__mul__(other)
         return NotImplemented
 

@@ -299,7 +299,7 @@ class vector(object):
     def __add__(self, other):
         if other is None:
             return self
-        if isinstance(other, Number):
+        if bk.is_scalar(other):
             from . import tools
             other = tools.ones(self.n, None) * other
         c = vector()
@@ -322,7 +322,7 @@ class vector(object):
 
     def __mul__(self, other):
         c = vector()
-        if isinstance(other, Number):
+        if bk.is_scalar(other):
             c.cores = _ops.scale(self.cores, other)
         elif isinstance(other, vector):
             c.cores = _ops.hadamard(self.cores, other.cores)
@@ -331,7 +331,7 @@ class vector(object):
         return c
 
     def __rmul__(self, other):
-        if isinstance(other, Number):
+        if bk.is_scalar(other):
             return self.__mul__(other)
         if isinstance(other, vector):
             c = vector()
@@ -340,7 +340,7 @@ class vector(object):
         return NotImplemented
 
     def __truediv__(self, other):
-        if isinstance(other, Number):
+        if bk.is_scalar(other):
             return self.__mul__(1.0 / other)
         return NotImplemented
 

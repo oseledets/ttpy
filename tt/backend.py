@@ -17,6 +17,7 @@ Mixing backends inside one TT tensor is an error, not a silent conversion.
 from __future__ import annotations
 
 from functools import lru_cache
+from numbers import Number
 
 import numpy as np
 
@@ -25,7 +26,8 @@ __all__ = [
     "asarray", "to_numpy", "copy", "zeros", "empty", "eye", "arange", "randn",
     "concatenate", "stack", "transpose", "einsum", "diag", "tril", "triu",
     "svd", "qr", "solve", "lstsq", "eigh", "eig", "expm", "norm", "inv",
-    "dtype_of", "is_complex", "result_dtype", "real_dtype", "complex_dtype",
+    "dtype_of", "is_complex", "is_scalar", "scalar_dtype",
+    "result_dtype", "real_dtype", "complex_dtype",
     "eps_of", "device_of", "same_backend",
 ]
 
@@ -294,7 +296,15 @@ class TorchBackend(Backend):
         return self.torch.triu(a)
 
     def norm(self, a):
-        return self.torch.linalg.norm(a).item()
+        # NOT .item(): that detaches the value from the autograd tape, so a
+        # functional containing ||x|| differentiates to a silently wrong
+        # gradient -- no error, no NaN, just a missing term (measured: a
+        # completion functional whose ||x - b|| = 29.4 contributed exactly
+        # zero, max |AD - finite differences| = 7.03e-01).  It also made the
+        # two backends disagree in return type, since numpy's np.linalg.norm
+        # returns a 0-d numpy scalar.  Callers that need a Python float say
+        # float(...), and most already did.
+        return self.torch.linalg.norm(a)
 
     def inv(self, a):
         return self.torch.linalg.inv(a)
@@ -654,6 +664,31 @@ def norm(a):
 
 def inv(a):
     return backend_of(a).inv(a)
+
+
+def is_scalar(a) -> bool:
+    """True for a Python/numpy number **or** a 0-d array or tensor.
+
+    ``x.norm()`` on the torch backend is a 0-d tensor and must stay one, or the
+    gradient through ``||x||`` is silently dropped (see ``TorchBackend.norm``).
+    Everything that accepts a scalar therefore has to accept that shape too,
+    otherwise the obvious ``x * (1 / x.norm())`` raises on torch and works on
+    numpy -- and scaling would break the tape it was kept alive for.
+    """
+    if isinstance(a, Number):
+        return True
+    return getattr(a, "ndim", None) == 0 and hasattr(a, "dtype")
+
+
+def scalar_dtype(a) -> str:
+    """Canonical dtype of a scalar accepted by :func:`is_scalar`, or None.
+
+    ``None`` means "no opinion": a plain Python real carries no dtype of its
+    own and must not drag a float32 tensor up to float64.
+    """
+    if isinstance(a, Number):
+        return "complex128" if isinstance(a, complex) and a.imag != 0 else None
+    return canon_dtype(a.dtype)
 
 
 def dtype_of(a) -> str:
