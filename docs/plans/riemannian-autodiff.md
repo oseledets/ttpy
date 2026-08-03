@@ -59,6 +59,17 @@ is an estimate; where a number is missing it says "not measured". Every table
 states its regime. Wall-clock numbers are medians of 3 or 5 repeats where the
 table says so and single runs otherwise.
 
+**Cross-spec decisions live in `docs/plans/ROADMAP.md`**, not here. Where this
+spec and one of `bug-integrator.md`, `eigenvalues.md`, `qtt-elliptic-bpx.md` ask
+for the same function, the reconciled signature and its owner are recorded there
+(§2), together with the dependency graph (§1), the preconditioner contract (§3),
+the milestone order (§4) and the consolidated open questions (§6). This spec's
+§8(a) `project_delta` signature **won** the conflict with `eigenvalues.md`
+§4(b), which now points here; its §8(d) `frames` won the conflict with
+`bug-integrator.md` §4(b), at the price of a `check_rank=False` flag. §6.4
+item 1 was amended: the "list of rank-1, callable is the slow path" framing does
+not hold for BPX. §1.4's defect is **already fixed**, commit `670d84d`.
+
 ---
 
 ## 1. What we have now
@@ -935,6 +946,12 @@ Honest counterweights on the same table:
   Laplacian, `exp(−tL)` is a single `2^d × 2^d` matrix whose QTT representation
   is not rank-1 across the QTT bonds, so eq. (24) does not apply and this
   construction gives nothing. That is exactly the gap §6.4 hands to BPX.
+  **Since measured, and it is worse than "not rank-1":**
+  `docs/plans/qtt-elliptic-bpx.md` §2.3 took the TT-SVD of the dense
+  `expm(−t A_DN)` at `L = 6, 8, 10` and four values of `t` and found QTT ranks
+  **8–21** (`L`-independent, but not 1), so `ρ_B ≈ 40..60` terms of rank ≈ 15
+  would cost more than one AMEn sweep on the preconditioned operator. The
+  exponential-sum route does not transfer to the by-scale setting at all.
 * `ρ_B = 41..61` means 41–61 TT matvecs per iteration. Even so the
   preconditioned run at `n = 512` converged to 2.9e-09 in **2.4 s**, where the
   unpreconditioned run spent **166 s** on 3000 iterations to arrive at a
@@ -957,6 +974,17 @@ stay one interface. Restated from this side:
    A callable `prec(z) -> tt.vector` must also be accepted (it is what a BPX
    with a multilevel structure will naturally be), but it is the slow path and
    the API should say so.
+
+   **Corrected by measurement, from the BPX side.** `docs/plans/qtt-elliptic-bpx.md`
+   §4.2 item 1 answers this and rejects both halves: BPX is a **single
+   `tt.matrix`** of TT rank `2^{2D+1}` — measured exactly 8 / 32 / 128 for
+   `D = 1, 2, 3`, independent of `L` up to `L = 50` (their §1.5) — it cannot be
+   made into a sum of rank-1 terms, and it is **not** a slow path (one matvec
+   plus one rounding, the cost of one extra matvec by `A`, whose rank is 3–4).
+   The rank-1-sum form stays correct for the Kronecker-sum-over-physical-modes
+   case measured in §6.3 below, and only for it. The reconciled contract — three
+   accepted forms, each declaring its side (`'left'` vs `'two-sided'`) and its
+   rank, plus what it forbids — is `docs/plans/ROADMAP.md` §3.
 2. SPD, or the 2x2 / 3b x 3b Rayleigh–Ritz that chooses the step loses its
    variational characterization.
 3. Spectral equivalence with `d`- and mesh-independent constants — §6.3 measures

@@ -67,6 +67,17 @@ stated. Prototypes live in `~/work/ttpy-modern/scratch-bpx/` on b300 and are
 listed in §7. Nothing below is an estimate; where a number is missing it says
 **not measured**.
 
+**Cross-spec decisions live in `docs/plans/ROADMAP.md`**, not here. Where this
+spec and one of `bug-integrator.md`, `eigenvalues.md`, `riemannian-autodiff.md`
+ask for the same object, the reconciled contract and its owner are recorded there
+(§2), together with the dependency graph (§1), the milestone order (§4) and the
+consolidated open questions (§6). **§4.2 of this spec won the preconditioner
+disagreement** with `eigenvalues.md` §3.3 and `riemannian-autodiff.md` §6.4, and
+both have been amended to point at the three-form contract in
+`docs/plans/ROADMAP.md` §3, which also freezes what it forbids: no
+`round(C @ A @ C)` handed to a solver (§1.6), no generic route to `T` (§2.4), no
+global `prec=` on `amen_solve` (§4.1).
+
 ---
 
 ## 0. The short version

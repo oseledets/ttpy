@@ -41,6 +41,16 @@ took the interpreted path). Prototypes are in
 `/home/ivan/.claude/jobs/b5968f66/tmp/`. Nothing below is an estimate; where a
 number is missing it says "not measured".
 
+**Cross-spec decisions live in `docs/plans/ROADMAP.md`**, not here. Where this
+spec and one of `bug-integrator.md`, `riemannian-autodiff.md`,
+`qtt-elliptic-bpx.md` ask for the same function, the reconciled signature and its
+owner are recorded there (§2), together with the dependency graph (§1), the
+preconditioner contract (§3), the milestone order (§4) and the consolidated open
+questions (§6). Two things below were amended by it: §4(b) (the `project_delta`
+signature is owned by `riemannian-autodiff.md` §8(a)) and §3.3 item 1 (the
+preconditioner is not always a sum of rank-1 terms). §1.2a's defect is
+**already fixed**, commit `191bbc0`.
+
 ---
 
 ## 1. What `eigb` is, and where it breaks
@@ -516,8 +526,10 @@ say so).
 
 ### 3.3 What the eigensolver needs from a BPX-type preconditioner
 
-BPX is a separate planned spec; this section states the interface so the two
-meet. The eigensolver needs `B^{-1}` to be:
+BPX now has its own spec, `docs/plans/qtt-elliptic-bpx.md`; this section states
+the interface so the two meet, and **item 1 below was answered from that side
+and is superseded** — see the note after item 4 and `docs/plans/ROADMAP.md` §3.
+The eigensolver needs `B^{-1}` to be:
 
 1. **Applicable to a TT vector with bounded rank growth.** Either a TT-matrix of
    small TT rank, or (the form [RNO19] §4.5 relies on, their eq. (24), citing
@@ -540,8 +552,25 @@ meet. The eigensolver needs `B^{-1}` to be:
    block Jacobi). A BPX would help the *outer* iteration of §2.2–2.3 and the
    *linear solves* of §2.4, not the local solves of §2.1.
 
+**Item 1, corrected by measurement.** `docs/plans/qtt-elliptic-bpx.md` §4.2
+answers this section from the BPX side and item 1 is the wrong shape for it: BPX
+is a **single `tt.matrix`** of TT rank `2^{2D+1}` — measured exactly 8 / 32 / 128
+for `D = 1, 2, 3`, independent of `L` up to `L = 50` (their §1.5) — and it
+cannot be written as a sum of rank-1 terms. Nor is a small-rank matrix a "slow"
+form: one matvec plus one rounding costs the same as one extra matvec by `A`,
+whose rank is 3–4. The rank-1-sum form remains right for Kronecker sums over
+*physical* modes, and was measured **not** to transfer to the by-scale (QTT)
+setting: the QTT ranks of `expm(-t A_DN)` are 8–21, not 1 (their §2.3). The
+reconciled contract — three accepted forms, each declaring its side and its
+rank — is `docs/plans/ROADMAP.md` §3. One further correction from there: an
+eigensolver wants the **left** BPX `C_{2,L}` (weight `2^{-2l}`), not the
+two-sided `C_L` (weight `2^{-l}`) that a linear solver wants; both come from one
+constructor, `tt.bpx(d, D, weight=1|2)`.
+
 What BPX does **not** give: a preconditioner for the indefinite `A - sigma I` of
 shift-and-invert with an interior shift. §7.3 measures what happens without one.
+Nor any help with coefficient contrast, which passes straight through
+(`kappa(BPX) = 1.12e+05` at contrast `1e4`, qtt-elliptic-bpx.md §2.4).
 
 ### 3.4 The accuracy floor, measured
 
@@ -605,27 +634,26 @@ changing signatures (a list and a batched container both satisfy "a sequence of
 
 **(b) The tangent representation, not just the tangent vector.**
 
-```python
-def project_delta(X, Z):
-    """Gauge cores of P_X Z, instead of the rank-2r tensor.
+**Owned by `docs/plans/riemannian-autodiff.md` §8(a)–(c); do not restate the
+signature here.** This section originally proposed
+`project_delta(X, Z) -> list[array]`; that spec proposes
+`project_delta(X, Z, *, weights=None, frames=None) -> (deltas, Frames)`, and
+**its signature wins** — the caller almost always needs the frames immediately
+afterwards (rebuilding them is the `O(d n r^3)` term), and the `weights`/list
+form is what its §6.3 measured at `rho_B = 61` summands. The resolution is
+recorded in `docs/plans/ROADMAP.md` §2.2, together with the same reconciliation
+for `tangent_to_tt`, `tangent_inner` and `tangent_gram`.
 
-    Returns:
-        list[array]: ``delta_G[k]`` of shape ``(r_{k-1}, n_k, r_k)``, satisfying
-        the gauge condition ``ML(delta_G[k])^H ML(U_k) = 0`` for ``k < d``.
-        ``tangent_to_tt(X, delta_G)`` rebuilds exactly what ``project`` returns.
-    Contract: <xi, eta> for two tangent vectors at the SAME X equals
-        sum_k <delta_G[k]^xi, delta_G[k]^eta>_F  ([RNO19] eq. (22)), so a Gram
-        matrix of b tangent vectors costs O(b^2 d n r^2), not O(b^2 d n r^3),
-        and is computed without the cancellation of a TT contraction.
-    """
-```
+What this spec needs from it, unchanged: the gauge cores `delta_G[k]` of shape
+`(r_{k-1}, n_k, r_k)` satisfying `ML(delta_G[k])^H ML(U_k) = 0` for `k < d`, so
+that `<xi, eta>` for two tangent vectors at the **same** `X` is
+`sum_k <delta_G[k]^xi, delta_G[k]^eta>_F` ([RNO19] eq. (22)) and a Gram matrix
+of `b` tangent vectors costs `O(b^2 d n r^2)` rather than `O(b^2 d n r^3)`,
+without the cancellation of a TT contraction. That is what makes the LRRAP
+eigensolver of §2.2 affordable.
+
 Closest existing: `riemannian.project`, which computes these cores internally and
 then assembles and discards them.
-
-```python
-def tangent_to_tt(X, delta_G): ...       # the inverse; rank 2r, the S_k stack of §2.2
-def tangent_gram(delta_list): ...        # (b, b) Gram from a list of gauge-core lists
-```
 
 **(c) Rayleigh–Ritz on a set of TT vectors.**
 

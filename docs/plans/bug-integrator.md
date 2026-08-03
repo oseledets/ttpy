@@ -24,6 +24,15 @@ numerically validated (a working prototype was run against `scipy.linalg.expm`
 before this document was written; every number quoted as "measured" comes from
 that prototype, on this host, `.venv-tmp`, numpy 2.5.1, float64, single thread).
 
+**Cross-spec decisions live in `docs/plans/ROADMAP.md`**, not here. Where this
+spec and one of `eigenvalues.md`, `riemannian-autodiff.md`, `qtt-elliptic-bpx.md`
+ask for the same function, the reconciled signature and its owner are recorded
+there (§2), together with the dependency graph (§1), the preconditioner contract
+(§3), the milestone order (§4) and the consolidated open questions (§6). Two
+things below were amended by it: §4(b) (the mixed canonical form is
+`riemannian.frames`, not a new `_ops` function) and §4(c) (the `expmv_krylov`
+underflow guard, **already fixed**, commit `231ce52`).
+
 ---
 
 ## 1. What it is
@@ -397,21 +406,30 @@ def round_cores(cores, eps=1e-14, rmax=None, abs_tol=None, return_discarded=Fals
 
 **(b) The mixed canonical form.** `orthogonalize(cores, center)` gives one side.
 BUG needs the left frames, the right-orthogonal cores, and the bond matrices
-simultaneously. New owner in `_ops`:
+simultaneously:
 
-```python
-def mixed_canonical(cores):
-    """Y = qL[0]..qL[k-1] @ s[k] @ qR[k+1]..qR[d-1], for every k at once.
-
-    Returns:
-        (qL, qR, s, centre) with qL[k] : (r_k, n_k, r_{k+1}) left-orthogonal,
-        qR[k] right-orthogonal, s[k] : (r_{k+1}, r_{k+1}) the bond matrix,
-        centre[k] = s[k-1] @ qR[k] : (r_{k-1}, n_k, r_k) the centre core at k.
-    Cost: one right-to-left and one left-to-right QR sweep, O(d n r^3).
-    """
 ```
-(If we want to keep the surface small, `centre` alone plus `qR` is what the sweep
-uses; `qL` is only needed to build `L[k]`, which the sweep does inline.)
+Y = qL[0]..qL[k-1] @ s[k] @ qR[k+1]..qR[d-1],   for every k at once,
+centre[k] = s[k-1] @ qR[k] : (r_{k-1}, n_k, r_k)
+```
+
+Cost: one right-to-left and one left-to-right QR sweep, `O(d n r^3)`. (If we
+want to keep the surface small, `centre` alone plus `qR` is what the sweep uses;
+`qL` is only needed to build `L[k]`, which the sweep does inline.)
+
+**This spec originally proposed a new owner `_ops.mixed_canonical(cores)`. That
+proposal is withdrawn.** `docs/plans/riemannian-autodiff.md` §8(d) independently
+asks for the same object as `riemannian.frames(X, mu=1)`, and two owners of one
+mathematical object is exactly what the project forbids.
+`docs/plans/ROADMAP.md` §2.3 resolves it: the owner is
+`riemannian.frames(X, mu='all', check_rank=False)`, accepting a bare core list,
+with `mu='all'` returning every bond matrix and centre core. The
+`check_rank=False` flag exists **for this sweep**: `frames` refuses a
+rank-deficient `X` by default because the tangent projector is then the
+projector of the wrong space (a 31 % relative error is recorded there), but BUG
+must run at exactly those points — robustness to arbitrarily small singular
+values is the whole method (§3), and BUG never builds a tangent projector. The
+cost of the decision is that `tt/algs/bug.py` imports `tt/algs/riemannian.py`.
 
 **(c) `expmv_krylov` mid-loop underflow guard — a latent defect, reproduced.**
 `expmv_krylov` guards `beta0 == 0` on entry but not inside the substep loop. When
