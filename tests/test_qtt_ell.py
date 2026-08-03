@@ -16,7 +16,8 @@ import pytest
 
 import tt
 from tt.algs.amen import amen_solve
-from tt.algs.qtt_ell import bpx, bpx_theta, prolongation, solve_direct_1d
+from tt.algs.qtt_ell import (bpx, bpx_theta, invert, prolongation,
+                             solve_direct_1d, sqrt, stiffness)
 
 
 def dense(a):
@@ -160,6 +161,21 @@ def test_bpx_refuses_arguments_it_cannot_honour():
         bpx(4, 0)
 
 
+def test_bpx_refuses_more_than_one_dimension():
+    """``D > 1`` builds and has the right rank, but does not precondition.
+
+    Measured in ``D = 2``: rank 32 as the theory says and flat in ``d``, yet
+    ``kappa(C A C)`` runs 24.6, 96.9, 385.3, 1537.0 at ``d = 3..6`` -- growing
+    by 4 per level, exactly like ``kappa(A)``. Returning that as a
+    preconditioner would be the silent-wrong-answer failure this project treats
+    as worse than a crash, so it raises until the cause is found.
+    """
+    with pytest.raises(NotImplementedError, match="D = 1 only"):
+        bpx(4, 2)
+    with pytest.raises(NotImplementedError):
+        bpx(4, 3)
+
+
 def test_bpx_bounds_the_condition_number_while_the_operator_loses_it():
     """The claim of [BK20], measured: ``kappa(C A C)`` stays put as ``d`` grows.
 
@@ -253,6 +269,59 @@ def test_the_preconditioner_earns_its_keep():
     assert err_prec < 1e-10, f"preconditioned error {err_prec:.3E}"
     assert err_plain > 1e-7, f"unpreconditioned error {err_plain:.3E} -- too good?"
     assert info.nswp_done <= 12, f"took {info.nswp_done} sweeps"
+
+
+# --- variable coefficients ---------------------------------------------------
+
+def coefficient(d):
+    """``a(x) = 1 + x^2`` on the nodes ``(i+1)h``, TT rank 3."""
+    x = (tt.xfun(2, d) + tt.ones(2, d)) * (1.0 / 2 ** d)
+    return (tt.ones(2, d) + x * x).round(1e-14), x
+
+
+@pytest.mark.parametrize("d", [6, 10])
+def test_stiffness_matches_the_dense_operator(d):
+    """``M^T diag(a) M`` against numpy, for a genuinely variable ``a``."""
+    a, _ = coefficient(d)
+    got = dense(stiffness(a, d))
+    m = dense(tt.qdiff(d))
+    want = m.T @ np.diag(np.asarray(a.full()).reshape(-1, order="F")) @ m
+    assert np.abs(got - want).max() < 1e-12
+    assert max(stiffness(a, d).r) <= 4 * max(a.r)
+
+
+def test_the_coefficient_needs_no_closed_form():
+    """``1/a`` and ``sqrt(a)`` by cross approximation, against numpy on the nodes.
+
+    This is all the machinery a variable coefficient needs: ``tt.multifuncrs``
+    already computes elementwise functions of a TT tensor, so nothing about the
+    elliptic kit has to special-case which coefficients are representable.
+    """
+    d = 10
+    a, _ = coefficient(d)
+    values = np.asarray(a.full()).reshape(-1, order="F")
+
+    inv = invert(a, eps=1e-12)
+    root = sqrt(a, eps=1e-12)
+    assert np.abs(np.asarray(inv.full()).reshape(-1, order="F") - 1.0 / values).max() < 1e-10
+    assert np.abs(np.asarray(root.full()).reshape(-1, order="F") - np.sqrt(values)).max() < 1e-10
+    # the ranks stay modest, which is the point of doing it this way
+    assert max(inv.r) <= 12 and max(root.r) <= 12
+
+
+@pytest.mark.parametrize("d", [8, 10])
+def test_solve_direct_1d_with_a_variable_coefficient(d):
+    """``(M^T diag(a) M) u = f`` solved exactly, checked against ``numpy.solve``."""
+    n = 2 ** d
+    h = 1.0 / n
+    a, _ = coefficient(d)
+    rhs = (tt.ones(2, d) - 0.5 * tt.unit(2, d, j=n - 1)) * (h * h)
+
+    got = np.asarray(solve_direct_1d(rhs, d, inv_coeff=invert(a, eps=1e-13))
+                     .full()).reshape(-1, order="F")
+    want = np.linalg.solve(dense(stiffness(a, d)),
+                           np.asarray(rhs.full()).reshape(-1, order="F"))
+    assert np.linalg.norm(got - want) < 1e-8 * np.linalg.norm(want)
 
 
 # --- the 1D direct solve -----------------------------------------------------

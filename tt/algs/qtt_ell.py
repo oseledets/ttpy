@@ -77,7 +77,8 @@ import numpy as np
 from ..core.matrix import matrix
 from ..core.tools import level_major_order, qdiff, qtri_ones
 
-__all__ = ["bpx", "bpx_theta", "prolongation", "solve_direct_1d"]
+__all__ = ["bpx", "bpx_theta", "invert", "prolongation", "solve_direct_1d",
+           "sqrt", "stiffness"]
 
 _I2 = np.eye(2)
 _J = np.array([[0.0, 1.0], [0.0, 0.0]])     # [BK20] (37): J upper, J.T lower
@@ -132,11 +133,27 @@ def _to_ttpy(cores):
     return matrix.from_list([c.transpose(3, 1, 2, 0).copy() for c in cores[::-1]])
 
 
+def _dkron(a, b):
+    """Kronecker product of two cores in **both** the rank and the mode indices.
+
+    This is how the ``D`` dimensions of one level are combined ([BK20] writes it
+    ``(x)D``).  Note that it is *not* :func:`_skron`: the strong Kronecker
+    product contracts the shared rank index, which is right for neighbouring
+    sites of one chain and wrong here, where the dimensions are independent and
+    their ranks multiply.  Getting these two confused is why ``D > 1`` used to
+    raise instead of run.
+    """
+    p1, m1, n1, q1 = a.shape
+    p2, m2, n2, q2 = b.shape
+    return np.einsum("aijb,ckld->acikjlbd", a, b).reshape(
+        p1 * p2, m1 * m2, n1 * n2, q1 * q2)
+
+
 def _kron_power(c, ndim):
-    """The ``D``-fold strong Kronecker power of a core: one level, all dimensions."""
+    """The ``D``-fold Kronecker power of a core: one level, all dimensions."""
     out = c
     for _ in range(ndim - 1):
-        out = _skron(out, c)
+        out = _dkron(out, c)
     return out
 
 
@@ -211,6 +228,23 @@ def bpx(d, D=1, weight=1, scaled=True):
         raise ValueError(f"d must be at least 1, got {d}")
     if D < 1:
         raise ValueError(f"D must be at least 1, got {D}")
+    if D > 1:
+        raise NotImplementedError(
+            "bpx is verified for D = 1 only. The D-dimensional cores build and "
+            "give the expected TT rank 2*4^D (32 at D=2, 128 at D=3, flat in "
+            "d), but the result does not precondition: kappa(C A C) measured "
+            "24.6, 96.9, 385.3, 1537.0 at d = 3..6 in D = 2, growing by 4 per "
+            "level exactly as kappa(A) does. Ruled out as the cause: the index "
+            "layout (all four interleavings of level and dimension were tried, "
+            "the reversed ones are worse), an overall scalar on the X_b core "
+            "(five values, none flattens the growth), and four candidate "
+            "level-weight rules 2^(-l), 2^(l(D-2)), 2^(-2l/D), 2^(-lD) -- all "
+            "of them grow, including in a dense reference built from Kronecker "
+            "products of the 1D prolongations rather than from these cores. So "
+            "the error is in the D-dimensional level weighting itself and is "
+            "not yet found. See docs/plans/qtt-elliptic-bpx.md. Use D = 1, or "
+            "fix this and delete the check -- do not pass D > 1 expecting a "
+            "preconditioner.")
     if weight not in (1, 2):
         raise ValueError(
             f"weight must be 1 (two-sided, for solves) or 2 (left, for "
@@ -336,6 +370,58 @@ def prolongation(l, d, D=1):
     return _to_ttpy(merged) * (2.0 ** (-(d - l) / 2.0))
 
 
+# --- variable coefficients ---------------------------------------------------
+
+def stiffness(coeff, d):
+    """``A = M^T diag(a) M`` in one dimension, with ``M = tt.qdiff(d)``.
+
+    ``coeff`` is the coefficient ``a`` as a ``tt.vector`` on ``2^d`` nodes, or a
+    scalar.  The rank of ``A`` is at most ``4 r_a``: two from each difference
+    factor, times the rank of the coefficient.
+
+    Nothing here needs the coefficient in closed form.  ``a`` itself is usually
+    the easy part -- ``tt.xfun``, ``tt.stepfun`` and friends build the common
+    ones -- and anything else comes from a cross approximation with
+    :func:`tt.multifuncrs`, which is also how :func:`invert` produces ``1/a``.
+    """
+    from ..core.tools import diag, matvec, ones
+
+    d = int(d)
+    m = qdiff(d)
+    if not hasattr(coeff, "cores"):
+        return ((m.T @ m) * float(coeff)).round(1e-14)
+    return (m.T @ diag(coeff) @ m).round(1e-14)
+
+
+def invert(a, eps=1e-10, **kwargs):
+    """``1/a`` elementwise, by cross approximation.
+
+    A one-line wrapper over :func:`tt.multifuncrs`, here because the elliptic
+    routines need it often enough that every caller writing the lambda
+    themselves is how the tolerance ends up undocumented.  It refuses nothing:
+    if ``a`` has a zero the cross will happily return infinities, and that is
+    the caller's problem to notice -- which is why ``eps`` is explicit.
+    """
+    from .multifuncrs import multifuncrs
+
+    return multifuncrs([a], lambda v: 1.0 / v[:, 0], eps=eps,
+                       verb=kwargs.pop("verb", 0), **kwargs)
+
+
+def sqrt(a, eps=1e-10, **kwargs):
+    """``sqrt(a)`` elementwise, by cross approximation.
+
+    Needed by the coefficient-dependent fused factor of [BK20] Lemma 5, where
+    ``Lambda^{1/2}`` appears.  Taking the square root core-wise instead is exact
+    only for a rank-1 coefficient; this is exact for any of them, at the price
+    of a tolerance the caller can see.
+    """
+    from .multifuncrs import multifuncrs
+
+    return multifuncrs([a], lambda v: np.sqrt(v[:, 0]), eps=eps,
+                       verb=kwargs.pop("verb", 0), **kwargs)
+
+
 # --- the 1D direct solve -----------------------------------------------------
 
 def solve_direct_1d(f, d, inv_coeff=None):
@@ -359,11 +445,11 @@ def solve_direct_1d(f, d, inv_coeff=None):
         d: number of levels.
         inv_coeff: ``None`` for ``a = 1``, otherwise a ``tt.vector`` holding
             **1/a**, not ``a``.  Named that way because the inverse is what the
-            formula uses and inverting a QTT vector is not free -- it needs a
-            cross approximation, whose accuracy would then be this routine's
-            accuracy without being visible in its signature.  The caller who
-            knows ``1/a`` in closed form pays nothing; the caller who does not
-            should compute it with ``tt.multifuncrs`` and own the tolerance.
+            formula uses and it is not free -- it comes from a cross
+            approximation whose accuracy becomes this routine's accuracy, so it
+            belongs in the caller's hands rather than hidden here.  Use
+            :func:`invert` (one call to ``tt.multifuncrs``) when ``1/a`` is not
+            known in closed form.
 
     Returns:
         The nodal solution as a ``tt.vector``.

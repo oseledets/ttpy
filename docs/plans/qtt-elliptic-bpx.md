@@ -30,10 +30,35 @@
 > b300/numpy/float64. `kappa(C A C)` reproduced independently of the way it was
 > first measured: 5.6674 at `d = 4`, 10.6617 at `d = 10`, `lam_min -> 2`.
 >
-> **Not implemented:** everything for `D > 1` (`bpx` builds the cores but only
-> `D = 1` is verified end to end; `bpx_theta` refuses `D > 1` loudly), variable
-> coefficients (`Lambda^{1/2}`, §3.2 K4/K6), `stiffness`, `load_vector`, and the
-> `solve` front end. See §7 for what that leaves open.
+> **Variable coefficients turned out to be a non-problem.** `tt.multifuncrs`
+> already computes elementwise functions of a TT tensor by cross approximation,
+> so `qtt_ell.invert` and `qtt_ell.sqrt` are one call each and nothing has to
+> special-case which coefficients are representable. Measured for `a = 1 + x^2`
+> at `d = 10`: rank 3 for `a`, 7 for `1/a`, 6 for `sqrt(a)`, both accurate to
+> 8e-13 against numpy on the nodes; `stiffness(a, d) = M^T diag(a) M` matches
+> the dense operator to 9e-15 at rank 6, and `solve_direct_1d` with that
+> coefficient agrees with `numpy.linalg.solve` to 3.4e-11 at rank 8.
+>
+> **`D > 1` is refused, and this is a real negative result.** The `D`-dimensional
+> cores now build (they used to crash: dimensions at one level combine by a
+> Kronecker product in *both* the rank and the mode index, not by the strong
+> Kronecker product, which contracts ranks) and the TT rank comes out exactly
+> `2*4^D` — 32 at `D = 2`, 128 at `D = 3`, flat in `d`. But it does not
+> precondition: `kappa(C A C)` measured 24.6, 96.9, 385.3, 1537.0 at
+> `d = 3..6`, growing by 4 per level exactly as `kappa(A)` does. Ruled out as
+> the cause: the index layout (all four interleavings of level and dimension;
+> the reversed ones are worse), an overall scalar on `X_b` (five values, none
+> flattens the growth), and four candidate level-weight rules — `2^{-l}`,
+> `2^{l(D-2)}`, `2^{-2l/D}`, `2^{-lD}` — every one of which grows, *including*
+> in a dense reference built from Kronecker products of the 1D prolongations
+> rather than from these cores. So the error is in the `D`-dimensional level
+> weighting itself and is not yet found; §2.2's `D = 2` table, which reports a
+> bounded `kappa(B)`, is not reproduced and one of the two measurements is
+> wrong. `bpx` raises `NotImplementedError` naming all of this rather than
+> returning something that has the right rank and does nothing.
+>
+> **Also not implemented:** the coefficient-dependent fused factor
+> (`Lambda^{1/2} M C_L`, §3.2 K6), `load_vector`, and the `solve` front end.
 
 Implementation spec for a new module `tt.algs.qtt_ell` (+ additions to
 `tt/core/tools.py`). Sources actually read, and what each one is:
