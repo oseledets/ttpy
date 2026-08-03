@@ -505,3 +505,33 @@ def test_backend_einsum_handles_broadcast_and_degenerate_patterns(pattern, shape
     except Exception:
         pytest.skip("einops itself rejects this pattern")
     assert rel(bk.einsum(*ops, pattern), ref) < 1e-13
+
+
+def test_permute_returns_a_compressed_representation():
+    """``permute`` must not leave rank slack behind.
+
+    Each adjacent swap truncates what is negligible on its own two cores, and
+    the intermediate orderings genuinely need higher ranks than the final one;
+    without a recompression pass at the end nothing ever removes that slack.
+    Measured before the fix, on a separable function interleaved into Morton
+    order at d = 15: rank 1024 for a tensor whose own rank is 102, i.e. a
+    10x rank for the same numbers -- quadratic in every later contraction.
+
+    The property asserted here is the one that matters and does not depend on a
+    magic number: rounding the result again must not shrink it much.
+    """
+    d = 6
+    rng = np.random.default_rng(0)
+    g = tt.vector(rng.standard_normal((2,) * d), 1e-12)
+    h = tt.vector(rng.standard_normal((2,) * d), 1e-12)
+    x = tt.kron(g, h)                      # 2d modes, dimension-major
+    order = [j * d + k for k in range(d) for j in range(2)]   # Morton
+
+    y = tt.permute(x, order, 1e-12)
+    slack = max(y.r) / max(y.round(1e-12).r)
+    assert slack < 1.3, f"permute left {slack:.1f}x rank slack"
+
+    # and it is still the right tensor: check against the dense permutation
+    dense = np.asarray(x.full())
+    want = np.transpose(dense, order)
+    assert rel(y.full(), want) < 1e-10

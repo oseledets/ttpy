@@ -975,8 +975,9 @@ def permute(x, order, eps=1e-14, return_cores=False):
         raise ValueError(f"order must be a permutation of 0..{d - 1}")
     cores = _ops.orthogonalize(x.cores, center=0)
     frob = bk.norm(cores[0])
+    # one budget share per swap, plus one for the final recompression below
     nswaps = max(d * (d - 1) // 2, 1)
-    delta = eps * frob / math.sqrt(nswaps) if frob > 0 else 0.0
+    delta = eps * frob / math.sqrt(nswaps + 1) if frob > 0 else 0.0
 
     pos = list(order)  # pos[k] = which original mode sits at slot k (target)
     cur = list(cores)
@@ -997,6 +998,19 @@ def permute(x, order, eps=1e-14, return_cores=False):
             cur[k] = (s[:rnew].reshape((rnew, 1)) * vh[:rnew, :]).reshape(
                 (rnew, n1, r2))
             layout[k - 1], layout[k] = layout[k], layout[k - 1]
+
+    # Recompress once at the end.  Each swap truncates what is negligible
+    # *locally*, on two cores, and the intermediate orderings genuinely need
+    # higher ranks than the final one; nothing in the sweep ever removes that
+    # slack again.  Measured on a 3-peak separable function interleaved into
+    # Morton order, d = 15: the swaps alone leave rank 1024 where the tensor's
+    # own rank is 102, and a single rounding pass afterwards brings it to 107.
+    # A 10x rank for the same tensor is not a detail -- it is quadratic in
+    # every downstream contraction.
+    # round_cores spends its eps as delta = eps * norm / sqrt(d-1); ask it for
+    # the same absolute delta the swaps used, so the total stays within eps
+    eps_final = eps * math.sqrt((d - 1) / (nswaps + 1)) if d > 1 else eps
+    cur = _ops.round_cores(cur, eps_final)
     if return_cores:
         return cur
     return vector.from_list(cur)
