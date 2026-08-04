@@ -432,8 +432,18 @@ def test_ksl_is_scale_invariant(scale):
     scaled, hist = ksl(A, scale * y0, tau, verb=0, check_rank=False,
                        local_tol=1e-13, return_history=True)
     assert (scaled - scale * base).norm() / scaled.norm() < 1e-12
-    assert max(s["krylov"] for s in hist.steps) > 1, "Krylov space collapsed"
-    assert hist.max_local_err > 0.0, "the error estimate must not be identically 0"
+    # A Krylov space that collapses to one dimension reports err_est = 0 while
+    # being wrong; a step taken exactly by a dense expm reports the same pair
+    # truthfully.  The property is "no step was silently degraded", so the
+    # exact ones are allowed and the Krylov ones must be real.
+    assert all(s.get("exact") or s["krylov"] > 1 for s in hist.steps), \
+        "a Krylov space collapsed to one dimension"
+    # Same invariant from the other side: a Krylov step that reports zero local
+    # error is lying (it collapsed); a step taken exactly by a dense expm has no
+    # local error to report.  So zero is admissible only if nothing approximated.
+    if not all(s.get("exact") for s in hist.steps):
+        assert hist.max_local_err > 0.0, (
+            "a Krylov step reported an error estimate of exactly 0")
 
     exact = scale * (sla.expm(tau * A.full()) @ y0.full(asvector=True))
     err = np.linalg.norm(scaled.full(asvector=True) - exact) / np.linalg.norm(exact)

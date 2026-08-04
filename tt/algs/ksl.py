@@ -102,7 +102,11 @@ class KslHistory:
             what was integrated).
         scheme: ``'symm'`` (order 2) or ``'first'`` (order 1).
         steps: One dict per local exponential, with keys ``sweep, site, kind
-            ('K' or 'S'), size, substeps, krylov, err_est, time``.
+            ('K' or 'S'), size, substeps, krylov, err_est, exact, growth,
+            time``.  ``exact`` marks the steps taken by a dense ``expm``
+            instead of a Krylov space (see ``DENSE_EXPM_LIMIT``); those report
+            ``krylov = 0`` and ``err_est = 0`` truthfully, which a collapsed
+            Krylov space would report falsely.
         max_local_err: Largest local Krylov error estimate, in units of the norm
             of the vector the exponential was applied to.
         max_growth: Largest factor by which a single local exponential grew its
@@ -428,15 +432,34 @@ that around.  Above the limit the contraction wins again and is used.
 """
 
 
+#: Below this local size the exponential is taken *exactly*, by a dense
+#: ``expm``, instead of by Krylov.  The blocks of a KSL sweep are tiny -- 4, 16
+#: and 32 numbers on a d=6 rank-4 problem -- and at that size a Krylov step is
+#: all dispatch: eight Arnoldi iterations, each half a dozen numpy calls on
+#: thirty numbers.  Measured per local exponential: ``scipy.expm`` costs 10.6 us
+#: at size 4, 21.8 at 16, 46.0 at 32, while the Krylov path around it costs
+#: about 180 us.  Above the limit ``expm`` is cubic and Krylov wins again.
+#:
+#: It also removes two approximations rather than trading them: no Krylov
+#: truncation error and no substep control, so ``use_normest`` has nothing to
+#: estimate.  ``err_est`` is reported as 0 for these steps because it is 0.
+DENSE_EXPM_LIMIT = 40
+
+
 def _dense_or_contract_local(left, acore, right, block):
-    """The K-step operator: dense when the block is small, contracted otherwise."""
+    """The K-step operator: dense when the block is small, contracted otherwise.
+
+    Returns ``(apply, mat)``; ``mat`` is the dense local operator when one was
+    formed and ``None`` otherwise, so the caller can take the exponential
+    exactly instead of building a Krylov space around a matrix it already has.
+    """
     shape = block.shape
     size = int(np.prod(shape))
     if (size <= DENSE_LOCAL_LIMIT and type(left) is np.ndarray
             and type(block) is np.ndarray and type(acore) is np.ndarray):
         mat = np.asarray(lo.local_matrix(left, acore, right)).reshape((size, size))
-        return lambda x: (mat @ x.reshape((size,))).reshape(shape)
-    return lambda x: lo.local_matvec(left, acore, right, x)
+        return (lambda x: (mat @ x.reshape((size,))).reshape(shape)), mat
+    return (lambda x: lo.local_matvec(left, acore, right, x)), None
 
 
 def _dense_or_contract_interface(left, right, block):
@@ -446,8 +469,8 @@ def _dense_or_contract_interface(left, right, block):
     if (size <= DENSE_LOCAL_LIMIT and type(left) is np.ndarray
             and type(block) is np.ndarray):
         mat = np.asarray(lo.interface_matrix(left, right)).reshape((size, size))
-        return lambda x: (mat @ x.reshape((size,))).reshape(shape)
-    return lambda x: lo.interface_matvec(left, right, x)
+        return (lambda x: (mat @ x.reshape((size,))).reshape(shape)), mat
+    return (lambda x: lo.interface_matvec(left, right, x)), None
 
 
 # --- the integrator ----------------------------------------------------------
@@ -523,9 +546,38 @@ def _sweep_forward(cores, acores, left, right, tau0, space, tol, use_normest,
 #: below the modelling error where it is not.
 KSL_GROWTH_EXPONENT = 2.5
 
-def _step_exp(op, x, t, space, tol, use_normest, hist, sweep_id, site, kind):
+def _step_exp(opmat, x, t, space, tol, use_normest, hist, sweep_id, site, kind):
     """One local exponential, with its bookkeeping."""
     t0 = time.time()
+    op, mat = opmat
+    if mat is not None and mat.shape[0] <= DENSE_EXPM_LIMIT:
+        # Exact: no Krylov space, no substepping, no norm estimate.  See
+        # DENSE_EXPM_LIMIT for the measurement that sets the threshold.
+        import scipy.linalg as _sla
+        size = mat.shape[0]
+        w = (_sla.expm(t * mat) @ x.reshape((size,))).reshape(x.shape)
+        nx = float(bk.norm(x))
+        growth = float(bk.norm(w)) / nx if nx > 0 else 1.0
+        floor = float(np.finfo(np.float64).eps) * growth ** KSL_GROWTH_EXPONENT
+        if floor > 1.0:
+            raise RuntimeError(
+                f"ksl: the {kind}-step at site {site} amplified its argument by "
+                f"{growth:.3E}, which leaves no correct digits (roundoff floor "
+                f"{floor:.3E}). The S-steps integrate backwards, so a dissipative "
+                f"A amplifies there by exp(tau |lambda_min|); the projector "
+                f"splitting is not stiff-stable and this step size is past what "
+                f"it can carry. Reduce tau, or use an integrator that never "
+                f"forms the growing factor -- see docs/plans/bug-integrator.md.")
+        # exact=True is not decoration: krylov=0 with err_est=0 would otherwise
+        # be indistinguishable from a Krylov space that collapsed to one
+        # dimension, which reports the same pair and is a silent degradation.
+        hist.steps.append(dict(sweep=sweep_id, site=site, kind=kind, size=size,
+                               substeps=1, krylov=0, err_est=0.0, exact=True,
+                               growth=growth, time=time.time() - t0))
+        if growth > hist.max_growth:
+            hist.max_growth, hist.max_growth_kind = growth, kind
+        hist.total_substeps += 1
+        return w
     if use_normest == 0:
         anorm = None      # ask for no hint: the first substep is the whole step
     elif use_normest == 2:
@@ -560,7 +612,7 @@ def _step_exp(op, x, t, space, tol, use_normest, hist, sweep_id, site, kind):
     hist.steps.append(dict(sweep=sweep_id, site=site, kind=kind,
                            size=int(np.prod(x.shape)),
                            substeps=info["substeps"], krylov=info["krylov"],
-                           err_est=info["err_est"], growth=growth,
+                           err_est=info["err_est"], exact=False, growth=growth,
                            time=time.time() - t0))
     hist.max_local_err = max(hist.max_local_err, info["err_est"])
     if growth > hist.max_growth:
