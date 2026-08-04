@@ -5,3 +5,4 @@ __pycache__/
 
 _probe*.py
 _scratch*
+.claude/worktrees/

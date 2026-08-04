@@ -7,7 +7,7 @@ pip install ttpy          # or: uv pip install ttpy
 ```
 
 No Fortran, no `f2py`, no `numpy.distutils`, no compiler, no git submodules.
-The wheel is `py3-none-any`, 128 KB, and installs into a fresh environment in a
+The wheel is `py3-none-any`, 169 KB, and installs into a fresh environment in a
 quarter of a second. For comparison, building ttpy 1.x on a current machine
 needs six separate workarounds — they are written down in
 [docs/LEGACY_BUILD.md](docs/LEGACY_BUILD.md).
@@ -15,11 +15,14 @@ needs six separate workarounds — they are written down in
 ```python
 import tt
 
-A = tt.qlaplace_dd([12])           # 3D Laplacian in the QTT format, 2^12 unknowns
+A = tt.qlaplace_dd([12])                    # Laplacian in QTT, 2^12 unknowns
 b = tt.ones(2, 12)
-x = tt.amen_solve(A, b, b, 1e-8)   # AMEn linear solver
+x = tt.amen_solve(A, b, b, 1e-8, verb=0)    # AMEn linear solver
 print((tt.matvec(A, x) - b).norm() / b.norm())
 ```
+
+Three dimensions of `2^12` points each -- 6.9e10 unknowns -- is
+`tt.qlaplace_dd([12, 12, 12])`, and costs the same call.
 
 ## What it is
 
@@ -28,7 +31,8 @@ A tensor in the TT (tensor train) format is stored as `d` cores of shape
 in dimension 100 possible. This package implements the format and the algorithms
 around it: TT-SVD and rounding, cross approximation, elementwise functions,
 AMEn linear solvers and matvecs, block eigensolvers, the KSL integrator,
-Riemannian tools, and completion.
+Riemannian tools, and completion -- plus a QTT toolkit for elliptic problems
+with BPX multilevel preconditioning (`tt.algs.qtt_ell`), which is new in 2.0.
 
 ## Backends
 
@@ -53,6 +57,37 @@ turns the SVD chain into matrix multiplications:
 y = x.round(rmax=100, method="randomized")
 ```
 
+## Elliptic problems in QTT
+
+The condition number of a QTT-discretized elliptic operator grows like `4^d`, so
+an unpreconditioned iteration stops working long before the format does.
+`tt.algs.qtt_ell` implements the multilevel preconditioner of Bachmayr and
+Kazeev (FoCM 20, 2020) with the ranks their theory predicts: `2^(2D+1)` for the
+preconditioner and `2^(2D) + 2^(2D-1)` for the fused factors, both independent
+of the number of levels.
+
+```python
+from tt.algs.qtt_ell import bpx, bpx_theta
+
+C = bpx(d, D=1)                       # the preconditioner, TT rank 8
+theta, = bpx_theta(d, D=1)            # the fused factor: B = theta^T theta
+```
+
+`-u'' = 1` with `u(0) = 0, u'(1) = 0`, AMEn at `eps = 1e-10`, `d = 30`
+(2^30 unknowns), one host, interleaved runs:
+
+| | sweeps | time | relative error |
+|---|---|---|---|
+| unpreconditioned | 30 | 18.4 s | **1.01** (i.e. wrong) |
+| with BPX | 8 | 0.27 s | 1.9e-13 |
+
+The catch worth knowing before you use it: the preconditioned operator must
+never be *assembled* as `C A C`. Its entries cancel over `4^d`, so rounding that
+product loses accuracy like `4^d * eps` -- 6.0e-04 at `d = 20`, 4.8e+14 at
+`d = 50` -- and its rank grows with `d`. `bpx_theta` gives the fused factors
+instead, and `B = sum_k theta_k^T theta_k` is the same matrix at rank 17, flat
+in `d`. Run `examples/bpx_elliptic.py` for the whole story.
+
 ## Coming from ttpy 1.x
 
 Your `import tt` scripts should keep working. Read
@@ -73,7 +108,7 @@ source of truth: the code should be reproducible from them and the tests.
 
 ## Where it stands
 
-521 tests, all against dense ground truth or a mathematical invariant — never
+801 tests, all against dense ground truth or a mathematical invariant — never
 against the old implementation. Measured against the Fortran ttpy on one host
 (details and raw data in [docs/PERFORMANCE.md](docs/PERFORMANCE.md)): faster on
 rounding (1.2-1.5x), on `dot` (2x), on `tt_svd` (11.9x) and on `amen_solve`
@@ -81,8 +116,24 @@ rounding (1.2-1.5x), on `dot` (2x), on `tt_svd` (11.9x) and on `amen_solve`
 
 Testing against dense truth also turned up four defects in the old package
 (transposed `Toeplitz` and `qshift`, a plainly wrong `IpaS`, a broken K/S order
-in the real branch of the KSL integrator) and three in this one, all fixed and
-documented in [docs/COMPAT.md](docs/COMPAT.md).
+in the real branch of the KSL integrator) and several in this one, all fixed and
+documented in [docs/COMPAT.md](docs/COMPAT.md). Four of them were *silent wrong
+answers* -- a returned number with nothing to say it was meaningless -- and that
+is the failure mode this package tries hardest to make impossible.
+
+### Planned, not shipped
+
+Designed and specified in [docs/plans/](docs/plans/), with the measurements
+behind each decision, but **not implemented**: the BUG / robust rank-adaptive
+integrator, a block AMEn eigensolver, Riemannian optimization and autodiff on
+TT manifolds, and the coefficient-dependent form of the BPX factors.
+[docs/plans/ROADMAP.md](docs/plans/ROADMAP.md) has the dependency graph, the
+ordered milestones and 43 benchmark problems split by what is runnable today.
+
+One known limitation with a workaround: `amen_solve` takes a matrix, so using
+`bpx_theta` with it means assembling `B` at rank 161 in 2D instead of applying
+the rank-24 factors one at a time. The sweep algebra is linear in that rank and
+dominates; teaching the solver to accept a factored operator is the next item.
 
 ## References
 
