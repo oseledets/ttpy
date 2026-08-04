@@ -38,7 +38,11 @@ Differences from the legacy Fortran-era code, stated plainly
 * rank enrichment is rectangular maxvol (Mikhalev-Oseledets) rather than the
   AMEn residual kick, so ``kickrank`` means "extra rows above the numerical rank
   at every micro-step", not "rank of a separately tracked residual tensor".
-  ``kickrank2`` (extra *random* rows) has no counterpart and is rejected.
+  ``kickrank2`` (extra *random* rows) is implemented in
+  :func:`tt.algs.cross.rect_cross`, off by default, and is *not* cosmetic: it is
+  the only thing measured to move the failure mode where the greedy index sets
+  reach a fixed point while an unsampled region still carries the error.  It has
+  no counterpart here yet -- ``multifuncrs`` still rejects a non-zero value.
 * the basis is always orthogonalized by an SVD, so ``do_qr`` is a no-op; it is
   accepted for signature compatibility and recorded in ``history``.
 * ``pcatype='uchol'`` (incomplete Cholesky enrichment) is not implemented and

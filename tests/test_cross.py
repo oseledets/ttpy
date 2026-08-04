@@ -9,6 +9,8 @@ Oracles used here:
 Never the legacy implementation.
 """
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -314,3 +316,70 @@ def test_bad_arguments_raise():
         rect_cross(lambda idx: idx.sum(axis=1), [3, 3])
     with pytest.raises(ValueError):
         rect_cross(lambda idx: idx.sum(axis=1), tt.rand([3, 3], r=2), nswp=0)
+
+
+def test_rect_maxvol_does_not_scold_a_caller_for_its_own_budget():
+    """``maxK`` reached is not a surprise when the caller chose ``maxK``.
+
+    This warning was 80 of the 93 RuntimeWarnings the suite emitted: it fired
+    every time ``cross._select_rows`` set a rank budget and then respected it.
+    Measured cost of that early stop across ``rf`` in {0, 2, 5, 10, 30} on three
+    problems: none -- identical errors and identical ranks. The other
+    non-convergence branch (``tol < 1``, which no row set can satisfy) is a real
+    mistake and must still warn.
+    """
+    from tt.algs.maxvol import rect_maxvol
+
+    rng = np.random.default_rng(0)
+    a = rng.standard_normal((200, 6))
+
+    with pytest.warns(RuntimeWarning, match="stopped at K"):
+        piv_warned = rect_maxvol(a, 1.05, maxK=8, min_add_K=2)[0]
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        piv_quiet = rect_maxvol(a, 1.05, maxK=8, min_add_K=2,
+                                warn_budget=False)[0]
+
+    # silencing the warning must not change a single pivot
+    assert np.array_equal(np.sort(piv_warned), np.sort(piv_quiet))
+
+    # The other branch is a different mistake -- tol < 1 is unachievable by any
+    # row set -- and warn_budget must not reach it. It shows up without a
+    # budget, where "stopped" cannot mean "hit the caller's maxK".
+    with pytest.warns(RuntimeWarning, match="tol < 1|can never achieve"):
+        rect_maxvol(a, 0.5, min_add_K=2, warn_budget=False)
+
+
+def test_cross_kickrank2_adds_rows_and_keeps_the_answer():
+    """Uniformly random extra pivots: more evaluations, no loss of accuracy.
+
+    They exist for the failure mode where the greedy index sets reach a fixed
+    point while an unsampled region still carries the error -- every internal
+    indicator reads 1e-15 and the answer is wrong at 4e-04 (the reproducer is in
+    docs/plans/cross-approximation.md, and it is numpy-version sensitive, so it
+    is documented rather than pinned here). What *is* stable and worth pinning:
+    the knob costs evaluations and never hurts a well-behaved problem.
+    """
+    d, n = 5, 8
+    calls = {"k": 0}
+
+    def fun(idx):
+        calls["k"] += len(idx)
+        s = idx.sum(1) / (n - 1.0)
+        return np.sin(s) / (1.0 + s)
+
+    grid = np.stack(np.meshgrid(*[np.arange(n)] * d, indexing="ij"), -1)
+    exact = fun(grid.reshape(-1, d))
+    calls["k"] = 0
+
+    seen = {}
+    for k2 in (0, 3):
+        calls["k"] = 0
+        y = cross(fun, n, d, eps=1e-10, r=2, seed=0, kickrank=2, kickrank2=k2)
+        got = np.asarray(y.full(asvector=True))
+        err = np.linalg.norm(got - exact) / np.linalg.norm(exact)
+        seen[k2] = (err, calls["k"])
+        assert err < 1e-8, f"kickrank2={k2}: {err:.3E}"
+
+    assert seen[3][1] > seen[0][1], "the extra rows cost nothing -- not applied?"

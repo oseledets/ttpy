@@ -330,7 +330,7 @@ def maxvol(a, tol=1.05, max_iters=100, nswp=None, top_k_index=-1,
 
 def rect_maxvol(a, tol=1.05, maxK=None, min_add_K=None, minK=None,
                 start_maxvol_iters=10, identity_submatrix=True, top_k_index=-1,
-                rcond=None, info=None):
+                rcond=None, info=None, warn_budget=True):
     """Rectangular maximum-volume submatrix: ``K >= r`` rows, small ``||C[i]||_2``.
 
     Greedy maximisation of the 2-volume: start from the square maxvol row set and
@@ -367,6 +367,11 @@ def rect_maxvol(a, tol=1.05, maxK=None, min_add_K=None, minK=None,
             tolerance actually applies to), ``top_k_index``, ``converged``,
             ``stop_reason`` and the nested square-maxvol ``info``.
 
+        warn_budget: Warn when the greedy stops because it hit ``maxK`` with
+            candidate rows still above ``tol``.  Pass ``False`` when *you* chose
+            ``maxK`` and reaching it is the intended behaviour rather than a
+            surprise -- see ``cross._select_rows``.  The other non-convergence
+            branch (``tol < 1``, which no row set can satisfy) warns regardless.
     Returns:
         tuple: ``(piv, C)``.
 
@@ -508,6 +513,16 @@ def rect_maxvol(a, tol=1.05, maxK=None, min_add_K=None, minK=None,
                     top_k_index=top_k, converged=converged,
                     stop_reason=stop_reason, maxvol_info=sq_info)
     if not converged:
+        if not criterion_met and not warn_budget:
+            # The caller set maxK itself and is not surprised to have reached
+            # it.  Warning there is noise, and it was loud noise: 80 of the 93
+            # RuntimeWarnings this package's own test suite emitted came from
+            # cross._select_rows being told off for respecting the budget it
+            # had just chosen.  Measured cost of that early stop across
+            # rf in {0, 2, 5, 10, 30} on three problems: none -- identical
+            # errors and identical ranks.  The other branch (tol < 1, which no
+            # row set can satisfy) still warns: that one is a real mistake.
+            return piv, restore(C)
         if not criterion_met:
             detail = (f"stopped at K = {K} (limit maxK = {maxK}) with a remaining "
                       f"candidate row norm {np.sqrt(max(remaining, 0.0)):.6g}")

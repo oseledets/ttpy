@@ -213,12 +213,36 @@ def _left_basis(mat, rmax):
     return q[:, :rho]
 
 
-def _select_rows(q, kickrank, rf, rmax, tau):
+def _select_rows(q, kickrank, rf, rmax, tau, kickrank2=0, rng=None):
     """Rows of ``q`` with (nearly) maximal 2-volume, at least ``rho+kickrank``.
 
     ``maxvol``/``rect_maxvol`` are numpy-only index-selection routines owned by
     :mod:`tt.algs.maxvol`; the basis is handed to them as numpy and only the
     pivot list comes back, so the caller stays backend agnostic.
+
+    ``kickrank2`` adds that many *uniformly random* extra rows on top of the
+    greedy ones.  They look useless -- a volume-maximising pivot is by
+    construction better than a random one -- and they are the only thing
+    measured to move the failure mode of this whole method: the greedy can reach
+    a fixed point of its own index sets while a region of the tensor it has
+    never sampled still carries the error.  Every internal indicator then
+    reports 1e-15 and the answer is wrong at 4e-04.
+
+    It is off by default because the mitigation is partial and problem
+    dependent.  On the reproducer of ``docs/plans/cross-approximation.md``
+    (b300, numpy 2.4.6, ``d=6, n=10``, seeds 0/1/2), true relative error:
+
+    ========  ==========  ==========  ==========
+    ``k2``    seed 0      seed 1      seed 2
+    ========  ==========  ==========  ==========
+    0         3.82e-04    2.84e-10    3.82e-04
+    2         1.81e-06    2.84e-10    2.84e-10
+    4         2.84e-10    2.84e-10    2.84e-10
+    ========  ==========  ==========  ==========
+
+    So ``k2 = 2`` is not always enough and ``k2 = 4`` was here; the price is
+    1.4-2.5x more function evaluations.  Treat it as a knob to raise when the
+    black box has localized structure, not as a fix that can be defaulted on.
     """
     qn = np.asarray(bk.to_numpy(q))
     npts, rho = qn.shape
@@ -229,8 +253,16 @@ def _select_rows(q, kickrank, rf, rmax, tau):
     if add_k == 0:
         ind = maxvol(qn)[0]
     else:
-        ind = rect_maxvol(qn, tau, maxK=max_k, min_add_K=add_k)[0]
+        # warn_budget=False: max_k is ours, reaching it is not a surprise
+        ind = rect_maxvol(qn, tau, maxK=max_k, min_add_K=add_k,
+                          warn_budget=False)[0]
     ind = np.asarray(ind, dtype=np.int64).reshape(-1)
+    if kickrank2 > 0 and rng is not None and ind.size < npts:
+        spare = np.setdiff1d(np.arange(npts, dtype=np.int64), ind,
+                             assume_unique=False)
+        if spare.size:
+            take = int(min(kickrank2, spare.size))
+            ind = np.concatenate([ind, rng.choice(spare, take, replace=False)])
     if ind.size < rho or ind.min() < 0 or ind.max() >= npts:
         raise ValueError(
             f"maxvol returned {ind.size} pivots in [{ind.min()}, {ind.max()}] "
@@ -289,7 +321,7 @@ def _sweep_lr(fun, iset, jset, n, opts, counter):
         sup = _to_backend(vals.reshape((r1 * n[k], r2)), opts)
         q = _left_basis(sup, opts["rmax"])
         ind = _select_rows(q, opts["kickrank"], opts["rf"], opts["rmax"],
-                           opts["tau"])
+                           opts["tau"], opts["kickrank2"], opts["rng"])
         iset[k + 1] = _merge(iset[k], n[k], _EMPTY)[ind]
 
 
@@ -304,7 +336,7 @@ def _sweep_rl(fun, iset, jset, n, opts, counter):
         sup = _to_backend(vals.reshape((r1, n[k] * r2)), opts)
         q = _left_basis(rearrange(sup, "a s -> s a"), opts["rmax"])
         ind = _select_rows(q, opts["kickrank"], opts["rf"], opts["rmax"],
-                           opts["tau"])
+                           opts["tau"], opts["kickrank2"], opts["rng"])
         cmat = _interp(q, ind)
         cores[k] = rearrange(cmat, "(i b) g -> g i b", i=n[k], b=r2)
         jset[k - 1] = _merge(_EMPTY, n[k], jset[k])[ind]
@@ -361,7 +393,7 @@ def _held_out_error(fun, x, n, n_check, rng, counter):
 
 def rect_cross(fun, x0, eps=1e-6, nswp=20, kickrank=1, rf=2, verbose=False,
                eps_abs=0.0, rmax=None, tau=1.1, n_check=0, check_seed=0,
-               stop_fun=None, round_result=True):
+               stop_fun=None, round_result=True, kickrank2=0):
     """Cross approximation of a black-box tensor, rectangular-maxvol flavour.
 
     Args:
@@ -448,6 +480,8 @@ def rect_cross(fun, x0, eps=1e-6, nswp=20, kickrank=1, rf=2, verbose=False,
     counter = _Counter()
     hist = CrossHistory(eps=float(eps))
     opts = {"kickrank": int(kickrank), "rf": int(rf), "tau": float(tau),
+            "kickrank2": int(kickrank2),
+            "rng": np.random.default_rng(check_seed + 7919),
             "rmax": int(rmax) if rmax is not None else 10 ** 9,
             "backend": bk.backend_of(x0.cores[0]),
             "dtype": bk.dtype_of(x0.cores[0])}
