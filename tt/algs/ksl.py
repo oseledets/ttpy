@@ -592,6 +592,18 @@ def ksl(A, y0, tau, verb=1, scheme="symm", space=8, rmax=2000, use_normest=1,
         defect_warn: Warn when ``tau ||(I-P) A y|| / ||y||`` exceeds this.  Pure
             reporting: it never changes the computation, and the number is in
             ``history.step_error_est`` whatever the threshold.
+
+            That number is a *first-order, one-point* estimate -- the tangent
+            defect at the end point, times ``tau`` -- so it is an indicator, not
+            a bound, and it is optimistic on large steps.  Measured on
+            ``diag_ksl`` with a rank-3 guess against the exact elementwise
+            exponential: 4.73e-02 predicted against 4.95e-02 actual at
+            ``tau = 0.01``, 1.13e-01 against 2.16e-01 at 0.1, and 6.64e-02
+            against 5.39e-01 at 0.3 -- eight times optimistic at the largest
+            step, and *non-monotone*, because the defect is read at one point of
+            a trajectory that has already left the manifold.  It warns in every
+            one of those cases, so nothing is silent; just do not read it as a
+            certificate.
         return_history: also return the :class:`KslHistory`.
 
     Returns:
