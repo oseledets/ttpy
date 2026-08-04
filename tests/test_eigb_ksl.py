@@ -603,3 +603,63 @@ def test_krylov_exponential_survives_an_iterate_that_underflows_to_zero():
     # a genuinely zero input is exact and unremarkable, not an underflow
     _, info0 = expmv_krylov(lambda v: a @ v, np.zeros(n), 1.0, space=4)
     assert info0["underflow"] is True and info0["substeps"] == 0
+
+
+def stiff_heat(levels, rank=4, seed=0):
+    """``dy/dt = -(2^L+1)^2 Laplace y``: a contraction semigroup in QTT."""
+    n = 2 ** levels
+    a = (-1.0 * (n + 1) ** 2) * tt.qlaplace_dd([levels])
+    rng = np.random.default_rng(seed)
+    y0 = tt.rand([2] * levels, r=rank, samplefunc=rng.standard_normal)
+    return a, y0 * (1.0 / y0.norm())
+
+
+def test_ksl_refuses_a_step_that_amplifies_past_every_digit():
+    """The projector splitting is not stiff-stable, and must say so.
+
+    Its S-steps integrate backwards, so for a dissipative ``A`` they amplify by
+    ``exp(tau |lambda_min|)``; the following K-step shrinks the data back but
+    not the rounding error that rode along. Left unguarded this *returns a
+    number*: measured at ``tau ||A|| = 169``, ``||y|| = 3.3e+106`` for a flow
+    whose exact solution has norm 0.307, with nothing in the history to say so.
+    """
+    a, y0 = stiff_heat(6)
+    with pytest.raises(RuntimeError, match="amplified its argument"):
+        ksl(a, y0, 1e-2, verb=0, check_rank=False, local_tol=1e-8)
+
+    # and the message points at the mechanism, not at a symptom downstream
+    try:
+        ksl(a, y0, 1e-2, verb=0, check_rank=False, local_tol=1e-8)
+    except RuntimeError as exc:
+        text = str(exc)
+    assert "S-step" in text and "stiff-stable" in text and "Reduce tau" in text
+
+
+def test_ksl_is_silent_and_accurate_where_the_amplification_is_harmless():
+    """The guard must not fire on the steps the integrator handles well."""
+    a, y0 = stiff_heat(6)
+    dense = np.asarray(a.full())
+    v0 = np.asarray(y0.full(asvector=True))
+
+    for tau in (1e-4, 1e-3):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            y, hist = ksl(a, y0, tau, verb=0, check_rank=False, local_tol=1e-8,
+                          return_history=True)
+        exact = sla.expm(tau * dense) @ v0
+        got = np.asarray(y.full(asvector=True))
+        err = np.linalg.norm(got - exact) / np.linalg.norm(exact)
+        assert err < 0.1, f"tau={tau}: {err:.3E}"          # modelling error only
+        assert hist.roundoff_floor < 1e-8
+        assert np.linalg.norm(got) <= np.linalg.norm(v0) * 1.05   # a contraction
+
+
+def test_ksl_history_carries_the_amplification_whatever_the_threshold():
+    """The numbers are reported even when nothing warns -- no hidden unknown."""
+    a, y0 = stiff_heat(6)
+    _, hist = ksl(a, y0, 1e-5, verb=0, check_rank=False, return_history=True)
+    assert hist.max_growth >= 1.0
+    assert hist.max_growth_kind in ("K", "S")
+    assert hist.roundoff_floor == pytest.approx(
+        np.finfo(float).eps * hist.max_growth ** 2.5, rel=1e-12)
+    assert all("growth" in s for s in hist.steps)

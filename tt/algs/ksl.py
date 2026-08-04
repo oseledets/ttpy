@@ -105,6 +105,14 @@ class KslHistory:
             ('K' or 'S'), size, substeps, krylov, err_est, time``.
         max_local_err: Largest local Krylov error estimate, in units of the norm
             of the vector the exponential was applied to.
+        max_growth: Largest factor by which a single local exponential grew its
+            argument, and ``max_growth_kind`` the step ('K' or 'S') that did it.
+            The S-steps integrate backwards, so a dissipative ``A`` amplifies
+            there; this is the number that says how much accuracy that cost.
+        roundoff_floor: ``eps_machine * max_growth ** KSL_GROWTH_EXPONENT`` --
+            the relative accuracy this step cannot go below, whatever the local
+            tolerances.  Reported always; warned about when it exceeds
+            ``local_tol``; refused in :func:`_step_exp` when it exceeds 1.
         total_substeps: Number of Krylov substeps over the whole sweep.
         ranks: TT ranks of the result.
         defect_abs: ``||(I - P_{T_y M}) A y||`` at the end of the step, or NaN
@@ -120,6 +128,9 @@ class KslHistory:
     scheme: str
     steps: list = field(default_factory=list)
     max_local_err: float = 0.0
+    max_growth: float = 1.0
+    max_growth_kind: str = ""
+    roundoff_floor: float = 0.0
     total_substeps: int = 0
     ranks: list = field(default_factory=list)
     defect_abs: float = float("nan")
@@ -485,6 +496,33 @@ def _sweep_forward(cores, acores, left, right, tau0, space, tol, use_normest,
     return cores
 
 
+#: The S-steps of the projector splitting run *backwards* in time, so for a
+#: dissipative ``A`` they amplify.  The following K-step shrinks the data back
+#: but not the rounding error the amplification carried with it, so a local
+#: exponential that grew its argument by ``g`` leaves the answer with a relative
+#: roundoff floor of about ``eps_machine * g**KSL_GROWTH_EXPONENT``.
+#:
+#: The exponent is *fitted*, not derived.  Measured on the QTT heat equation
+#: ``dy/dt = -(2^L+1)^2 Laplace y`` at ``L = 6``, fixed rank 4, ``local_tol=1e-8``
+#: (relative error against a dense ``expm``, the modelling error of the fixed
+#: rank being ~2e-2 throughout):
+#:
+#: ===========  ==========  ==========  ================
+#: ``tau|A|``   ``g``       error       ``eps g**2.5``
+#: ===========  ==========  ==========  ================
+#: 15.3         7.7e+00     3.1e-02     6.5e-14
+#: 20.6         6.9e+01     5.5e-02     8.6e-12
+#: 27.7         1.5e+03     1.0e-01     2.0e-08
+#: 37.3         5.8e+04     2.9e-01     1.7e-04
+#: 50.2         1.3e+07     1.2e+02     1.4e+02
+#: 67.6         2.6e+10     3.5e+09     7.3e+10
+#: ===========  ==========  ==========  ================
+#:
+#: The last two rows are the ones that matter: the fit tracks the observed error
+#: to within an order of magnitude where the answer is destroyed, and stays far
+#: below the modelling error where it is not.
+KSL_GROWTH_EXPONENT = 2.5
+
 def _step_exp(op, x, t, space, tol, use_normest, hist, sweep_id, site, kind):
     """One local exponential, with its bookkeeping."""
     t0 = time.time()
@@ -495,11 +533,38 @@ def _step_exp(op, x, t, space, tol, use_normest, hist, sweep_id, site, kind):
     else:
         anorm = _norm_estimate(op, x)
     w, info = expmv_krylov(op, x, t, space=space, tol=tol, anorm=anorm)
+    # How much this local exponential *grew* its argument.  The S-steps run
+    # backwards in time, so for a dissipative A they amplify, and whatever
+    # rounding error the K-step before them left is amplified with the data.
+    # The following K-step shrinks the data back but not the error, so this
+    # number is the factor by which the answer's relative accuracy degrades.
+    nx = float(bk.norm(x))
+    growth = float(bk.norm(w)) / nx if nx > 0 else 1.0
+    # Refuse as soon as a single local exponential has amplified enough to
+    # destroy every digit.  Left to run, this returns a number: measured on a
+    # dissipative QTT heat equation at tau|A| = 169, ||y|| = 3.3e+106 where the
+    # exact solution has norm 0.307, with nothing in the history to say so.
+    # Raising here rather than at the end of the sweep also keeps the failure
+    # legible: a few steps later the iterate overflows and expmv_krylov reports
+    # "estimated local error NAN vs target NAN", which blames the wrong thing.
+    floor = float(np.finfo(np.float64).eps) * growth ** KSL_GROWTH_EXPONENT
+    if floor > 1.0:
+        raise RuntimeError(
+            f"ksl: the {kind}-step at site {site} amplified its argument by "
+            f"{growth:.3E}, which leaves no correct digits (roundoff floor "
+            f"{floor:.3E}). The S-steps integrate backwards, so a dissipative A "
+            f"amplifies there by exp(tau |lambda_min|); the projector splitting "
+            f"is not stiff-stable and this step size is past what it can carry. "
+            f"Reduce tau (the floor falls off fast), or use an integrator that "
+            f"never forms the growing factor -- see docs/plans/bug-integrator.md.")
     hist.steps.append(dict(sweep=sweep_id, site=site, kind=kind,
                            size=int(np.prod(x.shape)),
                            substeps=info["substeps"], krylov=info["krylov"],
-                           err_est=info["err_est"], time=time.time() - t0))
+                           err_est=info["err_est"], growth=growth,
+                           time=time.time() - t0))
     hist.max_local_err = max(hist.max_local_err, info["err_est"])
+    if growth > hist.max_growth:
+        hist.max_growth, hist.max_growth_kind = growth, kind
     hist.total_substeps += info["substeps"]
     return w
 
@@ -614,6 +679,23 @@ def ksl(A, y0, tau, verb=1, scheme="symm", space=8, rmax=2000, use_normest=1,
                 f"{hist.step_error_est:.3E} in this step. Increase the rank of "
                 "y0 (this is a modelling error, not a solver failure).",
                 RuntimeWarning, stacklevel=2)
+    # Below the hard refusal in _step_exp there is still a band where the
+    # amplification costs real digits without destroying them.  Report it
+    # against what the caller asked of the local solves: roundoff above
+    # local_tol means the step is no longer delivering the accuracy requested,
+    # whatever the Krylov error estimates say.
+    roundoff = float(np.finfo(np.float64).eps) * hist.max_growth ** KSL_GROWTH_EXPONENT
+    hist.roundoff_floor = roundoff
+    if roundoff > local_tol:
+        warnings.warn(
+            f"KSL: a local {hist.max_growth_kind}-step amplified its argument "
+            f"by {hist.max_growth:.3E}, so this step carries a roundoff floor "
+            f"of about {roundoff:.3E} -- above the local_tol={local_tol:.1E} it "
+            f"was asked for. The S-steps run backwards in time and amplify for "
+            f"a dissipative A; the splitting is not stiff-stable. Reduce tau. "
+            f"(history.max_growth and history.roundoff_floor carry these "
+            f"numbers whatever the threshold.)",
+            RuntimeWarning, stacklevel=2)
     hist.time = time.time() - t_start
     if verb > 0:
         print(f"KSL done: {hist.total_substeps} Krylov substeps, "
