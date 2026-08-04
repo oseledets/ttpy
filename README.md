@@ -112,7 +112,9 @@ source of truth: the code should be reproducible from them and the tests.
 against the old implementation. Measured against the Fortran ttpy on one host
 (details and raw data in [docs/PERFORMANCE.md](docs/PERFORMANCE.md)): faster on
 rounding (1.2-1.5x), on `dot` (2x), on `tt_svd` (11.9x) and on `amen_solve`
-(2.8x, and 60x more accurate on the same problem).
+(2.8x, and 60x more accurate on the same problem) -- and **23x slower on the
+KSL integrator**, which is the one place the Fortran is still ahead and an open
+optimization target.
 
 Testing against dense truth also turned up four defects in the old package
 (transposed `Toeplitz` and `qshift`, a plainly wrong `IpaS`, a broken K/S order
