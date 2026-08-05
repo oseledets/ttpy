@@ -29,40 +29,25 @@ centroid is a genuine curved-index map, so ``det J`` varies over the mesh and
 the coefficient fields are not constant.  The uniform square in
 ``tests/test_qtt_fem.py`` never exercises that.
 
-STATUS: the per-patch half is verified, the coupling is not
------------------------------------------------------------
-Run it and the energies come out 0.24565 / 0.19806 / 0.16792 at ``d = 2, 3, 4``
-against her 0.34855 / 0.34181 / 0.34074.  They are not merely off, they move the
-wrong way: the energy of a Galerkin solution rises towards the continuum value
-as the space grows, and these fall.  That is the signature of a constraint that
-tightens under refinement, so the interface term is over-constraining rather
-than gluing.
+Reproduced, to her own precision
+--------------------------------
+    d=2:  0.34854914  (hers 0.34854914, agreement 2.1e-14)
+    d=3:  0.34180604  (hers 0.34180604, agreement 1.5e-09)
+    d=4:  0.34073671  (hers 0.34073671, agreement 1.6e-09)
+    d=5:  0.34051294  (vs FEniCS continuum 0.34039, rel 3.5e-04)
 
-What has been ruled out, each by a measurement rather than by reading:
+approaching the continuum from above, as a Galerkin energy must.
 
-* **the patch assembly.**  Against an ordinary element-by-element Q1 assembly of
-  the same map with the same one-point rule, the TT stiffness of subdomain 1
-  agrees to 3.8e-14 at ``d = 3`` and 4.1e-13 at ``d = 4``, and the load vector
-  agrees exactly (``f = M 1`` sums over *both* corner indices -- a first check
-  script got that wrong by a factor 4 and was itself the bug).
-* **which edges are shared.**  Written out from the corner lists: subdomain 1's
-  RIGHT is ``r12 -> rc`` and subdomain 2's LEFT is ``rc -> r12``, and likewise
-  for the other two pairs, so the side names and their opposite orientations are
-  the ones her notebook passes.
-* **the Dirichlet masks.**  Each patch's outer edges follow from the same corner
-  lists and reproduce her ``mask1``/``mask2``/``mask3`` exactly.
-* **the load/energy pairing.**  Her ``build_final_stiffness_and_force`` returns
-  its ``F`` built from ``ggg`` and its ``G`` from ``fff``, i.e. the names read
-  the other way round; the system is driven by the coupled right-hand side and
-  the energy pairs with the original load.  Fixing that changed the numbers
-  (0.25115 -> 0.24565 at ``d = 2``) and not the trend.
-
-What is left, in order of suspicion: the orientation along the shared edge (the
-``inversed`` flag of :func:`tt.algs.qtt_fem.sew` selects it, and a wrong choice
-glues node ``k`` to node ``n-1-k``, which is exactly a constraint that tightens
-under refinement); then the scale of ``lambda`` relative to a masked operator,
-since ``apply_mask`` puts ones on the constrained diagonal and the penalty is
-added afterwards.
+Getting there found a real defect in the port, worth remembering.  A mesh of
+``2^d`` nodes has ``2^d - 1`` elements, but the z-ordered diagonal carries
+``4^d`` element slots; the row ``e = n-1`` is fake.  The shift operator drops
+it by construction, the identity does not -- and with a full identity the fake
+elements deposit their ``(0, .)``-corner contributions on the last row of
+nodes.  Under an all-Dirichlet mask (every test on the unit square) that is
+invisible.  On a glued problem those nodes are interface nodes, they are free,
+and the energy *falls* under refinement instead of rising.  Her ``W0``,
+materialized densely from her repository, has the zero row; ``placement`` now
+does too, and the module docstring records the measurement.
 """
 
 import sys

@@ -56,11 +56,24 @@ def placement(d):
 
     In one direction the corner ``l = 0`` of element ``e`` is node ``e`` and the
     corner ``l = 1`` is node ``e + 1``, so the two operators are the identity
-    and the shift -- both QTT of rank 2, and both already in ttpy2.  The 2D
-    operator is their ``zkron``, which is what puts the result in z-order.
+    and the shift -- **both restricted to the real elements** ``e = 0..n-2``.
+    The element slot ``e = n-1`` is fake (its far corner would be node ``n``),
+    and both operators must drop it: the shift does so on its own, the identity
+    must have its last row zeroed.
+
+    That last row is not a nicety.  With a full identity the fake elements
+    deposit their ``(0, .)``-corner contributions on the last row of nodes,
+    which is invisible under an all-Dirichlet mask (the square tests) and
+    corrupts exactly the interface nodes of a glued multi-patch problem, where
+    that side is free.  Measured on Markeeva's triangle: with the full identity
+    the coupled energy *falls* under refinement (0.2457, 0.1981, 0.1679 at
+    ``d = 2, 3, 4``) instead of approaching 0.3404 from above.  Her own ``W0``
+    (materialized densely from her repository) has the zero row.
     """
     d = int(d)
-    w = [_tools.eye(2, d), _tools.qshift(d).T]
+    n = 2 ** d
+    keep = _tools.ones(2, d) - _tools.unit(2, d, j=n - 1)
+    w = [_tools.diag(keep.round(1e-14)), _tools.qshift(d).T]
     return {(lx, ly): _tools.zkron(w[lx], w[ly])
             for lx, ly in itertools.product((0, 1), (0, 1))}
 

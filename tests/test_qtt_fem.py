@@ -57,26 +57,36 @@ def test_placement_is_the_identity_and_the_shift():
 
     for (lx, ly), op in P.items():
         dense = np.asarray(op.full())
-        rows, cols = np.nonzero(dense)
+        # the diag-mask construction leaves 1e-16 dust; an entry of a placement
+        # operator is either 1 or 0, so anything tiny is roundoff, not signal
+        assert (np.abs(dense) < 1e-12).sum() + (np.abs(dense - 1) < 1e-12).sum() \
+            == dense.size, "an entry is neither 0 nor 1"
+        rows, cols = np.nonzero(np.abs(dense) > 0.5)
         # every entry must be 1 and must move each index by exactly l
         assert np.allclose(dense[rows, cols], 1.0)
         assert np.array_equal(ix[cols], ix[rows] + lx)
         assert np.array_equal(iy[cols], iy[rows] + ly)
-
-    # rank 1 for the identity pair, 4 for the doubly shifted one
-    assert max(P[(0, 0)].r) == 1
-    assert max(P[(1, 1)].r) == 4
+        # and the fake element row e = n-1 must be dropped in BOTH directions:
+        # a full identity deposits the fake elements' contributions on the last
+        # row of nodes, which an all-Dirichlet mask hides and a glued interface
+        # exposes (measured: the coupled energy falls under refinement)
+        assert not np.any(ix[rows] == n - 1)
+        assert not np.any(iy[rows] == n - 1)
+        assert len(rows) == (n - 1) ** 2
 
 
 # --- the assembled operator ---------------------------------------------------
 
 @pytest.mark.parametrize("d", [3, 4, 5])
-def test_stiffness_is_symmetric_and_kills_constants_inside(d):
-    """A stiffness matrix annihilates constants -- away from the truncated edge.
+def test_stiffness_is_symmetric_and_kills_constants_everywhere(d):
+    """A pure-Neumann stiffness matrix annihilates constants, with no excuses.
 
-    The shift drops the node beyond the last element, so the outermost rows are
-    incomplete by construction; they are exactly the rows a Dirichlet condition
-    replaces.  Interior rows have no such excuse and must be zero.
+    This used to hold only on interior rows: the placement identity carried the
+    fake element slot ``e = n-1``, whose contributions landed on the last row of
+    nodes.  An all-Dirichlet mask hid that; a glued interface exposed it (the
+    coupled energy of Markeeva's triangle fell under refinement).  With the fake
+    row dropped, ``K 1 = 0`` holds everywhere -- which is what a Neumann
+    operator owes.
     """
     n = 2 ** d
     h = 1.0 / (n - 1)
@@ -84,26 +94,24 @@ def test_stiffness_is_symmetric_and_kills_constants_inside(d):
     dense = np.asarray(K.full())
 
     assert np.abs(dense - dense.T).max() < 1e-13 * np.abs(dense).max()
-
-    ix, iy = zsplit(d)
-    inside = (ix > 0) & (ix < n - 1) & (iy > 0) & (iy < n - 1)
     row_sums = dense @ np.ones(dense.shape[0])
-    assert np.abs(row_sums[inside]).max() < 1e-12
-    assert np.abs(row_sums[~inside]).max() > 1e-3, "the edge rows are not incomplete?"
+    assert np.abs(row_sums).max() < 1e-11
 
 
 @pytest.mark.parametrize("d", [3, 6, 10])
 def test_the_rank_does_not_grow_with_the_mesh(d):
-    """Rank 16 whatever ``d`` is -- the point of assembling in z-order.
+    """Rank bounded by 25 whatever ``d`` is -- the point of the z-order.
 
-    Sixteen corner pairs, each contributing a rank-1 term on a uniform mesh.  A
-    direction-major layout would let the bond between the two directions carry
-    the whole coupling instead.
+    Sixteen corner pairs, each rank 1 on a uniform mesh, would give 16; the
+    element restriction (the dropped fake row ``e = n-1``, a diagonal 0/1 mask
+    of rank 2 per direction) lifts the bound to 25 and it saturates there.
+    What matters is that it does not grow with ``d``.
     """
     h = 1.0 / (2 ** d - 1)
     K = assemble(const_entries(d, local_stiffness_uniform(h, h)), d)
-    assert max(K.r) == 16
-    assert list(K.r) == [1] + [16] * (d - 1) + [1]
+    assert max(K.r) <= 25, list(K.r)
+    if d >= 6:
+        assert max(K.r) == 25   # saturated, not growing
 
 
 def test_dirichlet_mask_selects_the_interior():
