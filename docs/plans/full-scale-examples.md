@@ -1297,11 +1297,15 @@ costs fifteen lines and 97 % of an assembly.
 Each with the experiment or the source that settles it. Numbered from Q20 to
 avoid colliding with `ROADMAP.md` §6's Q1–Q15.
 
-**Q20 — Who is "Marchuk"?** *Blocks:* nothing, but it may hide a paper worth
-reading. An arXiv author query and four keyword searches found no
-Dolgov–Marchuk paper on vibrational spectra (§1.3). *Settled by:* one sentence
-from the user. Candidates: Savostyanov (co-author of [DKOS14]), Rakhuba (the
-vibrational paper), or Markeeva (§1.6).
+**Q20 — Who is "Marchuk"?** **ANSWERED — see `docs/plans/functional-tt.md` §0.1.**
+The name is **Marzouk** (Youssef Marzouk, MIT), and identifying him does not
+rescue the reference: `au:Marzouk_Y AND au:Dolgov` returns zero on arXiv, Marzouk
+has no paper on vibrational spectra, and his entire TT output is two
+function-approximation papers. The original pairing conflated the vibrational
+line (Dolgov–Khoromskij–Oseledets–Savostyanov; Rakhuba–Oseledets — both already
+cited in §1.3) with the Marzouk *functional-TT* and Dolgov *sampling* lines,
+which `functional-tt.md` surveys. Nothing in §1.3 needs a new citation; §9's
+bullet needs amending.
 
 **Q21 — Does the paper's NURBS ring really have a rank-`[3 2]` `R₀₁`, and if so
 why?** *Blocks:* nothing, but it is the cleanest available check that a
