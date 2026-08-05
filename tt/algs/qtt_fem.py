@@ -45,7 +45,8 @@ from ..core.matrix import matrix
 from ..core.vector import vector
 
 __all__ = ["placement", "assemble", "dirichlet_mask", "apply_mask",
-           "local_stiffness_uniform", "local_entries", "node_grid"]
+           "local_stiffness_uniform", "local_entries", "node_grid",
+           "sew", "interface_blocks", "block_system"]
 
 
 # --- element -> node ---------------------------------------------------------
@@ -209,3 +210,85 @@ def apply_mask(A, f, mask, eps=1e-10):
     eye = _tools.eye(int(A.n[0]), d)
     return ((mask @ A + eye - mask).round(eps),
             _tools.matvec(mask, f).round(eps))
+
+# --- gluing patches together -------------------------------------------------
+
+_SIDES = ("BOTTOM", "RIGHT", "LEFT", "TOP")
+_CORNERS = ("LLC", "LRC", "ULC", "URC")
+
+
+def sew(d, side, inversed=False):
+    """The trace operator of one side of a z-ordered patch, TT rank 1.
+
+    Maps the ``4^d`` nodes of a patch to the ``2^d`` nodes of one of its edges.
+    In z-order a mode carries the pair of bits ``(i_x, i_y)`` of one level, so
+    "stay on the bottom edge" is the statement ``i_y = 0`` at every level -- a
+    rank-1 condition, and the free index rides along in ``i_x``.  That is why
+    the trace costs ``O(d)`` here and a permutation matrix elsewhere.
+
+    ``inversed`` reverses the direction along the edge, which is what two
+    patches meeting with opposite orientations need.
+    """
+    d = int(d)
+    side = str(side).upper()
+    if side in _CORNERS:
+        core = np.zeros((1, 1, 4, 1))
+        core[0, 0, _CORNERS.index(side), 0] = 1.0
+        return matrix.from_list([core] * d)
+    if side not in _SIDES:
+        raise ValueError(f"side must be one of {_SIDES + _CORNERS}, got {side!r}")
+
+    b = r = l = t = 0.0
+    if side == "BOTTOM":
+        b = 1.0
+    elif side == "RIGHT":
+        r = 1.0
+    elif side == "LEFT":
+        l = 1.0
+    else:
+        t = 1.0
+    rows = np.array([[l, b, t, r], [b, r, l, t]]) if inversed \
+        else np.array([[b, r, l, t], [l, b, t, r]])
+    core = np.zeros((1, 2, 4, 1))
+    core[0, :, :, 0] = rows
+    return matrix.from_list([core] * d)
+
+
+def interface_blocks(d, side_m, side_p):
+    """``(Pmp, Ppm, Pmm, Ppp)`` -- the four blocks that couple two patches.
+
+    With ``Y_m``, ``Y_p`` the traces of the shared edge seen from either side,
+    these are ``Y_m^T Y_p``, ``Y_p^T Y_m``, ``-Y_m^T Y_m`` and ``-Y_p^T Y_p``:
+    the blocks of the jump ``Y_m u_m - Y_p u_p``, so adding them to the block
+    system penalises a discontinuity across the interface.
+    """
+    ym = sew(d, side_m, inversed=False)
+    yp = sew(d, side_p, inversed=True)
+    return (ym.T @ yp, yp.T @ ym, (-1.0) * (ym.T @ ym), (-1.0) * (yp.T @ yp))
+
+
+def block_system(blocks, rhs, eps=1e-10):
+    """Pack an ``m x m`` grid of TT operators into one, with a patch mode.
+
+    The patch index becomes a final mode of size ``m``: ``S = sum_ij B_ij (x)
+    E_ij``.  One tensor train for the whole multi-patch problem, which is what
+    lets a single ``amen_solve`` see the coupling.
+    """
+    m = len(rhs)
+    total = None
+    for i in range(m):
+        for j in range(m):
+            if blocks[i][j] is None:
+                continue
+            e = np.zeros((1, m, m, 1))
+            e[0, i, j, 0] = 1.0
+            term = _tools.kron(blocks[i][j], matrix.from_list([e]))
+            total = term if total is None else (total + term)
+            total = total.round(eps)
+    vec = None
+    for i in range(m):
+        e = np.zeros(m)
+        e[i] = 1.0
+        term = _tools.kron(rhs[i], vector.from_list([e.reshape(1, m, 1)]))
+        vec = term if vec is None else (vec + term)
+    return total, vec.round(eps)
