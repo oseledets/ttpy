@@ -1,14 +1,23 @@
 [project]
 name = "ttpy"
-version = "2.0.0.dev0"
+version = "2.0.0rc1"
 description = "Tensor Train toolbox: TT/QTT decompositions, cross approximation, AMEn solvers — pure Python, numpy/torch backends"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Ivan Oseledets" }]
 keywords = ["tensor train", "TT", "QTT", "low-rank", "cross approximation", "AMEn"]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
 dependencies = [
