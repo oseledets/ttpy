@@ -1,6 +1,8 @@
 """The torch backend must give the same numbers as numpy, not merely run.
 
 Skipped when torch is missing: the package must import and work without it.
+The device and the precision it can work in come from conftest -- on CUDA that
+is float64, on MPS float32, and the tolerances follow (see PARITY there).
 """
 
 import numpy as np
@@ -10,26 +12,19 @@ import tt
 from tt import backend as bk
 from tt.core import _ops
 
+from conftest import (GPU_CDTYPE, GPU_DEVICE, GPU_DTYPE, PARITY, rel,
+                      requires_gpu)
+
 torch = pytest.importorskip("torch")
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(),
-                                reason="no CUDA device")
+pytestmark = requires_gpu()
 
 
-def gpu(dtype="float64"):
-    return bk.TorchBackend("cuda", dtype)
+def gpu(dtype=None):
+    return bk.TorchBackend(GPU_DEVICE, dtype or GPU_DTYPE)
 
 
-def as_np(a):
-    return np.asarray(bk.to_numpy(a))
-
-
-def rel(a, b):
-    a, b = as_np(a), as_np(b)
-    return np.linalg.norm(a - b) / max(np.linalg.norm(b), 1e-300)
-
-
-def to_gpu(x, dtype="float64"):
-    return x.to("torch", "cuda", dtype)
+def to_gpu(x, dtype=None):
+    return x.to("torch", GPU_DEVICE, dtype or GPU_DTYPE)
 
 
 @pytest.fixture
@@ -45,7 +40,7 @@ def test_import_without_touching_the_default_backend():
 
 def test_full_matches_numpy(sample):
     dense, x = sample
-    assert rel(to_gpu(x).full(), dense) < 1e-12
+    assert rel(to_gpu(x).full(), dense) < PARITY
 
 
 def test_round_matches_numpy():
@@ -54,35 +49,35 @@ def test_round_matches_numpy():
     x = tt.vector(a, 1e-14)
     for eps in (1e-1, 1e-3, 1e-10):
         cpu = x.round(eps)
-        cuda = to_gpu(x).round(eps)
-        assert list(cpu.r) == list(cuda.r), f"ranks differ at eps={eps}"
-        assert rel(cuda.full(), cpu.full()) < 1e-12
+        dev = to_gpu(x).round(eps)
+        assert list(cpu.r) == list(dev.r), f"ranks differ at eps={eps}"
+        assert rel(dev.full(), cpu.full()) < PARITY
 
 
 def test_arithmetic_matches_numpy():
     x, y = tt.rand([3, 4, 3], r=3), tt.rand([3, 4, 3], r=3)
     gx, gy = to_gpu(x), to_gpu(y)
-    assert rel((gx + gy).full(), (x + y).full()) < 1e-12
-    assert rel((gx * gy).full(), (x * y).full()) < 1e-12
-    assert rel((2.5 * gx).full(), (2.5 * x).full()) < 1e-12
-    assert abs(tt.dot(gx, gy) - tt.dot(x, y)) < 1e-10 * abs(tt.dot(x, y))
-    assert abs(gx.norm() - x.norm()) < 1e-10 * x.norm()
+    assert rel((gx + gy).full(), (x + y).full()) < PARITY
+    assert rel((gx * gy).full(), (x * y).full()) < PARITY
+    assert rel((2.5 * gx).full(), (2.5 * x).full()) < PARITY
+    assert abs(tt.dot(gx, gy) - tt.dot(x, y)) < 100 * PARITY * abs(tt.dot(x, y))
+    assert abs(gx.norm() - x.norm()) < 100 * PARITY * x.norm()
 
 
 def test_matvec_matches_numpy():
     A = tt.qlaplace_dd([6])
     x = tt.rand(2, 6, r=3)
     ref = tt.matvec(A, x).round(1e-10)
-    got = tt.matvec(A.to("torch", "cuda"), to_gpu(x)).round(1e-10)
-    assert rel(got.full(), ref.full()) < 1e-11
+    got = tt.matvec(to_gpu(A), to_gpu(x)).round(1e-10)
+    assert rel(got.full(), ref.full()) < 10 * PARITY
 
 
 def test_tt_svd_on_gpu():
     rng = np.random.default_rng(2)
     dense = rng.standard_normal((4, 4, 4, 4))
-    g = gpu().asarray(dense)
-    cores = _ops.tt_svd(g, 1e-10)
-    assert rel(_ops.full(cores), dense) < 1e-9
+    g = gpu().asarray(dense, GPU_DTYPE)
+    cores = _ops.tt_svd(g, 1e-10 if GPU_DTYPE == "float64" else 1e-5)
+    assert rel(_ops.full(cores), dense) < 1000 * PARITY
 
 
 def test_float32_is_accurate_to_float32():
@@ -93,6 +88,7 @@ def test_float32_is_accurate_to_float32():
     assert rel(g.full(), dense) < 1e-5
 
 
+@requires_gpu(dtype="complex128")
 def test_complex_on_gpu():
     rng = np.random.default_rng(4)
     dense = rng.standard_normal((3, 3, 3)) + 1j * rng.standard_normal((3, 3, 3))
@@ -110,10 +106,10 @@ def test_mixing_backends_fails_loudly():
 
 def test_set_backend_roundtrip():
     try:
-        bk.set_backend("torch", "cuda", "float64")
+        bk.set_backend("torch", GPU_DEVICE, GPU_DTYPE)
         y = tt.rand([2, 3, 2], r=2)
         assert y.backend.name == "torch"
-        assert rel(y.round(1e-10).full(), y.full()) < 1e-12
+        assert rel(y.round(1e-10).full(), y.full()) < PARITY
     finally:
         bk.set_backend("numpy")
     assert tt.rand([2, 2], r=2).backend.name == "numpy"
@@ -127,20 +123,20 @@ def test_copy_works_on_torch_tensors():
     x = to_gpu(tt.rand([2, 3, 2], r=2))
     y = x.copy()
     assert y.backend.name == "torch"
-    assert rel(y.full(), x.full()) < 1e-14
+    assert rel(y.full(), x.full()) < PARITY
     y.cores[0] += 1.0                       # a copy must not alias the original
     assert rel(y.full(), x.full()) > 1e-8
 
     z = tt.vector(x)                        # copy constructor
     assert z.backend.name == "torch"
-    assert rel(z.full(), x.full()) < 1e-14
+    assert rel(z.full(), x.full()) < PARITY
 
-    m = tt.qlaplace_dd([4]).to("torch", "cuda")
-    assert rel(m.copy().full(), m.full()) < 1e-14
+    m = to_gpu(tt.qlaplace_dd([4]))
+    assert rel(m.copy().full(), m.full()) < PARITY
 
-    single = tt.vector.from_list([bk.TorchBackend("cuda").asarray(
-        np.arange(6.0).reshape(1, 6, 1))])
-    assert rel(single.round(1e-12).full(), single.full()) < 1e-14
+    single = tt.vector.from_list([gpu().asarray(
+        np.arange(6.0).reshape(1, 6, 1), GPU_DTYPE)])
+    assert rel(single.round(1e-12).full(), single.full()) < PARITY
 
 
 def test_seeded_randn_is_reproducible_and_matches_numpy():
@@ -150,12 +146,12 @@ def test_seeded_randn_is_reproducible_and_matches_numpy():
     documented seed= a silent no-op there.
     """
     shape = (3, 4, 2)
-    g = bk.TorchBackend("cuda", "float64")
+    g = gpu()
     a = g.randn(shape, rng=np.random.default_rng(7))
     b = g.randn(shape, rng=np.random.default_rng(7))
     assert rel(a, b) == 0.0, "same seed must give the same numbers"
 
-    c = bk.NumpyBackend("float64").randn(shape, rng=np.random.default_rng(7))
+    c = bk.NumpyBackend(GPU_DTYPE).randn(shape, rng=np.random.default_rng(7))
     assert rel(a, c) == 0.0, "and the same numbers as the numpy backend"
 
     d = g.randn(shape, rng=np.random.default_rng(8))
@@ -163,4 +159,5 @@ def test_seeded_randn_is_reproducible_and_matches_numpy():
 
     # unseeded still works and is not constant
     assert rel(g.randn(shape), g.randn(shape)) > 1e-3
-    assert bk.dtype_of(g.randn(shape, "complex128")) == "complex128"
+    if GPU_CDTYPE is not None:
+        assert bk.dtype_of(g.randn(shape, GPU_CDTYPE)) == GPU_CDTYPE

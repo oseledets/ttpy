@@ -40,9 +40,10 @@ Differences from the legacy Fortran-era code, stated plainly
   at every micro-step", not "rank of a separately tracked residual tensor".
   ``kickrank2`` (extra *random* rows) is implemented in
   :func:`tt.algs.cross.rect_cross`, off by default, and is *not* cosmetic: it is
-  the only thing measured to move the failure mode where the greedy index sets
-  reach a fixed point while an unsampled region still carries the error.  It has
-  no counterpart here yet -- ``multifuncrs`` still rejects a non-zero value.
+  the only thing that moves the failure mode where the greedy index sets reach a
+  fixed point while an unsampled region still carries the error
+  (``docs/NUMERICS.md``).  It has no counterpart here yet -- ``multifuncrs``
+  still rejects a non-zero value.
 * the basis is always orthogonalized by an SVD, so ``do_qr`` is a no-op; it is
   accepted for signature compatibility and recorded in ``history``.
 * ``pcatype='uchol'`` (incomplete Cholesky enrichment) is not implemented and
@@ -61,28 +62,18 @@ References
 * A. Mikhalev, I. V. Oseledets, "Rectangular maximum-volume submatrices and
   their applications", Linear Algebra Appl. 538:187-211, 2018, arXiv:1502.07838.
 
-What ``eps`` actually buys (measured, not promised)
----------------------------------------------------
+What ``eps`` actually buys
+--------------------------
 ``eps`` enters in exactly two places inside :func:`tt.algs.cross.rect_cross`,
 and neither is an error *bound*: it is the threshold of the stopping rule (the
 relative change between two sweeps) and the accuracy of the final rounding of
 the interpolant.  The sweeps themselves do *not* truncate locally -- see
 ``tt.algs.cross._left_basis`` for what that costs -- so how close the achieved
 error lands to ``eps`` is a property of the cross engine, not of this adapter.
-Measured on ``1/(1+t)``, ``t = (i+1)/2^d`` on a binary QTT grid, relative error
-on 2000 held-out points (``n_check``), float64, default ``kickrank=5``, as
-achieved divided by requested:
-
-    d        eps=1e-6      eps=1e-10
-    10          0.43          0.27
-    20          0.19          0.35
-    40          0.19          0.11
-
-All six runs reported ``history.converged is True`` and warned about nothing --
-correctly, the stopping criterion *was* met.  That the ratio stays below one is
-a measurement on one smooth function, not a promise: for a function whose
-relevant fibers the sampling never visits (a spike on a few entries) every one
-of those numbers would be optimistic, and so would the stopping rule.  ``eps``
+On a smooth function it lands comfortably below the request
+(``docs/NUMERICS.md``), but that is a measurement on one function, not a
+promise: for a function whose relevant fibers the sampling never visits (a spike
+on a few entries) both that ratio and the stopping rule are optimistic.  ``eps``
 is a knob; ``history.err_check`` (i.e. passing ``n_check``) is the only honest
 measurement of the error actually obtained.
 
@@ -286,9 +277,15 @@ def _probe(xs, funs, n, d2, seed, meter):
         raise ValueError(
             "funs returned a non-finite value on the initial probe; cross "
             "cannot interpolate that (is the domain right, e.g. 1/x near 0?)")
-    complex_out = bool(np.iscomplexobj(vals)) or any(x.is_complex for x in xs)
-    dtype = "complex128" if complex_out else bk.canon_dtype(
-        np.result_type(vals.dtype, np.float64))
+    # The working dtype is the widest of what the inputs carry and what funs
+    # returns -- NOT that widened to float64, which would make a float32 run
+    # float64-sized for no extra digit and impossible on a device without
+    # float64.  An integer-valued funs constrains nothing, so it is left out of
+    # the promotion and the inputs decide.
+    seen = [bk.dtype_of(x.cores[0]) for x in xs]
+    if np.dtype(vals.dtype).kind in "fc":
+        seen.append(bk.canon_dtype(vals.dtype))
+    dtype = bk.result_dtype(*seen)
     return got, dtype
 
 
@@ -522,14 +519,13 @@ def multifuncrs2(X, funs, eps=1e-6, nswp=10, kickrank=5, y0=None, rmax=999999,
             be a genuine function of its argument (same input, same output).
         eps: Target relative accuracy in the Frobenius norm.  It is a knob, not
             a bound -- see "What ``eps`` actually buys" in the module docstring
-            for the measured error/eps ratio as a function of ``d``.  The one
-            failure this method cannot detect by itself is a feature carried by
-            a few entries: for ``funs`` equal to ``1`` at a single point of a
-            ``6^5`` grid and ``1e-3`` elsewhere, the run returns the constant
-            ``1e-3`` (relative error 0.995) with ``converged=True`` and a
-            relative change between sweeps of ``1e-15``.  Only ``n_check``
-            large enough to hit the feature sees it (3000 points did, 20 did
-            not); nothing else can.
+            and ``docs/NUMERICS.md`` for the error/eps ratio as a function of
+            ``d``.  The one failure this method cannot detect by itself is a
+            feature carried by a few entries: a spike on one point of the grid
+            is returned as the surrounding constant, with ``converged=True``
+            and a relative change between sweeps at machine precision.  Only
+            ``n_check`` large enough to hit the feature sees it; nothing else
+            can.
         nswp: Maximum number of cross sweeps (one sweep = forward and back).
         kickrank: Rank-increasing parameter: extra rows the rectangular maxvol
             adds on top of the numerical rank at every micro-step.  ``0`` turns
@@ -558,10 +554,8 @@ def multifuncrs2(X, funs, eps=1e-6, nswp=10, kickrank=5, y0=None, rmax=999999,
             several components ``eps`` is a budget for the *stacked* tensor
             (as in the legacy code): a component carrying a fraction ``w`` of
             the joint norm is only accurate to about ``eps/w`` relative to
-            itself.  Measured on five components spanning two orders of
-            magnitude, eps=1e-9: the smallest one (0.7% of the joint norm) came
-            out at 1.2e-8.  Call the method once per component if you need a
-            per-component relative accuracy.
+            itself (``docs/NUMERICS.md``).  Call the method once per component
+            if you need a per-component relative accuracy.
         rf: Extra slack for the rank growth, on top of ``kickrank``.
         tau: Rectangular maxvol tolerance.
         eps_exit: Stopping threshold on the relative change between sweeps, if

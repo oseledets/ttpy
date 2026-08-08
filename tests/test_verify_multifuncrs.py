@@ -14,12 +14,14 @@ held-out measurement ``history.err_check`` cross-checked against the dense error
 in a regime where the two can actually disagree.
 """
 
+import ast
 import warnings
 
 import numpy as np
 import pytest
 
 import tt
+from conftest import TORCH_F64_DEVICE
 from tt.algs.cross import CrossHistory
 from tt.algs.multifuncrs import multifuncrs, multifuncrs2
 
@@ -151,10 +153,8 @@ def test_many_inputs_many_components():
     ``eps`` is a budget for the *stacked* block tensor, exactly as in the legacy
     code, so it is the joint error that must be under 10*eps.  A component whose
     norm is a fraction ``w`` of the joint norm can only be expected to reach
-    ``10*eps/w`` in relative terms -- measured here: component 2 (``1/X_0``,
-    0.7% of the joint norm) comes out at 1.2e-08 for eps=1e-09, i.e. 12*eps
-    globally but 0.09 of its own budget.  Anyone who needs per-component
-    relative accuracy must call the method once per component.
+    ``10*eps/w`` in relative terms (``docs/NUMERICS.md``).  Anyone who needs
+    per-component relative accuracy must call the method once per component.
     """
     n = [5] * 4
     eps = 1e-9
@@ -379,10 +379,9 @@ def test_qtt_reciprocal_held_out_accuracy(d, eps, factor):
     """1/(1+t) on a 2^d binary QTT grid, error on 2000 held-out points.
 
     ``factor`` is the tolerance the module docstring claims for this regime.
-    Measured achieved/requested on this machine, float64: 0.43 and 0.27 at
-    d=10, 0.19 and 0.35 at d=20 -- so 10*eps leaves a factor of 30 of headroom
-    and still fails loudly if the engine goes back to a rule that landed at
-    19*eps here.
+    Achieved over requested stays well under 1 across ``d`` and ``eps``
+    (``docs/NUMERICS.md``), so ``10*eps`` leaves ample headroom and still fails
+    loudly if the engine goes back to a rule that overshoots.
     """
     x = tt.xfun(2, d) * (1.0 / 2 ** d) + tt.ones(2, d) * (1.0 / 2 ** d)
     y = multifuncrs2([x], lambda v: 1.0 / (1.0 + v[:, 0]), eps=eps, verb=0,
@@ -435,13 +434,43 @@ def test_high_d_reports_converged_and_the_module_says_eps_is_no_bound():
 
 # --- loud failure ------------------------------------------------------------
 
+def marked_mode_tensor(n, mode, base=2.0):
+    """``x[i] = base + i_mode``: a rank-1 TT whose value names one mode's index.
+
+    Exact in float64 for small integers, so a pole placed at ``base + K`` is a
+    pole on exactly the hyperplane ``i_mode == K`` -- on every machine.
+    """
+    cores = []
+    for k, nk in enumerate(n):
+        c = np.ones((1, nk, 1))
+        if k == mode:
+            c[0, :, 0] = base + np.arange(nk)
+        cores.append(c)
+    return tt.vector.from_list(cores)
+
+
 def test_non_finite_only_in_the_sweep_names_the_index():
-    """The probe misses it; the engine must still refuse, and say where."""
-    x, dense = sum_tensor([6] * 5, shift=2.0, seed=24)
-    top = dense.max()
+    """The probe misses it; the engine must still refuse, and say where.
+
+    Both halves of that sentence have to be *made* true, not hoped for: a pole
+    placed where the sweep merely *might* sample it makes this a test of maxvol's
+    pivots, hence of LAPACK (``docs/NUMERICS.md``).
+
+    Here the pole sits on a whole hyperplane ``i_2 == 37`` of a 64-wide mode.
+    The sweep enumerates the full range of every mode it updates, so it cannot
+    miss it whatever the pivots are; the probe draws 8 points from a seeded
+    PCG64, and at 1/64 per point it does miss it -- deterministically, since
+    ``K = 17`` would be hit.
+    """
+    n, mode, K = [6, 6, 64, 6, 6], 2, 37
+    x = marked_mode_tensor(n, mode)
     with np.errstate(divide="ignore"):
-        with pytest.raises(ValueError, match="non-finite value.*at multi-index"):
-            multifuncrs2([x], lambda v: 1.0 / (v[:, 0] - top), eps=1e-8, verb=0)
+        with pytest.raises(ValueError, match="non-finite value.*at multi-index") as e:
+            multifuncrs2([x], lambda v: 1.0 / (v[:, 0] - (2.0 + K)),
+                         eps=1e-8, verb=0)
+    index = ast.literal_eval(str(e.value).split("multi-index ")[1].split(";")[0])
+    assert index[mode] == K, (
+        f"the guard named {index}, whose mode-{mode} entry is not the pole")
 
 
 @pytest.mark.parametrize("f,msg", [
@@ -494,7 +523,7 @@ def test_multifuncrs2_accepts_the_legacy_positional_call():
 def test_rmax_does_not_cap_the_component_tail():
     """``rmax`` caps the internal ranks; the last one *is* ``d2`` by definition.
 
-    Measured: ``rmax=2`` with three components returns ranks [1, 2, 2, 2, 3].
+    ``rmax=2`` with three components must return ranks [1, 2, 2, 2, 3].
     A caller who reads "hard cap on the TT ranks" literally would call that a
     violation, so the docstring has to say it -- pinned here.
     """
@@ -533,7 +562,8 @@ def test_rmax_active_is_reachable_and_converged_alone_would_lie():
 def test_vector_valued_funs_do_not_multiply_the_user_cost():
     """d2 components must not cost d2 times the user evaluations.
 
-    Measured on d=5, n=6, eps=1e-8: 7844 points for one component and 7381 for
+    Regime d=5, n=6, eps=1e-8; the count for several components must not scale
+    with their number -- it comes out slightly *below* the single-component one,
     five (ratio 0.94).  The engine asks for 11689 *scalar* entries in the
     5-component case, so the de-duplication is doing real work; the assertion is
     the property a user pays for, not the internal ratio.
@@ -637,9 +667,8 @@ def test_an_exception_inside_funs_is_not_swallowed():
 def test_a_funs_that_is_not_a_function_is_reported_not_hidden():
     """Noisy ``funs`` violates the contract; the run must not claim success.
 
-    Measured: 1/x plus 0.1% multiplicative noise, eps=1e-10 -> the sweeps never
-    settle (last relative change 1.5e-3), the run warns and reports
-    converged=False with the ranks blown up to 25.
+    1/x plus 0.1% multiplicative noise, eps=1e-10: the sweeps never settle, the
+    run warns and reports converged=False with the ranks blown up.
     """
     x, dense = sum_tensor([5] * 4, shift=2.0, seed=42)
     rng = np.random.default_rng(0)
@@ -670,13 +699,12 @@ def test_a_spike_is_missed_silently_and_the_docs_say_so():
     """The honest limit of any sampling method, pinned as behaviour.
 
     ``funs`` is 1 at a single entry of a 6^5 grid and 1e-3 elsewhere.  The run
-    returns the constant, i.e. a relative error of 0.995, while reporting
-    ``converged=True`` and a relative change between sweeps of ~1e-15, and it
-    warns about nothing.  A held-out sample large enough to hit the spike does
-    catch it (3000 points -> err_check 0.998 and a warning); a small one does
-    not (20 points -> 1.7e-15, silent).  Nothing here is a bug to fix -- it is
-    the property a user must know about, so the test also pins the sentence in
-    the docstring that says it.
+    returns the constant while reporting ``converged=True``, a relative change
+    between sweeps at machine precision, and no warning.  A held-out sample
+    large enough to hit the spike does catch it; a small one does not
+    (``docs/NUMERICS.md``).  Nothing here is a bug to fix -- it is the property
+    a user must know about, so the test also pins the sentence in the docstring
+    that says it.
     """
     n = [6] * 5
     x = tt.xfun(n)                      # distinct value at every entry
@@ -721,7 +749,7 @@ def test_torch_y0_does_not_crash():
     """Regression: ``[c.copy() for c in y0.cores]`` raised AttributeError on a
     torch tensor, so every torch run with an initial guess died."""
     torch = pytest.importorskip("torch")
-    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    dev = TORCH_F64_DEVICE
     x, dense = sum_tensor([5] * 4, shift=2.0, seed=29)
     xt = _to_torch(x, torch, dev)
     coarse = multifuncrs2([xt], lambda v: 1.0 / v[:, 0], eps=1e-3, verb=0)
@@ -733,7 +761,7 @@ def test_torch_y0_does_not_crash():
 
 def test_torch_vector_valued_and_complex():
     torch = pytest.importorskip("torch")
-    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    dev = TORCH_F64_DEVICE
     x, dense = sum_tensor([5] * 4, shift=2.0, seed=30)
     xt = _to_torch(x, torch, dev)
     eps = 1e-10
@@ -755,7 +783,7 @@ def test_mixed_backends_in_X_follow_the_first_input():
     """A numpy and a torch tensor in the same call: the answer must land on the
     backend of ``X[0]`` and be right either way."""
     torch = pytest.importorskip("torch")
-    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    dev = TORCH_F64_DEVICE
     a, ad = sum_tensor([5] * 3, shift=2.0, seed=45)
     at = _to_torch(a, torch, dev)
     exact = ad / (1.0 + ad)
@@ -770,7 +798,7 @@ def test_mixed_backends_in_X_follow_the_first_input():
 
 def test_torch_randn_honours_its_rng():
     torch = pytest.importorskip("torch")
-    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    dev = TORCH_F64_DEVICE
     like = torch.zeros((1,), dtype=torch.float64, device=dev)
     a = tt.backend.randn((3, 4), dtype="float64", like=like,
                          rng=np.random.default_rng(7))
@@ -783,7 +811,7 @@ def test_torch_funs_receives_numpy_not_tensors():
     """The user's ``funs`` is numpy code; handing it torch tensors on the GPU
     would break every legacy script."""
     torch = pytest.importorskip("torch")
-    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    dev = TORCH_F64_DEVICE
     x, dense = sum_tensor([5] * 3, shift=2.0, seed=44)
     xt = _to_torch(x, torch, dev)
     kinds = []

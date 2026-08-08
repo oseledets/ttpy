@@ -404,10 +404,10 @@ def test_randomized_round_demands_a_rank():
 def test_no_ternary_einsum_anywhere_in_the_package():
     """einops.einsum forwards to np.einsum WITHOUT optimize=True.
 
-    A contraction of three or more operands is then evaluated by brute force:
-    measured 5.5 s versus 0.017 s for the same contraction split into two binary
-    ones (numpy 2.x, shapes (300,4,300)x(300,160)x(160,4,160)). Splitting is not
-    a matter of taste, so the rule is enforced rather than remembered.
+    A contraction of three or more operands is then evaluated by brute force,
+    hundreds of times slower than the same contraction split into two binary
+    ones.  Splitting is not a matter of taste, so the rule is enforced rather
+    than remembered.
     """
     import ast
     import pathlib
@@ -469,9 +469,9 @@ def test_backend_einsum_matches_einops(pattern, shapes):
     """Our einsum must be a drop-in for einops.einsum, only faster.
 
     einops forwards to np.einsum without optimize=True, which keeps even binary
-    contractions out of BLAS (measured 5.1x on an AMEn local matvec). The
-    replacement rewrites the pattern into classic subscripts; this pins that the
-    rewrite is faithful.
+    contractions out of BLAS, at several times the cost.  The replacement
+    rewrites the pattern into classic subscripts; this pins that the rewrite is
+    faithful.
     """
     from einops import einsum as einops_einsum
     from tt import backend as bk
@@ -513,9 +513,9 @@ def test_permute_returns_a_compressed_representation():
     Each adjacent swap truncates what is negligible on its own two cores, and
     the intermediate orderings genuinely need higher ranks than the final one;
     without a recompression pass at the end nothing ever removes that slack.
-    Measured before the fix, on a separable function interleaved into Morton
-    order at d = 15: rank 1024 for a tensor whose own rank is 102, i.e. a
-    10x rank for the same numbers -- quadratic in every later contraction.
+    Without it a separable function interleaved into Morton order comes back at
+    an order of magnitude more rank than the tensor actually has -- quadratic in
+    every later contraction.
 
     The property asserted here is the one that matters and does not depend on a
     magic number: rounding the result again must not shrink it much.

@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 
 import tt
+from conftest import TORCH_F64_DEVICE
 from tt.algs.multifuncrs import MultifuncrsHistory, multifuncrs, multifuncrs2
 
 
@@ -171,9 +172,10 @@ def test_non_convergence_is_loud(xdata):
 def test_err_check_is_measured(xdata):
     """err_check must track the real error, and be able to disagree.
 
-    Measured at eps=1e-8 both numbers are ~1e-10, so an ``abs=1e-7`` comparison
-    would pass for *any* err_check: the assertion has to be relative, and it has
-    to be made in a regime where the error is large enough to be resolved.
+    At a tight ``eps`` both numbers sit far below any absolute tolerance one
+    would write down, so such a comparison would pass for *any* err_check: the
+    assertion has to be relative, and it has to be made in a regime where the
+    error is large enough to be resolved.
     """
     x, dense, _ = xdata
     exact = 1.0 / dense ** 4          # ranks decay slowly: a loose eps hurts
@@ -379,9 +381,8 @@ def test_zero_function_is_reported_not_hidden(xdata):
 def test_seed_is_honoured(xdata):
     """The default run is bit-for-bit reproducible.
 
-    Measured: changing ``seed`` does *not* change the answer here (seed=0, 17,
-    12345 give identical cores to the last bit on this problem) -- the initial
-    guess only seeds the first index sets and is washed out after one sweep.
+    Changing ``seed`` does *not* change the answer here -- the initial guess
+    only seeds the first index sets and is washed out after one sweep.
     So the claim under test is reproducibility, plus "another seed still lands
     on the same accuracy", not "another seed is another run".
     """
@@ -402,7 +403,7 @@ def test_seed_is_honoured(xdata):
 def test_torch_backend_gives_the_same_answer(xdata):
     torch = pytest.importorskip("torch")
     x, dense, _ = xdata
-    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    dev = TORCH_F64_DEVICE
     xt = tt.vector.from_list(
         [torch.as_tensor(np.asarray(c), device=dev, dtype=torch.float64)
          for c in x.cores])

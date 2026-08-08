@@ -65,10 +65,9 @@ def test_square_chebyshev_bound_holds_for_recomputed_C(dtype, n, r):
     """max|C| <= tol for C recomputed from (a, piv), not for the carried C.
 
     Regime: n in {300, 5000}, r in {12, 60}, tol = 1.02, 30 seeds worth of one
-    matrix per (dtype, shape).  Slack: 1e-12 relative for float64/complex128,
-    2e-6 for float32/complex64 (that is ~20 * eps(float32) * r, i.e. the LU
-    solve's own error, and is *not* loosened to hide the incremental update:
-    the drift between carried and recomputed C is asserted separately below).
+    matrix per (dtype, shape).  The float32 slack is the LU solve's own error,
+    ~20 * eps * r, and is *not* loosened to hide the incremental update: the
+    drift between carried and recomputed C is asserted separately below.
     """
     cplx = np.dtype(dtype).kind == "c"
     a = rand((n, r), 1234 + n + r, cplx).astype(dtype)

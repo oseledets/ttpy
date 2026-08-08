@@ -12,6 +12,8 @@ import numpy as np
 import pytest
 
 import tt
+from conftest import (DENSE_TOL, QLAPLACE_D, SOLVE_EPS, requires_gpu,
+                      to_gpu)
 from tt.algs.amen import (_gmres, _jacobi, _local_matrix, _local_matvec,
                           _local_rhs, _phi_next, _phi_yy_next, _project,
                           amen_solve)
@@ -219,7 +221,7 @@ def test_qlaplace_residual(d, eps):
 
     ``(d, eps) = (12, 1e-10)`` is deliberately absent: for that system a
     relative residual of 1e-10 is *below the float64 floor* and no algorithm
-    can reach it -- see
+    can reach it (``docs/NUMERICS.md``) -- see
     :func:`test_illconditioned_qlaplace_reports_failure`, which measures the
     floor with LAPACK and checks that the solver reports the failure.
     """
@@ -367,10 +369,10 @@ def test_als_without_enrichment_reports_its_failure():
 def test_illconditioned_qlaplace_reports_failure():
     """``d = 12``, ``eps = 1e-10``: unreachable in float64, must be reported.
 
-    The 4096x4096 QTT Laplacian with a constant right-hand side has
-    ``||A|| ||x|| / ||f|| ~ 2e6``, so *any* backward-stable solver leaves a
-    relative residual of order ``eps_machine * 2e6 ~ 1e-9``.  LAPACK's own
-    dense solve is used here as the oracle for that floor.  The solver must
+    The 4096x4096 QTT Laplacian with a constant right-hand side is
+    ill-conditioned enough that *any* backward-stable solver leaves a relative
+    residual above the request (``docs/NUMERICS.md``).  LAPACK's own dense solve
+    is used here as the oracle for that floor.  The solver must
     (a) get within a small factor of the floor, and (b) say that it did not
     reach the requested accuracy instead of returning a plausible answer.
     """
@@ -517,37 +519,32 @@ def test_plain_als_with_a_good_start():
     assert residual(A, x, rhs) <= eps
 
 
+@requires_gpu()
 def test_torch_backend_gives_the_same_answer():
     """The same solve on the torch backend, checked against numpy and dense."""
-    torch = pytest.importorskip("torch")
-    if not torch.cuda.is_available():
-        pytest.skip("no CUDA device")
-    d, eps = 8, 1e-10
+    d, eps = QLAPLACE_D, SOLVE_EPS
     A, rhs = tt.qlaplace_dd([d]), tt.ones(2, d)
     x_np = amen_solve(A, rhs, None, eps, verb=0, seed=0)
-    x_gpu, info = amen_solve(A.to("torch", "cuda", "float64"),
-                             rhs.to("torch", "cuda", "float64"), None, eps,
+    x_gpu, info = amen_solve(to_gpu(A), to_gpu(rhs), None, eps,
                              verb=0, seed=0, return_info=True)
     assert info.converged
     got = np.asarray(tt.core._ops.bk.to_numpy(x_gpu.full(asvector=True)))
     xdense = np.linalg.solve(np.asarray(A.full()),
                              np.asarray(rhs.full(asvector=True)))
-    assert rel(got, xdense) < 1e-7
-    assert rel(got, np.asarray(x_np.full(asvector=True))) < 1e-7
+    assert rel(got, xdense) < DENSE_TOL
+    assert rel(got, np.asarray(x_np.full(asvector=True))) < DENSE_TOL
 
 
+@requires_gpu()
 def test_core_copy_on_torch_backend():
     """Was a core bug (copy() called ndarray.copy() on torch tensors).
 
     Fixed with a bk.copy() dispatch; kept as a regression test. Note the
-    to_numpy(): a CUDA tensor cannot be handed to np.asarray directly.
+    to_numpy(): a device tensor cannot be handed to np.asarray directly.
     """
-    torch = pytest.importorskip("torch")
-    if not torch.cuda.is_available():
-        pytest.skip("no CUDA device")
     from tt import backend as bk
 
-    x = tt.rand([2] * 4, r=2).to("torch", "cuda", "float64")
+    x = to_gpu(tt.rand([2] * 4, r=2))
     assert rel(bk.to_numpy(x.copy().full()), bk.to_numpy(x.full())) == 0.0
 
 
@@ -586,7 +583,7 @@ def test_the_default_criterion_is_the_local_residual():
     block *before* it is solved, so it is already computed by the sweep that was
     happening anyway. The exact global residual costs a tensor whose ranks are
     the product of those of ``A`` and ``x``; on a preconditioned 2D QTT system
-    that was measured at 12.3 GB in one core and a 91.8 GB peak, for a number
+    that runs to tens of gigabytes in one core (``docs/NUMERICS.md``), for a number
     that only gets printed.
     """
     A, rhs = tt.qlaplace_dd([10]), tt.ones(2, 10)
@@ -644,7 +641,7 @@ def test_jacobi_c_picks_the_cheaper_contraction(monkeypatch):
     the staged contraction costs ``r1 n m R1 R2 + r1 r2 n m R2``, i.e. less by
     a factor ~``min(r2, R1)``. At the shapes the kernel was tuned for (r=34,
     n=2, R=4) that factor is 3.6 and fusing wins on dispatch overhead. At a
-    BPX-preconditioned operator rank it is 84: measured 2708 ms per call
+    BPX-preconditioned operator rank it is 84: 2708 ms per call
     against 46.7 ms, and 48% of a whole 2D solve went into building a
     preconditioner for local systems BPX had already made well conditioned.
 

@@ -12,9 +12,9 @@ test:
   recomputed from ``x.full()``, the GMRES residual recomputed with an untruncated
   matvec).
 
-Several of them pin defects found during verification and fixed here; those name
-the regime and the measured number in the docstring so the claim can be checked
-rather than trusted.
+Several of them pin defects found during verification and fixed here; the
+docstring names the defect and the regime, and the numbers behind the tolerances
+are in ``docs/NUMERICS.md`` so the claim can be checked rather than trusted.
 
 Regime of the accuracy numbers below, unless a test says otherwise: float64,
 numpy backend, ``d`` between 1 and 8, mode sizes between 2 and 8, TT ranks
@@ -254,8 +254,7 @@ def test_min_tens_rank_one_and_constant_tensors():
 
 def test_min_tens_examines_far_fewer_entries_than_the_tensor_has():
     """Regime: ``d = 10``, ``n = 4`` (1 048 576 entries), rank 4, ``rmax = 8``,
-    ``nswp = 10``.  Measured over 20 seeds outside the suite: exact minimum in
-    20/20, largest relative gap 4.6e-16 (roundoff of the re-evaluation)."""
+    ``nswp = 10``.  It finds the exact minimum, not merely a small entry."""
     rng = np.random.default_rng(11)
     n = [4] * 10
     t = low_rank_tt(n, 4, rng)
@@ -335,10 +334,9 @@ def test_min_tens_refuses_what_it_cannot_order():
 # =============================================================================
 
 def test_completion_refuses_complex_data_instead_of_dropping_it():
-    """Regression, and the worst kind of bug there is: ``cooP['values']`` was
-    cast to float64, so complex data lost its imaginary part behind a numpy
-    ``ComplexWarning`` and the run then reported ``fit ~ 1e-30`` for a fit to
-    half the data."""
+    """Casting ``cooP['values']`` to float64 drops the imaginary part behind a
+    numpy ``ComplexWarning``, after which the run reports a fit at machine zero
+    for a fit to half the data.  Complex input must be refused instead."""
     rng = np.random.default_rng(2)
     truth = low_rank_tt([4, 4, 4], 2, rng, dtype=np.complex128)
     coo = coo_of(truth, 200, rng)
@@ -355,9 +353,9 @@ def test_completion_reports_an_underdetermined_fit():
 
     Regime: rank-4 tensor of shape ``6x6x6`` (144 parameters), fitted at rank 4
     from 38 distinct samples, ``alpha = 0``, ``tol = 1e-13``, float64.
-    Measured: ``fit = 4.9e-31``, ``converged = True``, ``empty_slices = 0``,
-    and the returned tensor is 5.8 times the norm of the truth away from it.
-    The run must now say ``determined = False`` and warn.
+    The fit reaches machine zero with no empty slices while the answer is
+    several times the norm of the truth away from it (``docs/NUMERICS.md``).
+    The run must say ``determined = False`` and warn.
     """
     rng = np.random.default_rng(3)
     truth = low_rank_tt([6, 6, 6], 4, rng)
@@ -378,8 +376,8 @@ def test_completion_reports_an_underdetermined_fit():
 def test_completion_well_posed_run_is_determined_and_silent():
     """The counterpart: with enough samples nothing warns and ``determined`` is
     True.  Regime: rank-2 tensor ``8x8x8x8`` (96 parameters), ~1330 distinct
-    samples of 4096, ``alpha = 0``, ``tol = 1e-13``, float64.  Measured error on
-    the entries the fit never saw: below 1e-5."""
+    samples of 4096, ``alpha = 0``, ``tol = 1e-13``, float64; the entries the
+    fit never saw are recovered too."""
     rng = np.random.default_rng(1)
     n = [8, 8, 8, 8]
     truth = low_rank_tt(n, 2, rng)
@@ -402,11 +400,10 @@ def test_completion_fit_equals_the_functional_recomputed_from_the_dense_tensor()
     """Two owners of the same number must agree: the ``fit`` the sweep reports
     and ``J(x)/||values||^2`` recomputed from ``x.full()`` by hand.
 
-    Measured after a *single* sweep, where ``J`` is still of order 1e-2.  After
-    convergence ``J`` is ~1e-13 while the terms it is summed from are O(1), so
-    it carries no correct relative digits at all (measured relative spread
-    between the two computations at that point: 5e-7) and the comparison would
-    be a comparison of roundoff.
+    Compared after a *single* sweep, where ``J`` is still of order 1e-2.  After
+    convergence ``J`` is at machine zero while the terms it is summed from are
+    O(1), so it carries no correct relative digits and the comparison would be a
+    comparison of roundoff.
     """
     rng = np.random.default_rng(5)
     n = [5, 4, 6]
@@ -460,10 +457,9 @@ def test_completion_recovers_a_rank_one_tensor():
     """Rank-1 edge case: 1x1 local systems, so nothing can hide in a null space.
 
     Regime: ``n = [6, 5, 4]``, 66 distinct samples of 120 entries, 15
-    parameters, ``alpha = 0``, ``tol = 1e-14``, float64.  Measured: fit 4.6e-15
-    (so the residual on the samples is ``sqrt(2 * fit) ~ 1e-7`` relative), and
-    the error on the whole tensor 2.7e-7 -- exactly what the stopping tolerance
-    buys, not one digit more.  The assertion is set to that, not below it.
+    parameters, ``alpha = 0``, ``tol = 1e-14``, float64.  The error on the whole
+    tensor is ``sqrt(2 * fit)``, i.e. exactly what the stopping tolerance buys
+    and not one digit more; the assertion is set to that, not below it.
     """
     rng = np.random.default_rng(7)
     n = [6, 5, 4]
@@ -507,9 +503,9 @@ def test_the_dense_oracle_agrees_with_the_definition_of_the_tangent_space(dtype)
     and equal to the identity -- hence indistinguishable from the right one --
     at any point of maximal TT rank, which is exactly where the complex test in
     ``test_ports.py`` was run.  Regime: ``d = 3``, ``n = [3, 4, 5]``, TT rank 2,
-    tangent dimension 24 inside 60.  Measured: the correct oracle matches the
-    definition to 2.6e-15, the conjugated one is off by 0.74 and does not even
-    fix the tangent space (0.47).
+    tangent dimension 24 inside 60.  The correct oracle matches the definition
+    to roundoff; the conjugated one is O(1) off and does not even fix the
+    tangent space.
     """
     rng = np.random.default_rng(4)
     n = [3, 4, 5]
@@ -537,10 +533,9 @@ def test_project_refuses_a_rank_deficient_point():
 
     A rank-1 tensor written with TT ranks ``(1, 2, 2, 1)`` is not a point of the
     rank-``(1, 2, 2, 1)`` manifold; the closed-form projector then projects onto
-    a strictly larger space.  Measured before the fix, ``d = 3``, ``n = 4``,
-    float64: the returned tensor differed from ``dense_tangent_projector(X) @ z``
-    by 31 % of its norm -- and it was a perfectly good projector (idempotent to
-    1.6e-16), so no invariant test could have caught it.  The advertised guard
+    a strictly larger space.  What comes back is a perfectly good projector, so
+    no invariant test could have caught it (``docs/NUMERICS.md``).  The
+    advertised guard
     ("orthogonalization changed the ranks") never fired, because a QR never
     drops rank, and ``X.round(0)`` -- which the docstring claimed made the ranks
     minimal -- cannot remove anything: ``chop`` returns the full size whenever
@@ -637,8 +632,8 @@ def test_project_rejects_mismatched_input():
 
 def test_projector_splitting_add_is_exact_even_at_a_rank_deficient_point():
     """Measured, not assumed.  Unlike ``project`` the splitting only needs the
-    frames, and exactness survives: ``d = 3``, ``n = 4``, ``Y`` a rank-1 tensor
-    written with TT ranks ``(1, 2, 2, 1)``, float64 -> 1.3e-15 relative."""
+    frames, and exactness survives at a rank-deficient point: ``d = 3``,
+    ``n = 4``, ``Y`` a rank-1 tensor written with TT ranks ``(1, 2, 2, 1)``."""
     rng = np.random.default_rng(0)
     n = [4, 4, 4]
     Y = rank_deficient(n, rng)
@@ -690,7 +685,7 @@ def test_projector_splitting_add_rejects_mismatched_input():
 @pytest.mark.parametrize("left_to_right", [True, False])
 def test_tt_qr_on_a_rank_deficient_tensor(left_to_right):
     """``tt_qr`` must *not* refuse a deficient point: ``X = Q R`` and the
-    orthogonality of the cores both still hold.  Measured 1e-15 for both."""
+    orthogonality of the cores both still hold, to roundoff."""
     rng = np.random.default_rng(5)
     X = rank_deficient([4, 5, 4], rng)
     q, r = tt_qr(X, left_to_right=left_to_right)
@@ -743,7 +738,6 @@ def test_gmres_on_a_complex_non_hermitian_operator():
 
     Regime: ``d = 3``, ``n = 4`` (64 x 64), complex128, a random TT-matrix of
     rank 2 shifted by ``3 I`` to make it solvable, ``eps = 1e-9``, ``m = 20``.
-    Measured: residual 2.55e-10, distance to the dense solution 2.57e-10.
     """
     rng = np.random.default_rng(4)
     d, n = 3, 4
@@ -769,7 +763,7 @@ def test_gmres_restarts_do_not_use_the_python_stack():
     recursion limit lowered to 80: a recursive implementation cannot pass.
 
     Regime: ``qlaplace_dd([4])`` (16 x 16), ``m = 1``, ``eps = 1e-8``,
-    ``maxit = 2000``.  Measured: 316 cycles, 316 Krylov steps, residual 9.9e-9.
+    ``maxit = 2000`` -- over 300 restart cycles.
     """
     A, x_exact, b = laplace_problem(4, rank=2, seed=1)
     old = sys.getrecursionlimit()
@@ -791,8 +785,8 @@ def test_gmres_reported_residual_survives_a_lossy_operator():
 
     Regime: ``qlaplace_dd([8])`` (256 x 256), rank-4 right-hand side,
     ``eps = 1e-6``, ``m = 20``, ``maxit = 300`` -- a run that does not converge,
-    so the truncations really bite.  Measured: reported 4.025e-6, recomputed
-    exactly 4.033e-6, ratio 1.0018.
+    so the truncations really bite.  The reported and the recomputed residual
+    must still agree to a fraction of a percent.
     """
     rng = np.random.default_rng(5)
     d = 8

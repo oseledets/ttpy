@@ -10,8 +10,9 @@ except the two places where self-consistency *is* the property under test
 The cases here are the ones the module's own suite does not reach: exactly zero
 input, ``d=1`` and ``d=2``, mode sizes that differ per mode, float32, a regime
 where the truncation is actually active (the module's own ``tol`` sweep runs on
-a product that is exactly representable, so its error is 3e-15 at every ``tol``
-and its monotonicity assertion cannot fail), and the argument validation that
+a product that is exactly representable, so its error sits at roundoff for
+every ``tol`` and its monotonicity assertion cannot fail), and the argument
+validation that
 used to fall through into einops errors or an infinite loop.
 """
 
@@ -23,6 +24,8 @@ import pytest
 import tt
 from tt import backend as bk
 from tt.algs.amen_mv import amen_mv, _gram_svd
+
+from conftest import SOLVE_EPS, gpu_backend, requires_gpu
 
 
 # --- helpers ------------------------------------------------------------------
@@ -103,9 +106,9 @@ def test_error_tracks_tol_where_truncation_is_active():
     Regime: float64, ``d=6``, ``n=m=5``, ``A`` of TT rank 1, ``x`` a sum of 10
     rank-one terms with weights ``0.45**s`` (exact TT ranks 1-5-10-10-10-5-1).
     Here a truncation at ``tol`` removes real singular values, so the error has
-    to *follow* ``tol`` instead of sitting at 1e-15 -- which is what the
-    module's own ``test_error_decreases_with_tol`` measures (3e-15 at every tol
-    from 1e-2 to 1e-10, an assertion that cannot fail).
+    to *follow* ``tol`` instead of sitting at machine precision -- which is all
+    the module's own ``test_error_decreases_with_tol`` can see, an assertion
+    that cannot fail.
     """
     A = tt.matrix.from_list(
         [np.random.default_rng(50 + k).standard_normal((1, 5, 5, 1))
@@ -138,11 +141,10 @@ def test_error_can_exceed_tol_and_depends_on_the_random_guess():
 
     Regime float64, ``d=6``, ``n=m=4``, ``r_A=r_x=4``, ``tol=1e-1``, one fixed
     problem, 15 different random initial guesses (``seed=0..14``).  The outcome
-    is bimodal: 10 runs land at 7.2e-2 (below the request, near the optimal
-    6.0e-2 of an SVD truncation of the same product) and 5 land at 1.8e-1 to
-    2.0e-1, i.e. twice the request.  Which of the two the caller gets is decided
-    by the random ``y0``, and the default ``seed=None`` makes that a run-to-run
-    lottery -- so no accuracy assertion at a loose ``tol`` is meaningful unless
+    is bimodal -- some runs below the request, some at twice it
+    (``docs/NUMERICS.md``).  Which of the two the caller gets is decided by the
+    random ``y0``, and the default ``seed=None`` makes that a run-to-run
+    lottery, so no accuracy assertion at a loose ``tol`` is meaningful unless
     the seed is pinned.
     """
     A = rand_matrix(4, 4, 6, 4, seed=22)
@@ -320,9 +322,9 @@ def test_residual_estimate_is_a_lower_bound_on_the_true_residual():
     """``res_est`` is advertised as a lower estimate; check it really is one.
 
     Regime float64, ``d=8``, ``n=m=4``, ``r_A=r_x=6``, ``tol=1e-8``,
-    ``kickrank=2``, sweeps starved to 1..4 so the residual is O(1).  Measured
-    ratios ``res_est / true`` are 0.06..0.09 -- an order of magnitude *under*
-    the truth, which is why it must never be sold as a stopping certificate.
+    ``kickrank=2``, sweeps starved to 1..4 so the residual is O(1).  It comes
+    out an order of magnitude *under* the truth, which is why it must never be
+    sold as a stopping certificate.
     """
     A = rand_matrix(4, 4, 8, 6, seed=7)
     x = rand_vector(4, 8, 6, seed=8)
@@ -375,7 +377,7 @@ def test_float32_input_gives_float32_output():
 
 
 def test_float32_orthogonal_guess_is_accepted_with_init_qr_false():
-    """The check used a fixed 1e-8; float32 QR lands at 5e-8 and was rejected."""
+    """A fixed 1e-8 threshold rejects a genuinely orthogonal float32 core."""
     A = tt.matrix.from_list([c.astype(np.float32)
                              for c in tt.matrix.to_list(
                                  rand_matrix(4, 4, 5, 2, seed=3))])
@@ -417,7 +419,7 @@ def test_nswp_below_one_raises_instead_of_looping_forever():
 
 
 def test_negative_tol_raises():
-    """It used to run and then warn ``max_dx=3.4e-16 > tol=-1.0e-08``."""
+    """A negative tol used to run and then warn about missing an impossible target."""
     A = rand_matrix(3, 3, 4, 2, seed=42)
     x = rand_vector(3, 4, 2, seed=43)
     with pytest.raises(ValueError, match="tol"):
@@ -501,29 +503,28 @@ def test_matrix_sum_with_mismatched_modes_raises():
 
 # --- torch backend ------------------------------------------------------------
 
-def test_zero_input_on_torch_is_zero_not_nan():
+@requires_gpu()
+@pytest.mark.parametrize("renorm", [
+    "direct",
+    pytest.param("gram", marks=requires_gpu(ops=("eigh",))),
+])
+def test_zero_input_on_torch_is_zero_not_nan(renorm):
     """On torch the NaN had no RuntimeWarning at all to give it away."""
-    torch = pytest.importorskip("torch")
-    if not torch.cuda.is_available():
-        pytest.skip("no CUDA device")
-    gpu = bk.TorchBackend("cuda", "float64")
+    gpu = gpu_backend()
     A = rand_matrix(3, 3, 4, 2, seed=1)
     At = tt.matrix.from_list([bk.asarray(c, backend=gpu)
                               for c in tt.matrix.to_list(A)])
     xt = tt.vector.from_list([bk.asarray(c, backend=gpu) for c in
                               tt.vector.to_list(tt.zeros(3, 4))])
-    for renorm in ("direct", "gram"):
-        y, _ = amen_mv(At, xt, 1e-10, verb=0, renorm=renorm)
-        f = np.asarray(bk.to_numpy(y.full(asvector=True)))
-        assert np.all(np.isfinite(f)), renorm
-        assert np.linalg.norm(f) == 0.0
+    y, _ = amen_mv(At, xt, SOLVE_EPS, verb=0, renorm=renorm)
+    f = np.asarray(bk.to_numpy(y.full(asvector=True)))
+    assert np.all(np.isfinite(f)), renorm
+    assert np.linalg.norm(f) == 0.0
 
 
+@requires_gpu(dtype="float32")
 def test_torch_float32_keeps_float32():
-    torch = pytest.importorskip("torch")
-    if not torch.cuda.is_available():
-        pytest.skip("no CUDA device")
-    gpu = bk.TorchBackend("cuda", "float32")
+    gpu = gpu_backend("float32")
     A = rand_matrix(4, 4, 5, 2, seed=3)
     x = rand_vector(4, 5, 2, seed=4)
     At = tt.matrix.from_list([bk.asarray(c, "float32", backend=gpu)
@@ -545,14 +546,12 @@ def test_z_is_the_projection_of_the_residual(complex_, d, nswp):
 
     AMEn only ever uses the span of ``z``, so a ``z`` computed from a corrupted
     projection still grows the ranks and still converges -- the delivered
-    accuracy is blind to it.  (Measured: dropping the conjugation in the
-    ``Z^H Y`` interface changes the final error of a d=7 complex problem by
-    nothing at all, 4.4e-1 vs 4.5e-1 at 3 sweeps and 2.3e-15 vs 2.4e-15 at 8.)
-    What does pin it is that ``z`` is an orthogonal projection of the residual
+    accuracy is blind to it, and dropping the conjugation in the ``Z^H Y``
+    interface changes the final error by nothing at all.  What does pin it is
+    that ``z`` is an orthogonal projection of the residual
     ``r = (A x - y) / ||y||``: for any orthogonal projector ``P``,
-    ``<P r, r> = ||P r||^2``.  Measured on the clean code this holds to four
-    digits (1.0000) in every case below; with the conjugation dropped it reads
-    0.026.
+    ``<P r, r> = ||P r||^2``.  On the clean code the ratio is 1 to four digits;
+    with the conjugation dropped it is not.
 
     Regime: float64/complex128, ``n=m=4``, ``r_A=r_x=4``, ``tol=1e-10``,
     ``kickrank=2``, sweeps starved so that ``||z||/||r||`` is 0.06 to 0.15 --

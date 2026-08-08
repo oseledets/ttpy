@@ -86,17 +86,14 @@ def test_smooth_function_reaches_the_requested_accuracy(name, eps):
 
     Regression for the failure that made this module untrustworthy: with the
     local bases truncated at ``eps/sqrt(d)`` the index sets could shrink, the
-    ranks locked at a fixed point and the run reported ``converged=True`` with
-    ``err_rel=1e-16`` at a true relative error of 1.2e-1 on ``coulomb_8^4``,
-    eps=1e-10.
+    ranks locked at a fixed point and the run reported convergence at a
+    double-digit relative error (``docs/NUMERICS.md``).
 
-    The tolerance is ``3 * eps`` and that number is not arbitrary.  Measured on
-    this box (numpy, float64, seeds 0..4, the ratios are seed independent to
-    two digits) the worst ``err / eps`` over the whole bank is 0.70
-    (``sqrt_10^4`` at eps=1e-4); the pre-fix code reached 5.2 on that same
-    entry and 1.2e+3 on ``coulomb_8^4`` at eps=1e-10.  A looser tolerance --
-    the 30x this test used to carry -- lets half of the pre-fix failures
-    through, which is why it is 3 and not 30.
+    The tolerance is ``3 * eps`` and that number is not arbitrary: over the
+    whole bank (numpy, float64, seeds 0..4) the worst ``err / eps`` is below 1,
+    while the pre-fix code reached three orders of magnitude more.  A looser
+    tolerance lets half of the pre-fix failures through, which is why it is 3
+    and not 30.
     """
     n, fun = SMOOTH[name]
     ref = dense_of(fun, n)
@@ -118,7 +115,7 @@ def test_converged_flag_is_not_handed_out_at_a_large_error():
 
     Not a tautology: the flag is computed from the change between sweeps, the
     error from the dense array.  This is exactly the pairing that used to be
-    broken (converged=True at a 12% error).
+    broken: convergence reported at a double-digit relative error.
     """
     for name, (n, fun) in SMOOTH.items():
         ref = dense_of(fun, n)
@@ -257,10 +254,9 @@ def test_element_on_complex_cores():
 def test_torch_backend_is_actually_exercised_not_just_assumed():
     """The module claims to be backend agnostic; run it on torch and check.
 
-    No CUDA needed -- the dispatch path is the same on a CPU torch tensor, and
-    that is what was never verified.  Measured on b300 with torch 2.13.0+cpu:
-    float64 gives 1.8e-7 for eps=1e-6, complex promotion gives 8.3e-10 for
-    eps=1e-8, both against the dense numpy array.
+    No GPU needed -- the dispatch path is the same on a CPU torch tensor, and
+    that is what was never verified.  Both the float64 and the complex-promotion
+    path are checked against the dense numpy array.
     """
     torch = pytest.importorskip("torch")
     n = [6] * 4
@@ -496,9 +492,8 @@ def test_a_good_run_with_a_check_stays_quiet():
 def test_absurd_rmax_is_rejected_not_reinterpreted(rmax):
     """``rmax=0`` used to mean "no cap" (falsy) and ``rmax=-1`` meant rank 1.
 
-    Measured before the fix: ``rmax=0`` returned ranks [1,5,8,5,1] (uncapped),
-    ``rmax=-3`` returned the rank-1 tensor at a 6.0e-1 relative error.  Both are
-    the library guessing what the caller meant.
+    Before the fix ``rmax=0`` returned uncapped ranks and ``rmax=-3`` returned a
+    rank-1 tensor.  Both are the library guessing what the caller meant.
     """
     fun = lambda i: 1.0 / (1.0 + np.asarray(i).astype(float).sum(axis=1))
     with pytest.raises(ValueError, match="rmax"):

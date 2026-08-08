@@ -8,15 +8,15 @@ code with the solver:
   ``x_i = i (N + 1 - i) / 2`` -- no linear algebra at all, and it is available
   at ``N = 2^18`` where a dense solve is not;
 * a **dense** ``numpy.linalg.solve`` / matrix-vector product for small cases;
-* the residual of the returned TT cores recontracted in **float128**, which is
-  the only way to say whether the residual the solver reports about itself is
-  honest: the float64 dense path rounds ``x.full()`` at ``eps * ||x||`` and
-  ``||A|| ||x|| / ||f||`` reaches 6e6 on the ``d = 12`` QTT Laplacian, so that
-  path has a 6e-10 relative-residual noise floor of its own.
+* the residual of the returned TT cores recontracted in **double-double**
+  (~106-bit, see ``tests/extended.py``), which is the only way to say whether
+  the residual the solver reports about itself is honest -- a float64
+  evaluation has a noise floor of its own, of the same size as the residual
+  being judged (``docs/NUMERICS.md``).
 
 Regimes are stated at every assertion (sizes, eps, dtype); no tolerance here is
-looser than the number that was actually measured, and the measured numbers are
-in the comments.
+looser than the number that was actually measured, and those numbers live in
+``docs/NUMERICS.md``.
 """
 
 import warnings
@@ -28,7 +28,10 @@ import tt
 from tt.algs.amen import _solve_local, amen_solve
 from tt.core import _ops
 
-LD = np.longdouble
+from conftest import (DENSE_TOL, QLAPLACE_D, SOLVE_EPS, requires_gpu,
+                      to_gpu)
+from extended import (dd_from, dd_matmul, dd_norm, dd_reshape, dd_sub,
+                      dd_transpose)
 
 rel = lambda a, b: (np.linalg.norm(np.asarray(a) - np.asarray(b))
                     / np.linalg.norm(np.asarray(b)))
@@ -36,28 +39,33 @@ rel = lambda a, b: (np.linalg.norm(np.asarray(a) - np.asarray(b))
 
 # --- oracles -----------------------------------------------------------------
 
-def full_ld(cores):
-    """Contract a TT core list in float128, F-order (mode 1 is the fastest).
+def full_dd(cores):
+    """Contract a TT core list in double-double, F-order (mode 1 is fastest).
 
-    The cores are float64, hence exactly representable in float128, so this is
-    the *exact* dense vector of the returned TT tensor up to 1e-19.
+    The cores are float64, so lifting them costs nothing and the contraction
+    carries ~106 bits of significand: this is the *exact* dense vector of the
+    returned TT tensor.  ``np.longdouble`` is not a portable substitute
+    (``docs/NUMERICS.md``).
     """
-    res = np.asarray(cores[0]).astype(LD)
-    res = res.reshape(res.shape[1], res.shape[2])
+    res = dd_from(np.asarray(cores[0]))
+    res = dd_reshape(res, (res[0].shape[1], res[0].shape[2]))
     for c in cores[1:]:
-        c = np.asarray(c).astype(LD)
+        c = np.asarray(c)
         r0, n, r1 = c.shape
-        res = (res @ c.reshape(r0, n * r1)).reshape(res.shape[0], n, r1)
+        prod = dd_matmul(res, dd_from(c.reshape(r0, n * r1)))
+        prod = dd_reshape(prod, (res[0].shape[0], n, r1))
         # the new mode is the slower index: flat = old + N * i_k
-        res = res.transpose(1, 0, 2).reshape(-1, r1)
-    return res.reshape(-1)
+        res = dd_reshape(dd_transpose(prod, (1, 0, 2)), (-1, r1))
+    return dd_reshape(res, (-1,))
 
 
 def exact_residual(A, x, f):
-    """``||A x - f|| / ||f||`` of the returned TT vector, evaluated in float128."""
-    Af = np.asarray(A.full()).astype(LD)
-    fv = full_ld(f.cores)
-    return float(np.linalg.norm(Af @ full_ld(x.cores) - fv) / np.linalg.norm(fv))
+    """``||A x - f|| / ||f||`` of the returned TT vector, in double-double."""
+    Af = dd_from(np.asarray(A.full()))
+    fv = full_dd(f.cores)
+    xv = dd_reshape(full_dd(x.cores), (-1, 1))
+    r = dd_sub(dd_reshape(dd_matmul(Af, xv), (-1,)), fv)
+    return dd_norm(r) / dd_norm(fv)
 
 
 def dense_residual(A, x, f):
@@ -107,13 +115,14 @@ def random_vector(modes, r, rng, dtype=np.float64):
 @pytest.mark.parametrize("d, eps", [(6, 1e-6), (8, 1e-10), (10, 1e-10),
                                     (12, 1e-6)])
 def test_reported_residual_is_not_optimistic(d, eps):
-    """``info.true_res`` versus the float128 residual of the returned cores.
+    """``info.true_res`` versus the double-double residual of the cores.
 
     The solver measures its own residual in TT arithmetic; if that measurement
     were optimistic, every convergence claim in the package would be worth
-    nothing.  Measured ratios (exact / reported), float64, seed 0:
-    0.78, 0.81, 0.77, 0.70 -- i.e. the TT measurement is *conservative* by
-    20-30%.  Anything above 1 would be a report of accuracy that is not there.
+    nothing.  The ratio exact/reported is BLAS-dependent -- the *solve* is, not
+    the oracle -- and stays within a few tens of percent of 1 on both platforms
+    it has been run on (``docs/NUMERICS.md``).  1.5 is where it would stop being
+    a measurement.
     """
     A, rhs = tt.qlaplace_dd([d]), tt.ones(2, d)
     x, info = amen_solve(A, rhs, None, eps, verb=0, seed=0,
@@ -133,9 +142,9 @@ def test_matches_the_analytic_laplacian_solution(d):
     """``tridiag(-1,2,-1) x = 1`` has ``x_i = i (N + 1 - i) / 2`` exactly.
 
     N = 2^d up to 16384; float64; eps = 1e-8.  This oracle involves no solver
-    at all, so it cannot agree with the code under test by construction.
-    Measured relative errors: 6.4e-14 (d=6), 5.9e-13 (d=10), 2.9e-9 (d=14);
-    the error grows like cond(A) * eps_machine ~ N^2 * 1e-16, as it must.
+    at all, so it cannot agree with the code under test by construction.  The
+    error grows like ``cond(A) * eps_machine ~ N^2 * 1e-16``, as it must, which
+    is what the bound below encodes.
     """
     N = 2 ** d
     A, rhs = tt.qlaplace_dd([d]), tt.ones(2, d)
@@ -153,8 +162,7 @@ def test_huge_qtt_reports_its_failure_instead_of_a_plausible_number():
 
     cond(A) ~ N^2 ~ 6.9e10, so a backward-stable solve cannot go below
     ~1e-5 in the *error* and ~1e-8..1e-6 in the residual.  The solver must warn
-    and must still be right to the accuracy it claims: measured true residual
-    1.45e-6, error against the analytic solution 2.2e-7.
+    and must still be right to the accuracy it claims.
     """
     d = 18
     N = 2 ** d
@@ -252,9 +260,8 @@ def test_rank_one_right_hand_side_and_rank_one_solution():
 def test_strongly_nonsymmetric_convection():
     """Laplacian + c * first difference, c up to 100: dominated by the skew part.
 
-    d = 8 (256 unknowns), eps = 1e-10, float64.  Measured relative errors
-    against ``numpy.linalg.solve``: 1.9e-14 (c=1), 1.6e-15 (c=10),
-    7.9e-16 (c=100).
+    d = 8 (256 unknowns), eps = 1e-10, float64, checked against
+    ``numpy.linalg.solve``.
     """
     d = 8
     for c in (1.0, 10.0, 100.0):
@@ -274,7 +281,7 @@ def test_indefinite_operator():
 
     ``qlaplace_dd([6]) - 2 I`` has eigenvalues of both signs; the method has no
     right to converge, so the only requirement is that it either converges or
-    says it did not.  Measured: it converges to 2.0e-15.
+    says it did not.  In this regime it does converge, to roundoff.
     """
     d = 6
     A = (tt.qlaplace_dd([d]) - 2.0 * tt.eye([2] * d)).round(1e-14)
@@ -352,10 +359,10 @@ def test_exactly_singular_operator_raises():
 def test_nonsense_arguments_are_refused(kwargs, match):
     """Silently reinterpreting an argument is the failure mode to avoid.
 
-    ``kickrank=-3`` used to mean "plain ALS" and ``rmax=0`` used to produce a
-    rank-0 truncation followed by a rank-``kickrank`` enrichment, i.e. a
-    completely different method, with no warning: measured residual 6.9 with
-    ``rmax=0``, reported only through the generic non-convergence message.
+    In the Fortran-era interface ``kickrank=-3`` meant "plain ALS" and
+    ``rmax=0`` produced a rank-0 truncation followed by a rank-``kickrank``
+    enrichment -- a completely different method, reported only through the
+    generic non-convergence message.
     """
     d = 6
     A, f = tt.qlaplace_dd([d]), tt.ones(2, d)
@@ -423,18 +430,19 @@ def test_direct_local_solve_reports_its_own_failure():
 def test_failure_message_names_the_right_culprit():
     """d = 12, eps = 1e-10 is below the float64 floor: the message must say why.
 
-    Measured floor (LAPACK on the dense 4096x4096 system, residual evaluated in
-    float128): 1.52e-10.  The solver reaches 5.0e-10 and must report that it
-    did not converge, name the residual it reached, and say which solver
-    stalled -- the local one or the outer iteration.
+    The floor is measured here with LAPACK on the dense 4096x4096 system and
+    the residual evaluated in double-double (``docs/NUMERICS.md``).  The solver
+    must report that it did not converge, name the residual it reached, and say
+    which solver stalled -- the local one or the outer iteration.
     """
     d, eps = 12, 1e-10
     A, rhs = tt.qlaplace_dd([d]), tt.ones(2, d)
-    Af = np.asarray(A.full()).astype(LD)
+    Ad = np.asarray(A.full())
     fv = np.asarray(rhs.full(asvector=True))
-    floor = float(np.linalg.norm(Af @ np.linalg.solve(np.asarray(A.full()),
-                                                      fv).astype(LD)
-                                 - fv.astype(LD)) / np.linalg.norm(fv))
+    xd = np.linalg.solve(Ad, fv).reshape(-1, 1)
+    r = dd_sub(dd_reshape(dd_matmul(dd_from(Ad), dd_from(xd)), (-1,)),
+               dd_from(fv))
+    floor = dd_norm(r) / dd_norm(dd_from(fv))
     assert floor > eps, "premise broke: the float64 floor is below eps"
 
     with pytest.warns(UserWarning, match="did NOT reach"):
@@ -534,8 +542,7 @@ def test_the_same_seed_gives_the_same_run():
 def test_max_full_size_switches_solvers_without_changing_the_answer():
     """The dense and the GMRES local paths must agree to the requested accuracy.
 
-    d = 8, eps = 1e-10, float64.  Measured residuals: 5.4e-11 (pure GMRES) and
-    3.5e-12 (pure dense); the two solutions agree to 1.6e-11.
+    d = 8, eps = 1e-10, float64.
     """
     d, eps = 8, 1e-10
     A, f = tt.qlaplace_dd([d]), tt.ones(2, d)
@@ -573,31 +580,26 @@ def test_frobenius_and_residual_truncation_reach_the_same_place():
 
 # --- the torch backend --------------------------------------------------------
 
+@requires_gpu()
 @pytest.mark.parametrize("prec", ["n", "c", "l", "r"])
 def test_torch_gmres_paths(prec):
-    """Every local-solver path on CUDA, against the numpy dense solve."""
-    torch = pytest.importorskip("torch")
-    if not torch.cuda.is_available():
-        pytest.skip("no CUDA device")
+    """Every local-solver path on the GPU, against the numpy dense solve."""
     from tt import backend as bk
-    d, eps = 8, 1e-9
+    d, eps = QLAPLACE_D, 10 * SOLVE_EPS
     A, f = tt.qlaplace_dd([d]), tt.ones(2, d)
     xd = np.linalg.solve(np.asarray(A.full()),
                          np.asarray(f.full(asvector=True)))
-    x, info = amen_solve(A.to("torch", "cuda", "float64"),
-                         f.to("torch", "cuda", "float64"), None, eps, verb=0,
+    x, info = amen_solve(to_gpu(A), to_gpu(f), None, eps, verb=0,
                          seed=0, max_full_size=0, local_prec=prec,
                          local_iters=8, local_restart=60, return_info=True)
     assert info.converged, f"prec={prec} stalled at {info.true_res:.2E}"
     got = np.asarray(bk.to_numpy(x.full(asvector=True)))
-    assert rel(got, xd) < 1e-7
+    assert rel(got, xd) < DENSE_TOL
 
 
+@requires_gpu(dtype="complex128")
 def test_torch_complex():
-    """Complex arithmetic on CUDA, dense oracle."""
-    torch = pytest.importorskip("torch")
-    if not torch.cuda.is_available():
-        pytest.skip("no CUDA device")
+    """Complex arithmetic on the GPU, dense oracle."""
     from tt import backend as bk
     rng = np.random.default_rng(4)
     A = random_matrix(3, 3, 2, rng, dtype=np.complex128, diag_shift=3.0)

@@ -107,8 +107,8 @@ def test_an_analytic_jacobian_screens_the_components_that_vanish():
     The columns of ``J`` are radial, tangential and axial, hence orthogonal, so
     ``R01 = R02 = R12 = 0``.  With central differences they come back at the
     cancellation level ``eps/h`` instead of at zero, survive a tight screen, and
-    ``tt.cross`` spends the bulk of the assembly fitting noise -- measured at TT
-    rank 46 for ``R01``.  Given the Jacobian, they are screened.
+    ``tt.cross`` spends the bulk of the assembly fitting noise
+    (``docs/NUMERICS.md``).  Given the Jacobian, they are screened.
     """
     p, n_el = 2, 8
     _blocks, grids, _nb = _grids(p, n_el)

@@ -8,20 +8,17 @@ compares against the legacy Fortran output.
 A note on the KSL order test.  Comparing one step against ``expm(tau A) y0``
 cannot show the temporal order of the integrator: on a manifold that contains
 the exact trajectory (full ranks) the projector splitting is *exact* -- see
-:func:`test_ksl_is_exact_when_the_manifold_is_full`, error 1e-14 for every step
-size -- while on a manifold that does not contain it, the tau-independent
-modelling error swamps the splitting error (that error is what
+:func:`test_ksl_is_exact_when_the_manifold_is_full` -- while on a manifold that
+does not contain it, the tau-independent modelling error swamps the splitting
+error (that error is what
 :func:`test_ksl_reports_the_rank_it_cannot_follow` measures, and the integrator
 reports it).  The order below is therefore measured by Richardson
 self-convergence, which is a statement about the discretization alone.
 
-That is not the last word, and this file used to claim it was.  The right
-reference is neither ``expm(tau A) y0`` nor the integrator itself but the
-solution of the ODE KSL actually discretizes, ``y' = P_{T_y M} A y``; integrated
-densely it is an independent oracle, and against it the observed orders are 1.00
-and 2.00 with the modelling error 25x larger than the splitting error being
-fitted.  See
-``tests/test_verify_eigb_ksl.py::test_ksl_order_against_the_dense_projected_flow``.
+The independent reference is neither of those but the solution of the ODE KSL
+actually discretizes, ``y' = P_{T_y M} A y``, integrated densely.  See
+``tests/test_verify_eigb_ksl.py::test_ksl_order_against_the_dense_projected_flow``
+and ``docs/NUMERICS.md``.
 """
 
 from __future__ import annotations
@@ -194,11 +191,11 @@ def test_eigb_warns_when_a_too_small_guess_rank_stalls_it():
     ``eigb`` cannot grow the TT rank past ``B * r_guess``, and at ``B == 1`` not
     at all: both local SVD groupings bound the new rank by the old one.  Handed
     a guess of rank 8 for a Heisenberg ground state that needs more, it happily
-    converges *inside* that manifold -- the Ritz value stops moving to 2.2e-09
-    while the eigenvalue is wrong in the 6th digit.  The sweep indicator cannot
-    see this; the eigenresidual can, and the threshold has to be tied to ``eps``
-    for it to fire.  A fixed 1e-2 (what this used to be) leaves six silent
-    decades exactly where such a run comes to rest.
+    converges *inside* that manifold: the Ritz value stops moving while the
+    eigenvalue is wrong.  The sweep indicator cannot see this; the eigenresidual
+    can, and the threshold has to be tied to ``eps`` for it to fire -- a fixed
+    one leaves silent decades exactly where such a run comes to rest
+    (``docs/NUMERICS.md``).
     """
     d = 10
     H = ham.heisenberg(d)
@@ -246,11 +243,11 @@ def test_spectral_norm_estimate_is_a_close_lower_bound():
 def test_eigb_does_not_cry_wolf_near_the_bottom_of_the_spectrum():
     """Correct eigenpairs of a near-singular operator must not warn.
 
-    ``qlaplace_dd([10])`` has ``lam_1 = 9.4e-06`` against ``||A||_2 = 4``, so
-    the residual relative to ``||A y_1||`` is 3.0e-04 -- above any threshold
-    tied to ``eps=1e-8`` -- while the eigenvalues are right to 1e-9 absolute.
-    Normalizing by ``||A||`` instead of ``||A y_i||`` is what separates a wrong
-    answer from a small one; this test is the reason the denominator changed.
+    ``qlaplace_dd([10])`` has an eigenvalue five orders of magnitude below
+    ``||A||_2``, so the residual relative to ``||A y_1||`` is above any threshold
+    tied to ``eps=1e-8`` while the eigenvalues are correct.  Normalizing by
+    ``||A||`` instead of ``||A y_i||`` is what separates a wrong answer from a
+    small one (``docs/NUMERICS.md``).
     """
     d, nblock = 10, 4
     A = tt.qlaplace_dd([d])
@@ -630,8 +627,8 @@ def test_ksl_refuses_a_step_that_amplifies_past_every_digit():
     Its S-steps integrate backwards, so for a dissipative ``A`` they amplify by
     ``exp(tau |lambda_min|)``; the following K-step shrinks the data back but
     not the rounding error that rode along. Left unguarded this *returns a
-    number*: measured at ``tau ||A|| = 169``, ``||y|| = 3.3e+106`` for a flow
-    whose exact solution has norm 0.307, with nothing in the history to say so.
+    number* -- a norm over a hundred orders of magnitude past the exact
+    solution's, with nothing in the history to say so (``docs/NUMERICS.md``).
     """
     a, y0 = stiff_heat(6)
     with pytest.raises(RuntimeError, match="amplified its argument"):

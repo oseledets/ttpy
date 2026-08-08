@@ -77,9 +77,8 @@ def test_qlaplace_dn_smallest_eigenvalue_is_the_analytic_one(d):
     The tolerance is *absolute*, scaled by ``||A||_2 <= 4``, and deliberately
     not relative: ``lam_min`` is 3.8e-05 already at ``d = 8`` and shrinks like
     ``4^-d``, so a relative 1e-12 would demand an absolute 3.8e-17 -- below the
-    accuracy any eigensolver can give for a matrix of norm 4. Measured errors
-    are 1.3e-15 (``d = 6``) and 2.1e-15 (``d = 8``), i.e. a few eps of the norm,
-    which is the right thing to hold it to.
+    accuracy any eigensolver can give for a matrix of norm 4.  A few eps of the
+    norm is the right thing to hold it to.
     """
     n = 2 ** d
     lam = np.linalg.eigvalsh(dense(tt.qlaplace_dn(d, "DN")))[0]
@@ -189,7 +188,7 @@ def test_bpx_in_several_dimensions(D, d, weight):
 
 
 def test_bpx_bounds_the_condition_number_in_two_dimensions():
-    """The 2D claim, measured: ``kappa(A)`` grows 230x, ``kappa(B)`` under 3x.
+    """The 2D claim: ``kappa(A)`` grows by orders of magnitude, ``kappa(B)`` barely.
 
     Reference values ``kappa(B) = 4.5128, 5.8607, 7.5118, 9.2086`` at
     ``d = 3..6`` (docs/plans/qtt-elliptic-bpx.md §2.2).
@@ -211,10 +210,10 @@ def test_bpx_bounds_the_condition_number_in_two_dimensions():
 def test_bpx_bounds_the_condition_number_while_the_operator_loses_it():
     """The claim of [BK20], measured: ``kappa(C A C)`` stays put as ``d`` grows.
 
-    Reference numbers, reproduced here independently of the way they were first
-    obtained (a per-level sum rather than the automaton): ``kappa(B) = 5.6674``
-    at ``d = 4`` and ``10.6617`` at ``d = 10``, with ``lam_min(B) -> 2``, while
-    ``kappa(A)`` goes from 4.4e+02 to 1.7e+06 over the same range.
+    Reproduced here independently of the way the reference numbers were first
+    obtained (a per-level sum rather than the automaton): ``kappa(B)`` stays in
+    single digits while ``kappa(A)`` grows by four orders of magnitude over the
+    same range of ``d`` (``docs/NUMERICS.md``).
     """
     kappa_a, kappa_b, lam_min = {}, {}, {}
     for d in (4, 6, 8, 10):
@@ -264,9 +263,9 @@ def test_theta_factors_reproduce_the_preconditioned_operator(D, d):
 def test_theta_rank_is_flat_and_matches_theorem_4(D, d):
     """Rank ``2^(2D) + 2^(2D-1)`` -- 6, 24, 96 -- whatever ``d`` is.
 
-    Contrast with the triple product, whose rank was measured at 96, 135, 185
-    for ``d = 10, 14, 18`` -- growing, which is what made it slow *and* what
-    made its entries cancel.
+    Contrast with the triple product, whose rank grows with ``d``
+    (``docs/NUMERICS.md``) -- which is what made it slow *and* what made its
+    entries cancel.
     """
     factors = bpx_theta(d, D)
     assert len(factors) == D
@@ -288,9 +287,8 @@ def test_the_preconditioner_earns_its_keep():
 
     ``-u'' = 1`` with ``u(0) = 0``, ``u'(1) = 0`` on ``2^18`` nodes. Without a
     preconditioner AMEn exhausts its sweeps and still has five wrong digits;
-    with one it converges in a handful and is at machine precision. Measured at
-    ``d = 30``: 30 sweeps / 23.3 s / relative error 1.03 against 7 sweeps /
-    0.51 s / 1.8e-13.
+    with one it converges in a handful and is at machine precision
+    (``docs/NUMERICS.md`` for the table across ``d``).
     """
     d = 18
     n = 2 ** d

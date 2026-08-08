@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 import tt
+from conftest import TORCH_F64_DEVICE
 from tt.algs.completion import completion_functional, ttSparseALS
 from tt.algs.optimize import min_func, min_tens
 from tt.algs.riemannian import project, projector_splitting_add, tt_qr
@@ -53,8 +54,8 @@ def dense_tangent_projector(X, tol=1e-10):
     every invariant test still passes, and it disagrees with the truth by 74 %
     on the first case below that is not of maximal rank.  Verified against a
     basis of the tangent space assembled straight from its definition
-    (``span_k tau(C_1, ..., dC_k, ..., C_d)``): this version agrees to 2.6e-15,
-    the conjugated one does not even fix the tangent space (0.47).
+    (``span_k tau(C_1, ..., dC_k, ..., C_d)``): this version agrees to roundoff,
+    the conjugated one does not even fix the tangent space.
     """
     n = [int(v) for v in X.n]
     d = len(n)
@@ -754,7 +755,7 @@ def test_gmres_on_a_diagonally_dominant_random_operator():
 def torch_default():
     """Run the body with ``torch`` as the default backend, then restore."""
     torch = pytest.importorskip("torch")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = TORCH_F64_DEVICE
     old = tt.get_backend()
     tt.set_backend("torch", device, "float64")
     try:

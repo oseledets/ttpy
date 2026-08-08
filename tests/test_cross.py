@@ -165,14 +165,13 @@ def test_qtt_smooth_function_against_dense():
 def test_reported_accuracy_tracks_the_dense_truth_at_a_loose_eps():
     """At eps=1e-2 the reported numbers must be in the same league as the truth.
 
-    This test used to pin the opposite behaviour (err_rel = 4.7e-16 against a
-    true error of 8.0e-3) back when the local bases were truncated at the local
-    accuracy: that truncation let the index sets shrink and pinned the ranks, so
-    the iteration froze and its own change indicator became meaningless.  With
-    the truncation removed (see ``cross._left_basis``) the ranks stay free, so
-    the change between sweeps is again an indicator of the error -- measured
-    here 4.7e-4 reported against 2.0e-3 true, i.e. within an order of magnitude.
-    The held-out measurement must agree with the dense truth much more tightly.
+    Truncating the local bases at the local accuracy lets the index sets shrink
+    and pins the ranks, at which point the iteration freezes and its own change
+    indicator becomes meaningless.  With the truncation removed (see
+    ``cross._left_basis``) the ranks stay free and the change between sweeps is
+    again an indicator of the error, to within an order of magnitude
+    (``docs/NUMERICS.md``).  The held-out measurement must agree with the dense
+    truth much more tightly.
     """
     y = cross(qtt_coulomb, [2] * D_QTT, eps=1e-2, nswp=20, n_check=400, seed=2)
     h = y.history
@@ -323,8 +322,8 @@ def test_rect_maxvol_does_not_scold_a_caller_for_its_own_budget():
 
     This warning was 80 of the 93 RuntimeWarnings the suite emitted: it fired
     every time ``cross._select_rows`` set a rank budget and then respected it.
-    Measured cost of that early stop across ``rf`` in {0, 2, 5, 10, 30} on three
-    problems: none -- identical errors and identical ranks. The other
+    That early stop costs nothing -- identical errors and identical ranks across
+    the whole range of ``rf`` (``docs/NUMERICS.md``). The other
     non-convergence branch (``tol < 1``, which no row set can satisfy) is a real
     mistake and must still warn.
     """
@@ -356,7 +355,8 @@ def test_cross_kickrank2_adds_rows_and_keeps_the_answer():
 
     They exist for the failure mode where the greedy index sets reach a fixed
     point while an unsampled region still carries the error -- every internal
-    indicator reads 1e-15 and the answer is wrong at 4e-04 (the reproducer is in
+    indicator reads machine precision while the answer is wrong
+    (``docs/NUMERICS.md``; the reproducer is in
     docs/plans/cross-approximation.md, and it is numpy-version sensitive, so it
     is documented rather than pinned here). What *is* stable and worth pinning:
     the knob costs evaluations and never hurts a well-behaved problem.

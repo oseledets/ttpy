@@ -153,9 +153,7 @@ def test_ksl_is_exact_when_the_manifold_is_the_whole_space():
 
     Whatever error survives is the local matrix exponential, so this pins the
     replacement of EXPOKIT (5803 lines of Fortran in the old package) against
-    scipy.linalg.expm on the dense operator. Measured: 2e-15 at tau=1e-3 and
-    8e-15 at tau=0.1, where the Fortran left 1.3e-8 and 6.7e-3 on bit-identical
-    input.
+    scipy.linalg.expm on the dense operator.
     """
     ksl_mod = pytest.importorskip("tt.algs.ksl")
     import scipy.linalg as sla

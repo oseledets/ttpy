@@ -12,14 +12,13 @@ an oracle rather than add a case:
   right reference is not ``expm(tau A) y0`` but the solution of the *projected*
   ODE ``y' = P_{T_y M} A y``, which is what KSL discretizes.  Integrated densely
   (a projector built here from scratch, numpy only) it is an oracle the module
-  never touches, and against it the observed orders are 1.00 and 2.00 while the
-  modelling error is 25x larger than the largest splitting error being measured.
+  never touches, and against it the orders come out right even where the
+  modelling error dominates (``docs/NUMERICS.md``).
 
-* **the eigenresidual.**  ``eigb`` used to report only ``ermax``, the movement
-  of the Ritz values.  A stalled alternating iteration has ``ermax = 0`` at a
-  point that is not an eigenvector, and the module returned that answer with
-  ``converged=True`` and no residual anywhere in the API
-  (:func:`test_eigb_reports_a_stalled_iteration`).
+* **the eigenresidual.**  ``ermax``, the movement of the Ritz values, is not
+  evidence: a stalled alternating iteration has ``ermax = 0`` at a point that is
+  not an eigenvector, and reporting only that hands such a point back with
+  ``converged=True`` (:func:`test_eigb_reports_a_stalled_iteration`).
 
 Everything is checked against dense numpy/scipy truth, an independent dense
 construction, or a mathematical invariant.  Nothing is compared with the legacy
@@ -236,8 +235,8 @@ def test_ksl_order_against_the_dense_projected_flow(scheme, expected):
     with DOP853 at rtol 1e-11, using the projector built above.  The modelling
     error (the distance between the projected flow and ``expm(T A) y0``) is
     checked to be much larger than the splitting errors being fitted, which is
-    exactly the regime in which the module's docstring claims no order can be
-    measured -- it can, against the right reference.
+    exactly the regime in which no order is supposed to be measurable -- it is,
+    against the right reference.
     """
     from scipy.integrate import solve_ivp
 
@@ -301,7 +300,7 @@ def test_eigb_reports_a_stalled_iteration():
 def test_eigb_reports_a_local_solver_that_did_not_converge():
     """LOBPCG capped at one iteration returns garbage; the run must say so.
 
-    ``lam`` comes out 100% wrong (7.6e-05 for a true 9.4e-06).  The sweep
+    ``lam`` comes out an order of magnitude wrong.  The sweep
     indicator alone reports "did not converge in 20 sweeps", which a user may
     read as slow convergence; the residual says the returned pairs are not
     eigenpairs at all.
@@ -378,9 +377,10 @@ def test_eigb_verb_one_prints_the_residual(capsys):
 def test_eigb_in_float32():
     """float32 must work: a fixed 1e-8 symmetry tolerance rejected every input.
 
-    The projected local matrix of a float32 problem is asymmetric at the 1e-7
-    level from rounding alone, so ``sym_tol=1e-8`` raised "not Hermitian" on a
-    perfectly symmetric operator.  The tolerance now follows the dtype.
+    The projected local matrix of a float32 problem is asymmetric from rounding
+    alone, well above a fixed 1e-8, so such a threshold raises "not Hermitian"
+    on a perfectly symmetric operator.  The tolerance follows the dtype
+    (``docs/NUMERICS.md``).
     """
     d = 6
     A = tt.qlaplace_dd([d])
@@ -470,14 +470,14 @@ def test_eigb_from_a_rank_one_guess_is_wrong_and_says_so():
     One-site ALS cannot grow a rank: the block index is what allows an interface
     to reach ``min(B r, n r')``, so with ``B = 1`` and ``r = 1`` the iterate is
     trapped on the rank-1 manifold for every one of the 20 sweeps.  On
-    ``qlaplace_dd([8])`` it stops at 7.8e-03 where the smallest eigenvalue is
-    1.5e-04, with ``ermax = 1e-14``: a converged-looking run, wrong by a factor
-    of 50.  Every test in the module's own suite starts from rank >= 4, which is
-    why this never showed up.
+    ``qlaplace_dd([8])`` it comes to rest at an eigenvalue wrong by a large
+    factor while ``ermax`` reads machine precision: a converged-looking run
+    (``docs/NUMERICS.md``).  Every test in the module's own suite starts from
+    rank >= 4, which is why this never showed up.
 
     The answer cannot be fixed inside a one-site method -- but it must not be
-    handed back as if it were converged, and the measured residual (0.996 of
-    ``||A y||``) is what says so.
+    handed back as if it were converged, and the measured residual, which is
+    almost all of ``||A y||``, is what says so.
     """
     d = 8
     A = tt.qlaplace_dd([d])
@@ -627,11 +627,10 @@ def test_expmv_krylov_on_a_strongly_non_normal_operator():
 
     ``a = 5 triu(1) - I`` of size 60: ``||exp(a) x|| / ||x||`` is about 1e5, so
     the flow grows enormously and the error estimate -- which is normalized by
-    ``||x||``, the input -- has no clean relation to the error of the answer.
-    Measured: asked for ``tol = 1e-10``, delivered 5.5e-08 relative to the
-    result, reported ``err_est = 6.4e-02``.  Both directions of that mismatch
-    are the estimate's normalization, not a wrong answer, and the point of the
-    test is to pin the delivered accuracy so a regression cannot hide behind the
+    ``||x||``, the input -- has no clean relation to the error of the answer; it
+    misses in both directions at once (``docs/NUMERICS.md``).  That is the
+    estimate's normalization, not a wrong answer, and the point of the test is
+    to pin the delivered accuracy so a regression cannot hide behind the
     estimate.
     """
     n = 60

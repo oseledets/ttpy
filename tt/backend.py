@@ -92,6 +92,18 @@ class Backend:
     def __repr__(self):
         return f"<backend {self.key}>"
 
+    def ingest_dtype(self, source):
+        """Canonical dtype a *host* array takes on when it enters this backend.
+
+        The backend's dtype says what lives on it, so incoming data adopts that
+        width -- while staying in the domain it arrived in, since narrowing a
+        complex array to a real one would throw away half of every number.  The
+        alternative, keeping whatever dtype numpy handed over, means a backend
+        whose declared dtype is not a setting (``docs/NUMERICS.md``).
+        """
+        name = canon_dtype(source)
+        return (_COMPLEX_OF if name in _COMPLEX_NAMES else _REAL_OF)[self.dtype]
+
 
 class NumpyBackend(Backend):
     name = "numpy"
@@ -113,8 +125,8 @@ class NumpyBackend(Backend):
             return out.astype(self._dt(dtype), copy=False)
         if out.dtype.kind not in "fc":
             return out.astype(self._dt(None), copy=False)
-        canon_dtype(out.dtype)  # raise on float16 & friends
-        return out
+        # ingest_dtype also raises on float16 & friends
+        return out.astype(self._dt(self.ingest_dtype(out.dtype)), copy=False)
 
     def to_numpy(self, a):
         return np.asarray(a)
@@ -222,16 +234,26 @@ class TorchBackend(Backend):
 
     def asarray(self, a, dtype=None):
         t = self.torch
+        move_to = None
         if isinstance(a, t.Tensor):
             out = a
         else:
-            out = t.as_tensor(np.asarray(a), device=self.device)
+            # Cast on the host, then move.  as_tensor(..., device=...) would
+            # materialise the *source* dtype on the device first, and a device
+            # that does not have it refuses the transfer even when the very next
+            # line casts the value away (MPS has no float64; numpy hands us
+            # float64).
+            out = t.as_tensor(np.asarray(a))
+            move_to = self.device
         if dtype is not None:
-            return out.to(self._dt(dtype))
-        if not (out.is_floating_point() or out.is_complex()):
-            return out.to(self._dt(None))
-        canon_dtype(out.dtype)
-        return out
+            out = out.to(self._dt(dtype))
+        elif not (out.is_floating_point() or out.is_complex()):
+            out = out.to(self._dt(None))
+        elif move_to is not None:       # host data adopts the backend's width
+            out = out.to(self._dt(self.ingest_dtype(out.dtype)))
+        else:
+            canon_dtype(out.dtype)      # raise on float16 & friends
+        return out if move_to is None else out.to(device=move_to)
 
     def to_numpy(self, a):
         return a.detach().cpu().numpy()
@@ -363,9 +385,8 @@ def backend_of(a) -> Backend:
 
     Backend objects are immutable and compare by ``key``, so there is no reason
     to build a fresh one per call -- and every ``bk.norm`` / ``bk.svd`` / ...
-    goes through here.  Measured on one KSL step (d=6, n=2, rank 4): 508 norms
-    per step, each constructing a ``NumpyBackend``; caching them is most of the
-    dispatch cost of the whole integrator.
+    goes through here, hundreds of times per sweep, so caching them is most of
+    the dispatch cost of an integrator (``docs/NUMERICS.md``).
     """
     if isinstance(a, np.ndarray):
         dt = a.dtype
@@ -505,8 +526,9 @@ def _binary_plan(pattern: str):
     """Compile a two-operand pattern into transpose + batched matmul.
 
     Even with a cached contraction path, ``np.einsum`` re-parses and re-validates
-    the subscripts on every call: 18425 calls cost 0.42 s of a 1.75 s AMEn solve.
-    A contraction of two operands without repeated or diagonal indices is just
+    the subscripts on every call, which is a quarter of an AMEn solve
+    (``docs/NUMERICS.md``).  A contraction of two operands without repeated or
+    diagonal indices is just
 
         (batch, left, k) @ (batch, k, right)
 

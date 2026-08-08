@@ -14,6 +14,8 @@ import pytest
 import tt
 from tt.algs.amen_mv import amen_mv
 
+from conftest import GPU_DEVICE, SOLVE_EPS, SOLVE_TOL, gpu_backend, requires_gpu
+
 
 def rel(a, b):
     a, b = np.asarray(a), np.asarray(b)
@@ -491,47 +493,44 @@ def test_tt_namespace_exposes_amen_mv():
 
 # --- the backend-agnostic claim -----------------------------------------------
 
+@requires_gpu()
 def test_runs_on_the_torch_backend_and_agrees_with_numpy():
     """The module docstring claims backend agnosticism; this is the check.
 
-    Skipped without torch/CUDA -- the package must work without either.  Both
-    backends solve the *same* problem from the *same* seed, so they must agree
-    to the requested accuracy, not merely both terminate.
+    Skipped without torch or a GPU -- the package must work without either.
+    Both backends solve the *same* problem from the *same* seed, so they must
+    agree to the requested accuracy, not merely both terminate.  The accuracy
+    asked for follows the device: MPS has no float64 (see conftest).
     """
-    torch = pytest.importorskip("torch")
-    if not torch.cuda.is_available():
-        pytest.skip("no CUDA device")
     from tt import backend as bk
 
     A = rand_matrix(4, 4, 6, 3, seed=130)
     x = rand_vector(4, 6, 3, seed=131)
     ref = tt.matvec(A, x).round(1e-12).full()
-    y_np, _ = amen_mv(A, x, 1e-10, verb=0, nswp=30, seed=5)
+    y_np, _ = amen_mv(A, x, SOLVE_EPS, verb=0, nswp=30, seed=5)
 
-    gpu = bk.TorchBackend("cuda", "float64")
+    gpu = gpu_backend()
     At = tt.matrix.from_list([bk.asarray(c, backend=gpu)
                               for c in tt.matrix.to_list(A)])
     xt = tt.vector.from_list([bk.asarray(c, backend=gpu)
                               for c in tt.vector.to_list(x)])
-    y_t, z_t, h_t = amen_mv(At, xt, 1e-10, verb=0, nswp=30, seed=5,
+    y_t, z_t, h_t = amen_mv(At, xt, SOLVE_EPS, verb=0, nswp=30, seed=5,
                             return_history=True)
-    assert bk.device_of(y_t.cores[0]).startswith("cuda")
+    assert bk.device_of(y_t.cores[0]).startswith(GPU_DEVICE)
     assert h_t.converged is True
     got = np.asarray(bk.to_numpy(y_t.full()))
-    assert rel(got, ref) < 1e-9
-    assert rel(got, y_np.full()) < 1e-9
+    assert rel(got, ref) < SOLVE_TOL
+    assert rel(got, y_np.full()) < SOLVE_TOL
     print(f"\n[torch] rel err vs dense={rel(got, ref):.2e}, "
           f"vs numpy backend={rel(got, y_np.full()):.2e}, ranks={list(y_t.r)}")
 
 
+@requires_gpu(ops=("eigh",))
 def test_gram_path_also_runs_on_torch():
     """The Gram path uses eigh/clip/sqrt; those are the easiest to get wrong."""
-    torch = pytest.importorskip("torch")
-    if not torch.cuda.is_available():
-        pytest.skip("no CUDA device")
     from tt import backend as bk
 
-    gpu = bk.TorchBackend("cuda", "float64")
+    gpu = gpu_backend()
     A = rand_matrix(8, 8, 5, 3, seed=132)
     x = rand_vector(8, 5, 3, seed=133)
     ref = tt.matvec(A, x).round(1e-12).full()
@@ -539,5 +538,5 @@ def test_gram_path_also_runs_on_torch():
                               for c in tt.matrix.to_list(A)])
     xt = tt.vector.from_list([bk.asarray(c, backend=gpu)
                               for c in tt.vector.to_list(x)])
-    y, _ = amen_mv(At, xt, 1e-10, verb=0, nswp=30, renorm='gram', seed=6)
-    assert rel(np.asarray(bk.to_numpy(y.full())), ref) < 1e-8
+    y, _ = amen_mv(At, xt, SOLVE_EPS, verb=0, nswp=30, renorm='gram', seed=6)
+    assert rel(np.asarray(bk.to_numpy(y.full())), ref) < 10 * SOLVE_TOL

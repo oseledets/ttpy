@@ -76,8 +76,8 @@ def test_norm_keeps_the_autograd_tape():
 def test_gradient_of_a_mixed_functional_is_complete():
     """``<x,x> + ||x - b||`` -- the shape of a completion objective.
 
-    With ``.item()`` in the norm the second term contributed exactly nothing and
-    the total gradient was off by 7.0e-01 while every value printed correctly.
+    With ``.item()`` in the norm the second term contributes exactly nothing:
+    the total gradient is O(1) wrong while every value printed correctly.
     """
     cores = rand_cores(d=4, n=3, r=2, seed=0)
     bcores = rand_cores(d=4, n=3, r=2, seed=7, requires_grad=False)
