@@ -29,9 +29,10 @@ Fortran original.
 That indicator says how much the iteration still *moves*, which is not the same
 as being right, and one-site ALS has a standard way of not being right: it
 cannot grow a rank.  The block index is the only enrichment, so with ``B = 1``
-and a rank-1 initial guess the iterate is trapped on the rank-1 manifold, the
-Ritz value stops moving to 1e-14 and the run looks converged while being wrong
-by a factor of 50.  For that reason the returned block always comes with its
+and a rank-1 initial guess the iterate is trapped on the rank-1 manifold: the
+Ritz value stops moving to machine precision and the run looks converged while
+being wrong by a large factor (``docs/NUMERICS.md``).  For that reason the
+returned block always comes with its
 measured eigenresidual (:func:`block_residuals`, ``history.res``), and a large
 one warns -- the answer of an eigensolver is a pair, and the residual is the
 only evidence that it is one.
@@ -138,14 +139,12 @@ def spectral_norm_estimate(A, its=12, eps=1e-3, seed=0):
     The obvious candidates both fail:
 
     * ``||A y_i||`` (that is, ``lam_i``) asks every eigenvalue to be accurate
-      *relatively*.  No eigensolver working at truncation accuracy ``eps`` can
-      deliver that near the bottom of the spectrum: on ``qlaplace_dd([10])``
-      with ``B = 4`` the returned pairs are right to 1e-9 absolute, yet
-      ``res/||A y||`` is 3.0e-04 because ``lam_1 = 9.4e-06``.
-    * ``||A||_F`` overestimates badly in exactly the regime we care about --
-      measured 78.4 against ``||A||_2 = 4.0`` for the same operator, and 41.6
-      against 4.26 for a 10-site Heisenberg chain.  A denominator 10-20x too
-      large desensitizes the warning by the same factor.
+      *relatively*, which no eigensolver working at truncation accuracy ``eps``
+      can deliver near the bottom of the spectrum.
+    * ``||A||_F`` overestimates by a factor of 10-20 in exactly the regime we
+      care about, desensitizing the warning by the same factor.
+
+    Both are measured in ``docs/NUMERICS.md``.
 
     ``||r||/||A||_2`` is the backward error: the returned pair is exact for
     ``A + E`` with ``||E|| = ||r||``, so this is the perturbation of the
@@ -153,11 +152,8 @@ def spectral_norm_estimate(A, its=12, eps=1e-3, seed=0):
     bounds ``|lam - lam_exact|`` directly.
 
     The estimate is a *lower* bound, so it can only make the warning more
-    eager, never quieter.  Measured against a dense ``||A||_2`` at ``its=12``:
-    0.94-0.97 of the truth on ``qlaplace_dd``, 0.97 on Heisenberg, in 25-40 ms
-    -- both operators have a clustered top of the spectrum, which is the slow
-    case for power iteration, so this is close to the worst it does.  One digit
-    is all a threshold needs.
+    eager, never quieter, and one digit is all a threshold needs -- which is
+    what it delivers even on a clustered spectrum (``docs/NUMERICS.md``).
 
     Deterministic: the starting vector comes from a fixed seed, so two runs on
     the same operator warn identically.
@@ -214,8 +210,8 @@ def block_residuals(A, y, lam):
     addition (ranks ``r_A r_y + r_y``) and two block dots -- about one sweep's
     worth of work, never a dense vector.  The residual vector is *formed* and
     then normed instead of expanding ``||z||^2 - 2 lam <z, y> + lam^2 ||y||^2``:
-    that expansion cancels down to ``sqrt(eps) ||A y||`` and would report 1e-9
-    where the truth is 1e-16.
+    that expansion cancels down to ``sqrt(eps) ||A y||`` and would report the
+    square root of the residual it is supposed to measure.
 
     Args:
         A: The TT-matrix.
@@ -345,7 +341,7 @@ def eigb(A, y0, eps, rmax=150, nswp=20, max_full_size=1000, verb=1,
             ``None`` (default) means ``sqrt(eps_machine)`` of the working dtype
             -- 1.5e-8 in float64, 3.5e-4 in float32.  A fixed 1e-8 would reject
             every float32 problem, whose projected local matrices are asymmetric
-            at the 1e-7 level from rounding alone.
+            from rounding alone (``docs/NUMERICS.md``).
         check_residual: measure ``||A y_i - lam_i y_i||`` on the returned block
             (one TT matvec plus three dots, see :func:`block_residuals`) and put
             it in the history.  ``ermax`` cannot see a stalled iteration; this
@@ -360,12 +356,12 @@ def eigb(A, y0, eps, rmax=150, nswp=20, max_full_size=1000, verb=1,
             ``8 * eps_machine`` of the working dtype -- that is the residual a
             converged run actually reaches, because the eigenvalue error is
             quadratic in the eigenvector error while the residual is linear.
-            A *fixed* threshold is the wrong shape: 1e-2 left six silent decades
-            between an ``eps=1e-8`` request and the warning, and that is exactly
-            where a run whose rank never grows comes to rest -- ``eigb`` cannot
-            increase the rank at ``B == 1`` (both local SVD groupings bound the
-            new rank by ``B * r_old``), so a too-small guess rank stalls at a
-            non-eigenvector and used to return quietly.  See
+            A *fixed* threshold is the wrong shape: it leaves silent decades
+            between the request and the warning, and that is exactly where a run
+            whose rank never grows comes to rest -- ``eigb`` cannot increase the
+            rank at ``B == 1`` (both local SVD groupings bound the new rank by
+            ``B * r_old``), so a too-small guess rank stalls at a
+            non-eigenvector.  See ``docs/NUMERICS.md`` and
             ``docs/plans/eigenvalues.md``.
 
     Returns:

@@ -118,9 +118,7 @@ def _left_step_checked(cores, k, what):
     *exactly* that rank.  At a rank-deficient representation the closed-form
     projector still returns a Hermitian idempotent of the right trace -- it
     just projects onto a strictly larger space than the caller asked for, so
-    no invariant can see the mistake.  Measured on a rank-1 tensor written with
-    TT ranks ``(1, 2, 2, 1)``, ``d = 3``, ``n = 4``, float64: 31 % relative
-    error against the dense tangent projector, idempotence 1.6e-16.
+    no invariant can see the mistake (``docs/NUMERICS.md``).
 
     The test is exact rather than heuristic and costs nothing beyond the QR the
     sweep performs anyway.  Once the cores right of ``k`` are right-orthogonal
@@ -172,8 +170,7 @@ def project(X, Z):
             defined and the formula below silently projects onto a larger
             space.  This is checked (:func:`_require_full_rank`) and refused,
             because the wrong answer is otherwise indistinguishable from the
-            right one -- measured 31 % relative error on a rank-1 tensor
-            written with TT ranks ``(1, 2, 2, 1)``.
+            right one (``docs/NUMERICS.md``).
         Z: A :class:`tt.vector`, or a list of them.  For a list the projection
             of the *sum* is returned, ``P_X(sum_i Z_i)``, computed without ever
             forming the sum (whose rank would be the sum of the ranks).
@@ -318,10 +315,9 @@ def projector_splitting_add(Y, delta):
         Unlike :func:`project`, a numerically rank-deficient ``Y`` is *not*
         refused here: the splitting only ever needs the frames themselves, not
         the space they are supposed to span exactly, and exactness was measured
-        to hold at such a point (1.3e-15 relative, rank-1 ``Y`` written with TT
-        ranks ``(1, 2, 2, 1)``, ``d = 3``, ``n = 4``, float64).  The retraction
-        is then onto the manifold of the *stated* rank, which is what the
-        caller asked for.
+        to hold at such a point (``docs/NUMERICS.md``).  The retraction is then
+        onto the manifold of the *stated* rank, which is what the caller asked
+        for.
     """
     if not isinstance(Y, vector) or not isinstance(delta, vector):
         raise TypeError("projector_splitting_add expects two tt.vectors, got "
@@ -398,11 +394,9 @@ def tt_qr(X, left_to_right=True):
         *numerically* rank-deficient representation is left alone and is not an
         error here: ``bk.qr`` still returns cores with orthonormal columns and
         ``X = Q R`` still holds to roundoff -- only the columns of ``Q`` that
-        correspond to a zero on the diagonal of ``R`` are arbitrary.  Verified
-        on a rank-1 tensor written with TT ranks ``(1, 2, 2, 1)``:
-        orthogonality and reconstruction both hold to 1e-15.  (:func:`project`
-        does refuse such a point, because there the deficiency changes the
-        answer.)
+        correspond to a zero on the diagonal of ``R`` are arbitrary; verified at
+        such a point (``docs/NUMERICS.md``).  (:func:`project` does refuse one,
+        because there the deficiency changes the answer.)
     """
     if not isinstance(X, vector):
         raise TypeError(f"tt_qr expects a tt.vector, got {type(X)!r}")

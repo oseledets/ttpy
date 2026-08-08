@@ -715,11 +715,9 @@ def qlaplace_dn(d, bc="DN", order="dim"):
     ``'DN'`` -- Dirichlet at 0, Neumann at 1 -- is the reason this function
     exists.  It is the only combination with exactly ``2^l`` degrees of freedom
     on every level, so it is the one the multilevel prolongations of [BK20] are
-    built for; ``qlaplace_dd`` cannot be used there.  Measured: ``M^T M`` with
-    ``M = qdiff(d)`` equals ``tridiag(-1, 2, -1)`` with the last diagonal entry
-    1 to 2.0e-15 at ``d = 3``, and its smallest eigenvalue matches the analytic
-    ``4 sin^2(pi / (2(2N+1)))`` to 1e-15.  TT ranks 4 (``D = 1``) and 5
-    (``D > 1``, measured at ``D = 2, 3``).
+    built for; ``qlaplace_dd`` cannot be used there.  TT ranks are 4 (``D = 1``)
+    and 5 (``D > 1``); the operator is checked against its analytic spectrum in
+    ``docs/NUMERICS.md``.
 
     ``'NN'`` is refused: it is singular (constants are in its kernel), it plays
     no part in the [BK20] construction, and returning a singular operator from a

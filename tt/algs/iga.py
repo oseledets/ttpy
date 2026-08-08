@@ -193,11 +193,8 @@ def geometry_field(fun, grids, jac=None, eps=1e-8, screen=None, fd_step=1e-6,
             Jacobian is taken by central differences, whose cancellation error
             is ``eps_machine / fd_step`` -- 1e-10 at the default step -- and a
             component of ``R`` that is *exactly* zero comes back at that level
-            instead of at zero.  Measured on the ring of
-            ``examples/iga_ring.py``: with differences, ``R01`` survives the
-            screen and ``tt.cross`` fits the noise at TT rank 46; with an
-            analytic ``jac`` it is screened and the assembly is three
-            components instead of four.
+            instead of at zero, so the screen keeps it and ``tt.cross`` spends
+            rank on fitting the noise (``docs/NUMERICS.md``).
         grids: the quadrature grids, one array per direction.
         eps: cross accuracy for every component.
         screen: components below ``screen * max|R|`` are returned as ``None``.

@@ -43,11 +43,9 @@ residual of the incoming iterate at every block, so it costs nothing beyond the
 sweep that was happening anyway.
 
 The exact global residual ``||A x - f|| / ||f||`` is available behind
-``check_true_res=True`` and is **off by default**, because forming ``A x``
-multiplies the ranks -- measured on a preconditioned 2D QTT system
-(``r_A = 161``, ``r_x = 122``): rank 19642, 12.3 GB in a single core, 91.8 GB
-peak, for a number that is only reported.  The same product rounded to 1e-12
-has rank 256.  The history is on the returned vector as
+``check_true_res=True`` and is **off by default**: forming ``A x`` multiplies
+the ranks, and on a preconditioned operator that is ruinous for a number that is
+only reported (``docs/NUMERICS.md``).  The history is on the returned vector as
 ``x.amen_info`` and, with ``return_info=True``, returned alongside it.  If the
 requested accuracy is not reached within ``nswp`` sweeps the solver **warns
 with the residual it actually achieved** and marks ``info.converged = False``;
@@ -66,17 +64,11 @@ References
 Known limits
 ------------
 * The attainable relative residual is bounded from below by
-  ``eps_machine * ||A|| ||x|| / ||f||``: for the QTT Laplacian on ``2^12``
-  points with a constant right-hand side that factor is 6.1e6, so the floor is
-  ~1e-9 in float64.  Measured with the residual evaluated in float128 (the
-  float64 evaluation of ``x.full()`` has a 6e-10 noise floor of its own):
-  LAPACK's dense solve leaves 1.52e-10 there and this solver leaves 4.7e-10,
-  so ``eps = 1e-10`` at that size cannot succeed.  The solver reports the
+  ``eps_machine * ||A|| ||x|| / ||f||``, so a tight ``eps`` on an
+  ill-conditioned system cannot succeed for anyone.  The solver reports the
   failure; it does not pretend.
-* The residual the solver reports about itself is computed in TT arithmetic.
-  Against the float128 residual of the returned cores it came out
-  *conservative* by 20-30% on the QTT Laplacian at ``d = 6, 8, 10, 12``
-  (ratios exact/reported 0.78, 0.81, 0.77, 0.70), never optimistic.
+* The residual the solver reports about itself is computed in TT arithmetic and
+  is not optimistic.
 * The local solver is restarted GMRES, which is known to stagnate on strongly
   non-normal operators whose spectrum surrounds the origin, no matter how well
   conditioned they are.  When that happens the failure message names the local
@@ -90,6 +82,10 @@ exception: the ``(m+1) x m`` Hessenberg matrix of the local GMRES and its
 least-squares problem live in numpy (see :func:`_gmres`).  It is a tiny matrix
 (``m = local_restart <= 40``), but it means one host-device sync per GMRES
 inner iteration on a GPU backend.
+
+The measurements behind the limits and the defaults -- accuracy floors, the cost
+of ``check_true_res``, where the dense local solve stops paying -- are in
+``docs/NUMERICS.md``.
 """
 
 from __future__ import annotations
@@ -245,12 +241,10 @@ def _residual_bytes(acores, xcores):
     """Bytes of the largest core of ``A x``, which is what forming it costs.
 
     Core ``k`` of the product has shape ``(rA_k rx_k, n_k, rA_{k+1} rx_{k+1})``:
-    the ranks *multiply*.  For a well conditioned QTT problem that is harmless
-    (rank 4 times rank 20), and for a preconditioned one it is not -- measured
-    on a 2D BPX system with ``r_A = 161`` and ``r_x = 122``, the product has
-    rank 19642 and one core is 12.3 GB, while the same product rounded to 1e-12
-    has rank 256.  Nothing here needs the full-rank object; it exists only long
-    enough to be orthogonalized away.
+    the ranks *multiply*.  For a well conditioned QTT problem that is harmless;
+    for a preconditioned one it is not, by orders of magnitude
+    (``docs/NUMERICS.md``).  Nothing here needs the full-rank object; it exists
+    only long enough to be orthogonalized away.
     """
     worst = 0
     for a, x in zip(acores, xcores):
@@ -298,10 +292,8 @@ def _local_operator(phiL, acore, phiR):
 def _dense_solve(mat, rhs, symmetric=False):
     """Solve the local system.
 
-    A Cholesky route for the symmetric case was tried and dropped: measured
-    against ``np.linalg.solve`` at the sizes these blocks actually have, it was
-    1.6x *slower* at n=400 (scipy copies the matrix) and only 1.2x faster at
-    n=1000, and detecting symmetry per block cost more than either. The
+    A Cholesky route for the symmetric case was tried and dropped -- no benefit
+    at the sizes these blocks actually have (``docs/NUMERICS.md``).  The
     ``symmetric`` flag is kept in the signature because callers know the answer
     cheaply and a future backend may use it.
     """
@@ -701,9 +693,9 @@ def _canon_prec(local_prec):
 def _check_positive(**kwargs):
     """Reject nonsense integer arguments instead of quietly reinterpreting them.
 
-    ``kickrank=-1`` used to mean "no enrichment" and ``rmax=0`` used to mean
-    "rank 0, then whatever the enrichment adds": both are answers to a question
-    the caller did not ask.
+    In the Fortran-era interface ``kickrank=-1`` meant "no enrichment" and
+    ``rmax=0`` meant "rank 0, then whatever the enrichment adds": both are
+    answers to a question the caller did not ask.
     """
     for name, (value, lo) in kwargs.items():
         if value is None:
@@ -754,13 +746,10 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='c',
             densely, larger ones by matrix-free GMRES.  The default is 200,
             not the 50 of ttpy 1.x: there the local solver was compiled
             Fortran, here it is interpreted, so the size at which a dense
-            LAPACK solve stops being worth it is much larger.  Measured on
-            a 2^12 QTT Laplacian to eps=1e-6: 444 ms at 50 versus 8 ms at
-            1000, and the dense path also came out more accurate
-            (residual 1.1e-9 against 1.8e-7) with lower ranks.  Raise it
-            further if the local blocks are still small; lower it if a
-            single dense solve of this size does not fit your time budget
-            (cost grows as size^3).
+            LAPACK solve stops being worth it is much larger (the crossover
+            is measured in ``docs/NUMERICS.md``).  Raise it further if the
+            local blocks are still small; lower it if a single dense solve of
+            this size does not fit your time budget (cost grows as size^3).
         verb: 0 silent (the history is still recorded), 1 one line per sweep,
             2 one line per block.
         rmax: Hard cap on the TT rank chosen by the truncation.  The
@@ -772,12 +761,10 @@ def amen_solve(A, f, x0, eps, kickrank=4, nswp=20, local_prec='c',
         check_true_res: Compute ``||A x - f|| / ||f||`` exactly in the TT
             format after a sweep and use it as the stopping criterion.  **Off
             by default**, because forming it multiplies the ranks: core ``k``
-            of ``A x`` has shape ``(rA_k rx_k, n_k, rA_{k+1} rx_{k+1})``, and
-            on a preconditioned 2D QTT system with ``r_A = 161``, ``r_x = 122``
-            that is rank 19642 and 12.3 GB in one core -- measured peak 91.8 GB
-            for a number that is only reported.  (The same product rounded to
-            1e-12 has rank 256, so none of it is needed; it exists only long
-            enough to be orthogonalized away.)
+            of ``A x`` has shape ``(rA_k rx_k, n_k, rA_{k+1} rx_{k+1})``.  On a
+            preconditioned operator that is tens of gigabytes in a single core,
+            for a number that is only reported and is thrown away immediately
+            afterwards (``docs/NUMERICS.md``).
 
             With ``False`` the criterion is ``max_res`` (``max_dx`` for
             ``trunc_norm=0``): the local residual ``||B_k x_k - rhs_k||`` of

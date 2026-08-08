@@ -40,26 +40,16 @@ The second thing, which is what you actually solve with
 -------------------------------------------------------
 Having ``C_L`` is not enough.  The preconditioned operator ``C A C`` must never
 be *assembled*: its entries cancel over ``4^d``, so rounding the triple product
-represents a matrix with error growing like ``4^d eps``, and its rank grows too
-(measured 96, 135, 185 at ``d = 10, 14, 18``).  :func:`bpx_theta` gives the
-fused factor ``Theta`` of [BK20] Lemma 5 with ``B = Theta^T Theta``, the same
-matrix in exact arithmetic, at TT rank 6 and ``B`` at rank 17, flat in ``d``.
+represents a matrix with error growing like ``4^d eps``, and its rank grows with
+``d`` as well.  :func:`bpx_theta` gives the fused factor ``Theta`` of [BK20]
+Lemma 5 with ``B = Theta^T Theta``, the same matrix in exact arithmetic, at TT
+rank 6 and ``B`` at rank 17, flat in ``d``.
 
-The difference, end to end, on ``-u'' = 1`` with ``u(0) = 0, u'(1) = 0``, AMEn
-at ``eps = 1e-10``, b300/numpy/float64, interleaved runs:
-
-======  ==========================  ============================
-``d``   unpreconditioned            ``B = Theta^T Theta``
-======  ==========================  ============================
-10      30 sweeps, 0.63 s, 4.1e-10  7 sweeps, 0.07 s, 2.3e-14
-18      30 sweeps, 2.51 s, 8.6e-06  7 sweeps, 0.18 s, 8.1e-14
-26      30 sweeps, 11.1 s, 4.1e-01  7 sweeps, 0.41 s, 1.7e-13
-30      30 sweeps, 23.3 s, 1.03     7 sweeps, 0.51 s, 1.8e-13
-======  ==========================  ============================
-
-At ``d = 30`` that is 2^30 unknowns, 46x faster, and the unpreconditioned answer
-is simply wrong (relative error 1.03) -- reported as such by ``amen_solve``,
-which does not converge and says so.  The sweep count and the rank are flat.
+End to end on ``-u'' = 1`` with ``u(0) = 0, u'(1) = 0`` the preconditioned solve
+is a fixed 7 sweeps at machine accuracy up to ``d = 30`` (2^30 unknowns), where
+the unpreconditioned one is 46x slower and simply wrong -- reported as such by
+``amen_solve``, which does not converge and says so.  Numbers in
+``docs/NUMERICS.md``.
 
 Two conventions have to be kept straight
 ----------------------------------------
@@ -76,7 +66,8 @@ Operators built here are level-major; pair them with
 silent nonsense, which is why neither is a default that can be reached by
 accident.
 
-See ``docs/plans/qtt-elliptic-bpx.md`` for the measurements behind all of this.
+See ``docs/NUMERICS.md`` for the measurements and
+``docs/plans/qtt-elliptic-bpx.md`` for the derivation behind all of this.
 """
 
 from __future__ import annotations
@@ -343,12 +334,11 @@ def bpx_theta(d, D=1):
 
     That difference is the practical content of [BK20]. Forming the product of
     three QTT factors and rounding it represents a matrix whose entries cancel
-    over ``4^d``, so the representation error grows like ``4^d * eps``: measured
-    1.3e-10 at ``d = 10``, 6.0e-04 at ``d = 20``, 4.8e+14 at ``d = 50``, while
-    this form stays at 1.4e-14. The rank tells the same story -- ``round(C A C)``
-    was measured at 96, 135, 185 for ``d = 10, 14, 18``, growing with ``d``,
-    while ``Theta_k`` has TT rank exactly ``2^(2D) + 2^(2D-1)`` (6, 24, 96 for
-    ``D = 1, 2, 3``) whatever ``d`` is.
+    over ``4^d``, so the representation error grows like ``4^d * eps`` and is
+    useless well before ``d = 50``, while this form is flat in ``d``
+    (``docs/NUMERICS.md``). The rank tells the same story: ``round(C A C)``
+    grows with ``d``, while ``Theta_k`` has TT rank exactly
+    ``2^(2D) + 2^(2D-1)`` (6, 24, 96 for ``D = 1, 2, 3``) whatever ``d`` is.
 
     A list even when ``D == 1``, because for ``D > 1`` the sum must be applied
     as ``sum_k Theta_k^T round(Theta_k v)`` rather than assembled -- the
@@ -515,11 +505,11 @@ def solve_direct_1d(f, d, inv_coeff=None):
 
     This routine has no approximate mode and must never grow one.  Assembling
     ``T^T A T`` and iterating on it instead -- which is the "obvious"
-    generalization -- returns an answer 96.7 % wrong at ``d = 30`` while the
-    linear solver honestly reports ``converged=True`` and a residual of 2.6e-09,
-    because the residual is of the system it was handed and the damage is in the
-    representation: that product *is* the identity and rounds to TT rank 13.
-    See ``docs/plans/qtt-elliptic-bpx.md`` V12b.
+    generalization -- returns an almost entirely wrong answer at large ``d``
+    while the linear solver honestly reports convergence, because the residual
+    is of the system it was handed and the damage is in the representation: that
+    product *is* the identity and rounds to TT rank 13.  See
+    ``docs/NUMERICS.md`` and ``docs/plans/qtt-elliptic-bpx.md`` V12b.
 
     Args:
         f: right-hand side, a ``tt.vector`` on ``2^d`` nodes.

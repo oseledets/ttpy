@@ -128,22 +128,13 @@ def _gram_svd(a):
     eigenvalues of ``a^H a``: everything below ``sqrt(eps_machine) * s[0]`` is
     noise and is dropped here, and the orthogonality of ``u`` degrades like
     ``eps_machine * cond(a)^2`` rather than ``eps_machine``, because the Gram
-    matrix squares the condition number.  Measured (float64, dense ``a`` of size
-    4096x64 with a logarithmically graded spectrum, seed 90 -- reproduced by
-    ``test_gram_orthogonality_degrades_with_the_condition_number``):
-
-        cond(a)   gram ||u^H u - I||   direct QR ||q^H q - I||
-        1e0       9.6e-15              2.9e-15
-        1e3       6.0e-11              2.5e-15
-        1e7       2.3e-03              2.8e-15
-
-    The direct path is flat in ``cond(a)``; the Gram path is not, and at
-    ``cond(a) = 1e7`` it has no orthogonality left to speak of.  The
-    *reconstruction* ``u diag(s) vh ~ a`` stays at ``~1e-15`` throughout -- it is
-    the orthogonality of the frame, not the factorization, that is lost, which
-    is exactly what an ALS sweep depends on.  Never use ``renorm='gram'`` when
-    the blocks may be ill-conditioned; see the ``amen_mv`` docstring for the
-    end-to-end number.
+    matrix squares the condition number.  The direct path is flat in
+    ``cond(a)`` and this one is not: by ``cond(a) = 1e7`` it has no
+    orthogonality left to speak of, while the *reconstruction*
+    ``u diag(s) vh ~ a`` stays at ``~1e-15`` throughout.  It is the
+    orthogonality of the frame, not the factorization, that is lost, which is
+    exactly what an ALS sweep depends on.  Never use ``renorm='gram'`` when the
+    blocks may be ill-conditioned; the numbers are in ``docs/NUMERICS.md``.
 
     An exactly zero ``a`` (which happens whenever a block of ``x`` or of ``A``
     is zero) has no singular direction to normalize by; the factorization
@@ -360,15 +351,10 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4, kickrank2=0,
             It is a per-block threshold, not a certificate on ``||y - Ax||``:
             the delivered error is usually at or below ``tol`` but can exceed
             it, because the ALS frames are not the optimal ones and because the
-            run starts from a *random* ``y0``.  Measured (float64, ``d=6``,
-            ``n=m=4``, ``r_A=r_x=4``, ``tol=1e-1``, 15 seeds, optimal SVD
-            truncation of the same product = ``6.0e-2``): 10 seeds land at
-            ``7.2e-2``, 5 seeds land at ``1.8e-1..2.0e-1`` -- twice the request.
-            Pin ``seed`` if a reproducible accuracy is needed at a loose
-            ``tol``.  The spread closes as ``tol`` tightens; on a product with a
-            decaying spectrum the delivered error tracks the optimal truncation
-            to three digits from ``tol=1e-2`` down (see
-            ``test_error_tracks_tol_where_truncation_is_active``).  ``tol=0``
+            run starts from a *random* ``y0``.  At a loose ``tol`` the spread
+            over seeds reaches a factor of two, so pin ``seed`` if a
+            reproducible accuracy is needed there; the spread closes as ``tol``
+            tightens (``docs/NUMERICS.md``).  ``tol=0``
             disables truncation entirely (and never satisfies the stopping
             test, so the run always spends ``nswp`` sweeps and warns).
         y: Initial guess (default: a random rank-2 TT).
@@ -378,13 +364,9 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4, kickrank2=0,
             at most ``kickrank + kickrank2``, so reaching a target rank ``r``
             from the default rank-2 guess needs at least ``(r - 2)/kickrank``
             sweeps.  This is the usual reason for a non-convergence warning, and
-            it is cheaper to fix with ``kickrank`` than with ``nswp``: measured
-            on ``d=16``, ``n=m=8``, ``r_A=r_x=12``, ``tol=1e-8`` (exact ranks
-            144), ``kickrank=4`` needs 36 sweeps / 27 s, ``kickrank=16`` needs 9
-            sweeps / 6.8 s and ``kickrank=40`` needs 4 sweeps / 6.1 s, all three
-            landing on rank 144 at ``1.5e-14``.  With ``nswp=20, kickrank=4``
-            the same problem stops at rank 82 with a relative error of ``0.86``
-            -- and warns, loudly, rather than returning it as an answer.
+            it is cheaper to fix with ``kickrank`` than with ``nswp``
+            (``docs/NUMERICS.md``).  A run that runs out of sweeps warns,
+            loudly, rather than returning a rank-starved iterate as an answer.
         kickrank: Rank of the residual enrichment (0 switches AMEn off and
             leaves plain one-site ALS, which cannot increase ranks).  It bounds
             the per-sweep rank growth; see ``nswp``.
@@ -399,16 +381,10 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4, kickrank2=0,
         renorm: ``'direct'`` (QR/SVD, default) or ``'gram'`` (orthogonalize
             through the Gram matrix when a block has more than 5x more rows
             than columns).  They are **not** equivalent: ``'gram'`` squares the
-            condition number of the block.  Measured end-to-end (float64,
-            reproduced by the two ``test_gram_*`` cases): on a well-conditioned
-            random operator (``d=6``, ``n=m=8``, ``r_A=r_x=3``, ``tol=1e-10``)
-            both reach ``~3e-15`` relative error, ``direct`` 3.3e-15 vs
-            ``gram`` 3.7e-15.  On an ill-conditioned one (``A = eye([8]*6)``,
-            ``x`` with a block spectrum spanning ``1e-10``, ``tol=1e-12``)
-            ``direct`` reaches ``6e-16`` while ``gram`` stalls at ``1e-8`` --
-            seven orders of magnitude worse, and it does not even report
-            convergence (``max_dx`` plateaus at ``~2e-10``).  Use ``'gram'``
-            only for tall thin blocks of moderate condition number.
+            condition number of the block, and on an ill-conditioned one it is
+            orders of magnitude worse and does not even report convergence
+            (``docs/NUMERICS.md``).  Use ``'gram'`` only for tall thin blocks of
+            moderate condition number.
         fkick: Also enrich during the forward half-sweep.  It lowers the error
             of a single call but leaves ``y`` with a less compact structure
             (the extra directions are not truncated afterwards), which shows up
@@ -423,10 +399,10 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4, kickrank2=0,
         that ``||y|| = 1``); pass it back as ``z0`` to warm-start a related
         matvec.  It is ``None`` when ``kickrank + kickrank2 == 0``.
         Precisely, ``z`` is an orthogonal projection of ``r = (A x - y)/||y||``
-        onto a rank-``kickrank`` subspace, so ``<z, r> = ||z||^2`` -- measured
-        to four digits, and the only property that distinguishes a correct ``z``
-        from an arbitrary enrichment subspace, since the accuracy of ``y`` is
-        blind to it (``test_z_is_the_projection_of_the_residual``).
+        onto a rank-``kickrank`` subspace, so ``<z, r> = ||z||^2`` -- the only
+        property that distinguishes a correct ``z`` from an arbitrary enrichment
+        subspace, since the accuracy of ``y`` is blind to it
+        (``test_z_is_the_projection_of_the_residual``).
 
     Raises:
         ValueError: on inconsistent shapes (of ``A``, ``x``, ``y`` or ``z``),
@@ -746,11 +722,10 @@ def amen_mv(A, x, tol, y=None, z=None, nswp=20, kickrank=4, kickrank2=0,
 def _check_left_orthogonal(core, k, tol=None):
     """Fail loudly if ``init_qr=False`` was a false promise.
 
-    The threshold has to follow the working precision: a genuinely orthogonal
-    float32 core comes out of a QR at ``||Q^H Q - I|| ~ 5e-8``, so the fixed
-    ``1e-8`` of the first version rejected correct input in float32.  ``1e3 *
-    eps`` is 1.2e-4 in float32 and stays at the old 1e-8 in float64, while a
-    core that is not orthogonal at all misses by O(1).
+    The threshold follows the working precision -- ``1e3 * eps``, i.e. 1.2e-4 in
+    float32 and 1e-8 in float64 -- because a genuinely orthogonal float32 core
+    comes out of a QR well above a fixed 1e-8, while a core that is not
+    orthogonal at all misses by O(1) in either precision (``docs/NUMERICS.md``).
     """
     q = rearrange(core, "a n b -> (a n) b")
     if tol is None:

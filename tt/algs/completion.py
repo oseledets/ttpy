@@ -99,12 +99,9 @@ class CompletionHistory:
             independent samples than the ``r_k r_{k+1}`` unknowns of the slice.
             Those are filled with the minimum-norm solution, which reproduces
             the samples exactly and is arbitrary in every direction the data
-            does not see.  **A run with a nonzero count can reach
-            ``fit = 1e-31`` and still be 100 % wrong away from the samples**;
-            measured, on a rank-4 tensor of shape ``6x6x6`` fitted from 38
-            samples (144 parameters): ``fit = 4.9e-31``, ``converged = True``,
-            relative error against the truth 5.8.  The run warns when this
-            happens.
+            does not see.  **A run with a nonzero count can reach a fit at
+            machine precision and still be 100 % wrong away from the samples**
+            (``docs/NUMERICS.md``).  The run warns when this happens.
         determined: ``underdetermined_slices == 0 and empty_slices == 0``, i.e.
             the data pins down every parameter of the model.  ``converged and
             determined`` is the pair that means "solved"; ``converged`` alone
@@ -246,23 +243,18 @@ def ttSparseALS(cooP, shape, x0=None, ttRank=1, tol=1e-5, maxnsweeps=20,
         on entries that were not in ``cooP``.  The code no longer leaves that
         to the reader: it counts the local systems the samples failed to
         determine (``info.underdetermined_slices``, ``info.empty_slices``),
-        exposes ``info.determined``, and warns.  Measured, rank-4 tensor of
-        shape ``6x6x6`` from 38 samples: ``fit = 4.9e-31``,
-        ``converged = True``, ``determined = False``, and the returned tensor
-        is off by 580 % of the norm of the truth.
+        exposes ``info.determined``, and warns.  How far apart those two things
+        can be is measured in ``docs/NUMERICS.md``.
 
     Note:
         ALS on this functional is not globally convergent: the problem is not
         jointly convex, and from a random start the sweep can run into a
-        stationary point far above the target.  Measured on a rank-2 tensor of
-        shape ``8x8x8x8`` (96 parameters) recovered at rank 2 with
-        ``alpha = 0``: with ~820 distinct samples 4 of 6 random starts reached
-        ``fit ~ 1e-15`` and the other 2 stalled around ``1e-1``; with ~1330
-        distinct samples 6 of 6 reached ``1e-15``.  The run *reports* which of
-        the two happened -- ``info.converged`` and ``info.stop_reason`` -- so
-        the remedy (more samples, another ``seed``, a better ``x0``) is a
-        decision the caller can actually make.  A stalled run is never returned
-        as if it were a solution.
+        stationary point far above the target; how often depends on how far the
+        sample count is above the parameter count (``docs/NUMERICS.md``).  The
+        run *reports* which of the two happened -- ``info.converged`` and
+        ``info.stop_reason`` -- so the remedy (more samples, another ``seed``, a
+        better ``x0``) is a decision the caller can actually make.  A stalled run
+        is never returned as if it were a solution.
     """
     t0 = time.perf_counter()
     hist = CompletionHistory()

@@ -24,11 +24,11 @@ with ``tau/2``, a palindromic composition (Strang, order 2).  The order is
 verified numerically against the dense solution of the *projected* ODE
 ``y' = P_{T_y M} A y`` -- the equation this integrator discretizes, and the only
 reference against which a splitting order is visible at all
-(``tests/test_verify_eigb_ksl.py::test_ksl_order_against_the_dense_projected_flow``,
-observed 1.00 and 2.00).  Measured against ``expm(tau A) y0`` instead, the two
-schemes are indistinguishable: either the manifold contains the trajectory and
-both are exact, or it does not and the tau-independent modelling error hides the
-splitting error.
+(``tests/test_verify_eigb_ksl.py::test_ksl_order_against_the_dense_projected_flow``).
+Against ``expm(tau A) y0`` instead the two schemes are indistinguishable: either
+the manifold contains the trajectory and both are exact, or it does not and the
+tau-independent modelling error hides the splitting error
+(``docs/NUMERICS.md``).
 
 The local exponentials
 ----------------------
@@ -43,10 +43,9 @@ on ``h``.  A step that cannot reach the requested tolerance within
 The estimate is normalized by the norm of the *input*, and the substep control
 compares it with ``tol`` times the norm of the current iterate.  When the flow
 grows or decays by orders of magnitude over one call, that normalization and the
-error of the *answer* part company: on a strongly non-normal operator with
-``||exp(A) x|| / ||x|| ~ 1e5``, asking for ``tol = 1e-10`` delivers 5.5e-8
-relative to the result and reports ``err_est = 6.4e-2``
-(``tests/test_verify_eigb_ksl.py::test_expmv_krylov_on_a_strongly_non_normal_operator``).
+error of the *answer* part company -- on a strongly non-normal operator by
+several orders of magnitude in both directions (``docs/NUMERICS.md``,
+``tests/test_verify_eigb_ksl.py::test_expmv_krylov_on_a_strongly_non_normal_operator``).
 Inside KSL, where ``tau ||B||`` is small, the two agree.
 
 What the fixed rank cannot see
@@ -647,14 +646,10 @@ def ksl(A, y0, tau, verb=1, scheme="symm", space=8, rmax=2000, use_normest=1,
 
             That number is a *first-order, one-point* estimate -- the tangent
             defect at the end point, times ``tau`` -- so it is an indicator, not
-            a bound, and it is optimistic on large steps.  Measured on
-            ``diag_ksl`` with a rank-3 guess against the exact elementwise
-            exponential: 4.73e-02 predicted against 4.95e-02 actual at
-            ``tau = 0.01``, 1.13e-01 against 2.16e-01 at 0.1, and 6.64e-02
-            against 5.39e-01 at 0.3 -- eight times optimistic at the largest
-            step, and *non-monotone*, because the defect is read at one point of
-            a trajectory that has already left the manifold.  It warns in every
-            one of those cases, so nothing is silent; just do not read it as a
+            a bound.  On large steps it is optimistic and *non-monotone*,
+            because the defect is read at one point of a trajectory that has
+            already left the manifold (``docs/NUMERICS.md``).  It warns in every
+            such case, so nothing is silent; just do not read it as a
             certificate.
         return_history: also return the :class:`KslHistory`.
 

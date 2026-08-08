@@ -65,10 +65,9 @@ def placement(d):
     deposit their ``(0, .)``-corner contributions on the last row of nodes,
     which is invisible under an all-Dirichlet mask (the square tests) and
     corrupts exactly the interface nodes of a glued multi-patch problem, where
-    that side is free.  Measured on Markeeva's triangle: with the full identity
-    the coupled energy *falls* under refinement (0.2457, 0.1981, 0.1679 at
-    ``d = 2, 3, 4``) instead of approaching 0.3404 from above.  Her own ``W0``
-    (materialized densely from her repository) has the zero row.
+    that side is free -- the coupled energy then *falls* under refinement
+    instead of converging from above (``docs/NUMERICS.md``).  Markeeva's own
+    ``W0`` (materialized densely from her repository) has the zero row.
     """
     d = int(d)
     n = 2 ** d

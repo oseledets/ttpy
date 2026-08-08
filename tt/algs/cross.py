@@ -76,9 +76,8 @@ class CrossHistory:
 
     * ``err_rel`` is the relative change between the last two sweeps, the
       classical cross indicator.  It tracks the true error to about an order of
-      magnitude while the ranks are still free to grow (measured on the QTT
-      Coulomb kernel of the tests: 4.7e-4 reported against 2.0e-3 true), and it
-      collapses to machine precision as soon as they are *not* free -- when
+      magnitude while the ranks are still free to grow, and it collapses to
+      machine precision as soon as they are *not* free -- when
       ``rmax`` binds or ``kickrank`` is zero.  Both of those are flagged.
     * ``err_round`` is the exact relative error added by the final rounding of
       the interpolant to ``eps``.  It is a measurement, not an estimate.
@@ -200,9 +199,8 @@ def _left_basis(mat, rmax):
     plus ``kickrank``, so a block that happens to be rank deficient -- which is
     the normal case, e.g. every ``f(i_1 + ... + i_d)`` has repeated fibers --
     resets the set to a smaller size than it had.  Left and right sets then cap
-    each other and the ranks lock at a fixed point far above ``eps``: measured
-    on ``1/(1 + i_1 + ... + i_4)``, ``n = 8``, ``eps = 1e-10``, that fixed point
-    is a 12% relative error reported as converged.
+    each other and the ranks lock at a fixed point far above ``eps`` -- a
+    double-digit relative error, reported as converged (``docs/NUMERICS.md``).
 
     Rank control is therefore not done here.  It is done by ``rmax`` and by the
     final :meth:`round` at ``eps``, which is the single owner of "how many ranks
@@ -222,27 +220,17 @@ def _select_rows(q, kickrank, rf, rmax, tau, kickrank2=0, rng=None):
 
     ``kickrank2`` adds that many *uniformly random* extra rows on top of the
     greedy ones.  They look useless -- a volume-maximising pivot is by
-    construction better than a random one -- and they are the only thing
-    measured to move the failure mode of this whole method: the greedy can reach
-    a fixed point of its own index sets while a region of the tensor it has
-    never sampled still carries the error.  Every internal indicator then
-    reports 1e-15 and the answer is wrong at 4e-04.
+    construction better than a random one -- and they are the only thing that
+    moves the failure mode of this whole method: the greedy can reach a fixed
+    point of its own index sets while a region of the tensor it has never
+    sampled still carries the error, and every internal indicator then reports
+    machine precision while the answer is wrong.
 
     It is off by default because the mitigation is partial and problem
-    dependent.  On the reproducer of ``docs/plans/cross-approximation.md``
-    (b300, numpy 2.4.6, ``d=6, n=10``, seeds 0/1/2), true relative error:
-
-    ========  ==========  ==========  ==========
-    ``k2``    seed 0      seed 1      seed 2
-    ========  ==========  ==========  ==========
-    0         3.82e-04    2.84e-10    3.82e-04
-    2         1.81e-06    2.84e-10    2.84e-10
-    4         2.84e-10    2.84e-10    2.84e-10
-    ========  ==========  ==========  ==========
-
-    So ``k2 = 2`` is not always enough and ``k2 = 4`` was here; the price is
-    1.4-2.5x more function evaluations.  Treat it as a knob to raise when the
-    black box has localized structure, not as a fix that can be defaulted on.
+    dependent, and how many extra rows are enough is seed dependent
+    (``docs/NUMERICS.md``, and ``docs/plans/cross-approximation.md`` for the
+    reproducer).  Treat it as a knob to raise when the black box has localized
+    structure, not as a fix that can be defaulted on.
     """
     qn = np.asarray(bk.to_numpy(q))
     npts, rho = qn.shape
