@@ -1,348 +1,359 @@
-# Совместимость со старым ttpy
+# Compatibility with the old ttpy
 
-Старый код `import tt` должен работать. Ниже — всё, что изменилось, и почему.
+Existing `import tt` code must keep working. Below is everything that changed,
+and why.
 
-## Что осталось ровно тем же
+## What stayed exactly the same
 
-`tt.vector` / `tt.matrix` и их атрибуты `d, n, r, core, ps, erank, is_complex`,
-`from_list / to_list / full / round / norm / copy`, арифметика, `__getitem__`,
-весь зоопарк конструкторов (`ones, rand, eye, xfun, linspace, sin, cos, delta,
-stepfun, unit, qshift, IpaS, Toeplitz, qlaplace_dd, kron, mkron, zkron, zkronv,
-zmeshgrid, zaffine, concatenate, sum, reshape, permute, matvec, col, diag, dot`).
+`tt.vector` / `tt.matrix` and their attributes `d, n, r, core, ps, erank,
+is_complex`, `from_list / to_list / full / round / norm / copy`, the arithmetic,
+`__getitem__`, and the whole zoo of constructors (`ones, rand, eye, xfun,
+linspace, sin, cos, delta, stepfun, unit, qshift, IpaS, Toeplitz, qlaplace_dd,
+kron, mkron, zkron, zkronv, zmeshgrid, zaffine, concatenate, sum, reshape,
+permute, matvec, col, diag, dot`).
 
-Порядок индексов сохранён: мода 1 — самая быстрая (`flat = i1 + n1*i2 + ...`),
-ядро TT-матрицы — `(r, i, j, r)`, строковый индекс первым, склейка `s = i + n*j`.
-`x.core` и `x.ps` дают ровно ту же F-упорядоченную раскладку, что и раньше
-(`tests/test_core.py::test_core_and_ps_match_legacy_layout` проверяет побайтово).
+The index order is preserved: mode 1 is the fastest (`flat = i1 + n1*i2 + ...`),
+a TT-matrix core is `(r, i, j, r)` with the row index first, and the merge is
+`s = i + n*j`. `x.core` and `x.ps` give exactly the same F-ordered layout as
+before (`tests/test_core.py::test_core_and_ps_match_legacy_layout` checks it
+byte for byte).
 
-## Что изменилось намеренно
+## What changed deliberately
 
-### 1. Хранилище — список ядер, а не плоский буфер
+### 1. Storage is a list of cores, not a flat buffer
 
-Владелец истины теперь `x.cores` (список массивов `(r,n,r)`). `x.core` и `x.ps` —
-**вычисляемые** свойства. Присваивание `x.core = buf` пересобирает ядра, но требует,
-чтобы `n` и `r` уже были известны; старая идиома «создать пустой `tt.vector()`,
-проставить `d, n, r`, вызвать `get_ps()`, положить `core`» больше не работает —
-вместо неё `tt.vector.from_list(cores)` или `tt.vector.from_flat(core, n, r)`.
-Причина: два владельца одних и тех же чисел рано или поздно расходятся.
+The owner of the truth is now `x.cores` (a list of `(r,n,r)` arrays). `x.core`
+and `x.ps` are **computed** properties. Assigning `x.core = buf` rebuilds the
+cores, but requires `n` and `r` to be known already; the old idiom — create an
+empty `tt.vector()`, set `d, n, r`, call `get_ps()`, drop in `core` — no longer
+works. Use `tt.vector.from_list(cores)` or `tt.vector.from_flat(core, n, r)`
+instead. The reason: two owners of the same numbers drift apart sooner or later.
 
-### 2. Исправлены ошибки, найденные сверкой с плотной истиной
+### 2. Bugs found by comparison against dense truth are fixed
 
-* **`Toeplitz`, `IpaS`, `qshift` возвращали транспонированную матрицу.**
-  `tt.qshift(d)` теперь даёт нижний сдвиг (единицы на первой поддиагонали),
-  `tt.IpaS(d, a)` — нижнюю бидиагональную с `a` под диагональю, `Toeplitz(x, kind='L')`
-  — нижнетреугольную. Проверено против плотных эталонов. Если ваш код
-  компенсировал старое поведение транспонированием — уберите компенсацию.
-  `IpaS` и `qshift` при этом перестроены через явную конструкцию с переносом
-  (двоичное сложение), а не через `Toeplitz`.
-* **`reshape` TT-матрицы** режет строки и столбцы синхронно. Плоский reshape
-  смешивал биты строки с битами столбца и давал молча неверный результат.
-* **`tt.dot(a, b)` сопряжает первый аргумент** (`sum(conj(a) * b)`). Для
-  вещественных данных ничего не меняется.
+* **`Toeplitz`, `IpaS` and `qshift` returned the transposed matrix.**
+  `tt.qshift(d)` now gives the lower shift (ones on the first subdiagonal),
+  `tt.IpaS(d, a)` the lower bidiagonal with `a` below the diagonal, and
+  `Toeplitz(x, kind='L')` the lower triangular one. Verified against dense
+  references. If your code compensated for the old behaviour with a transpose,
+  remove the compensation. `IpaS` and `qshift` were also rebuilt through an
+  explicit carry construction (binary addition) rather than through `Toeplitz`.
+* **`reshape` of a TT matrix** now cuts rows and columns in step. The flat
+  reshape mixed row bits with column bits and produced a silently wrong result.
+* **`tt.dot(a, b)` conjugates its first argument** (`sum(conj(a) * b)`). Nothing
+  changes for real data.
 
-### 3. У `amen_solve` изменено умолчание `max_full_size`: 50 -> 1000
+### 3. `amen_solve` changed its `max_full_size` default: 50 -> 1000
 
-Локальные системы меньше этого размера решаются плотно, большие — GMRES.
-Значение 50 имело смысл там, где локальный решатель был на Fortran. В Python
-порог другой: на 2^12 QTT-лапласиане 444 мс при 50 против 8 мс при 1000, причём
-плотный путь ещё и точнее (1.1e-9 против 1.8e-7) и даёт ранги 7 вместо 12.
-Если вы полагались на старое значение, передайте `max_full_size=50` явно.
+Local systems smaller than this are solved densely, larger ones by GMRES. The
+value 50 made sense where the local solver was Fortran. In Python the threshold
+is a different number: on a 2^12 QTT Laplacian it is 444 ms at 50 against 8 ms
+at 1000, and the dense path is more accurate as well (1.1e-9 against 1.8e-7) at
+ranks 7 instead of 12. If you relied on the old value, pass
+`max_full_size=50` explicitly.
 
-### 4. Мелочи
+### 4. Smaller things
 
-* `x.full()` для блочного TT (`r[0] > 1` или `r[-1] > 1`) возвращает форму
-  `(r0,) + n + (rd,)` с выкинутыми единичными границами. Старая версия заявляла
-  форму `[rd, r0, n...]`, что не соответствовало раскладке.
-* `tt.tensor` — устаревший алиас `tt.vector`, предупреждает через `DeprecationWarning`.
-* `write()`/`read()` пишут `.npz` вместо бинарного формата tt-fort.
-* `rand(n, d, r, samplefunc=...)`: `samplefunc(size)` вызывается как и раньше,
-  но по умолчанию используется генератор numpy (`default_rng`), а не глобальный
+* `x.full()` for a block TT (`r[0] > 1` or `r[-1] > 1`) returns the shape
+  `(r0,) + n + (rd,)` with unit boundaries dropped. The old version claimed the
+  shape `[rd, r0, n...]`, which did not match the layout.
+* `tt.tensor` is a deprecated alias of `tt.vector` and warns via
+  `DeprecationWarning`.
+* `write()`/`read()` write `.npz` instead of the binary tt-fort format.
+* `rand(n, d, r, samplefunc=...)`: `samplefunc(size)` is called as before, but
+  the default generator is numpy's `default_rng` rather than the global
   `np.random`.
-* Убраны `six`, `np.float`, `np.complex` — пакет работает на numpy >= 1.24.
+* `six`, `np.float` and `np.complex` are gone — the package runs on
+  numpy >= 1.24.
 
-## Внешние библиотеки, которых больше нет
+## External libraries that are gone
 
-Старый пакет вносил внутрь себя два чужих проекта. Оба заменены и сверены с
-плотной истиной:
+The old package vendored two foreign projects. Both were replaced and checked
+against dense truth:
 
-| было | сколько | заменено на | проверка |
+| was | size | replaced by | verified against |
 |---|---|---|---|
-| **EXPOKIT** (`tt-fort/expm/`, `dexp_mv`, `normest`) — локальная матричная экспонента в KSL | 5803 строки F77/F90 | `expmv_krylov` + `_norm_estimate` в `tt/algs/ksl.py` (Арнольди с адаптивным подшагом), ~50 строк | против `scipy.linalg.expm` |
-| **PRIMME** (`tt-fort/primme/`) — локальная задача на собственные значения в `eigb` | 89 файлов C/Fortran, ~1 МБ | плотный `eigh` для малых блоков, `scipy.sparse.linalg.lobpcg` для больших | против аналитических собственных чисел лапласиана |
+| **EXPOKIT** (`tt-fort/expm/`, `dexp_mv`, `normest`) — the local matrix exponential in KSL | 5803 lines of F77/F90 | `expmv_krylov` + `_norm_estimate` in `tt/algs/ksl.py` (Arnoldi with adaptive substepping), ~50 lines | `scipy.linalg.expm` |
+| **PRIMME** (`tt-fort/primme/`) — the local eigenproblem in `eigb` | 89 C/Fortran files, ~1 MB | a dense `eigh` for small blocks, `scipy.sparse.linalg.lobpcg` for large ones | the analytic eigenvalues of the Laplacian |
 
-Измерено на одной машине, вход бит-в-бит одинаковый.
+Measured on one machine, with bit-identical input.
 
-**KSL.** `d=6, n=2`, ранги `[1,2,4,8,4,2,1]` — это всё пространство, то есть
-проекционной ошибки нет и видна ровно точность локальной экспоненты:
+**KSL.** `d=6, n=2`, ranks `[1,2,4,8,4,2,1]` — that is the whole space, so there
+is no projection error and what shows is exactly the accuracy of the local
+exponential:
 
-| tau | старый (EXPOKIT) | ttpy 2 |
+| tau | old (EXPOKIT) | ttpy 2 |
 |---|---|---|
 | 1e-3 | 1.33e-08 | **1.96e-15** |
 | 1e-2 | 1.26e-05 | **2.09e-15** |
 | 1e-1 | 6.71e-03 | **8.24e-15** |
 
-Разрыв в 7–12 порядков объясняется двумя вещами: EXPOKIT вызывается там с
-фиксированным свободным допуском, а порядок K- и S-шагов в обратном проходе
-вещественной ветки `tt_ksl` нарушает палиндром Странга (см. выше). Наша версия
-на полном многообразии воспроизводит плотную экспоненту с машинной точностью.
-Тест: `tests/test_examples.py::test_ksl_is_exact_when_the_manifold_is_the_whole_space`.
+The gap of 7–12 orders of magnitude has two causes: EXPOKIT is called there with
+a fixed loose tolerance, and the order of the K- and S-steps in the backward
+pass of the real branch of `tt_ksl` breaks the Strang palindrome (see above).
+On the full manifold our version reproduces the dense exponential to machine
+precision. Test:
+`tests/test_examples.py::test_ksl_is_exact_when_the_manifold_is_the_whole_space`.
 
-Отдельно: на начальном условии с **недостижимыми** рангами (`r=8` при `n=2` на
-первых бондах) старый KSL возвращает вектор нормы 3.2e-08 при входной норме
-1491 — то есть практически ноль, без единого предупреждения. Наш отрабатывает
-такой вход штатно.
+Separately: on an initial condition with **unreachable** ranks (`r=8` at `n=2`
+on the first bonds) the old KSL returns a vector of norm 3.2e-08 for an input of
+norm 1491 — i.e. essentially zero, without a single warning. Ours handles such
+input normally.
 
-**eigb.** `d=8` (n=256), 4 наименьших собственных значения, точность против
-аналитической формулы `4 sin^2(pi k / 2(N+1))`:
+**eigb.** `d=8` (n=256), the 4 smallest eigenvalues, accuracy against the
+analytic formula `4 sin^2(pi k / 2(N+1))`:
 
-| | максимальная ошибка | время |
+| | largest error | time |
 |---|---|---|
-| старый (PRIMME) | 9.0e-17 | 26.8 мс |
-| ttpy 2 | 1.4e-16 | **14.0 мс** |
+| old (PRIMME) | 9.0e-17 | 26.8 ms |
+| ttpy 2 | 1.4e-16 | **14.0 ms** |
 
-То есть замена PRIMME держит ту же машинную точность и считает вдвое быстрее на
-этой задаче. Тест: `tests/test_examples.py::test_eigb_matches_a_dense_symmetric_eigensolver`.
+So the replacement for PRIMME holds the same machine precision and is twice as
+fast on this problem. Test:
+`tests/test_examples.py::test_eigb_matches_a_dense_symmetric_eigensolver`.
 
-## Чего больше нет
+## What is gone entirely
 
 * Fortran (`tt-fort`, `amen_f90`, `tt_f90`, `tt_eigb`, `tt_ksl`, `maxvol.f90`,
-  `cross.f90`), `f2py`, `numpy.distutils`, сабмодули, `setup.py`-сборка.
-  Установка — обычное колесо `py3-none-any`.
-* Бинарный формат файлов tt-fort (`.tt`). Старые файлы придётся сконвертировать
-  старым пакетом (или напишите конвертер — формат простой).
+  `cross.f90`), `f2py`, `numpy.distutils`, the submodules, the `setup.py` build.
+  Installation is an ordinary `py3-none-any` wheel.
+* The binary tt-fort file format (`.tt`). Old files have to be converted with
+  the old package (or write a converter — the format is simple).
 
-## `tt.eigb` и `tt.ksl` (замена Fortran-ядер `tt_eigb.f90` / `tt_ksl.f90`)
+## `tt.eigb` and `tt.ksl` (replacing the Fortran kernels `tt_eigb.f90` / `tt_ksl.f90`)
 
-Сигнатуры прежние: `tt.eigb.eigb(A, y0, eps, rmax=150, nswp=20,
-max_full_size=1000, verb=1) -> (y, lam)` и `tt.ksl.ksl(A, y0, tau, verb=1,
+The signatures are unchanged: `tt.eigb.eigb(A, y0, eps, rmax=150, nswp=20,
+max_full_size=1000, verb=1) -> (y, lam)` and `tt.ksl.ksl(A, y0, tau, verb=1,
 scheme='symm', space=8, rmax=2000, use_normest=1) -> y`, `tt.ksl.diag_ksl(...)`.
-Старые скрипты работают без правок. Что изменилось по существу:
+Old scripts run unchanged. What changed substantively:
 
-* **Порядок K- и S-шагов в обратном проходе KSL исправлен.** Вещественная ветка
-  Fortran (`tt_ksl`) делала на каждом ядре сначала K, потом S, то есть обратный
-  проход не был точным обращением прямого и палиндром Странга ломался.
-  Комплексная ветка (`ztt_ksl`) делала правильно; воспроизведена она.
-  Порядок схемы проверяется численно против **независимого** оракула:
+* **The order of the K- and S-steps in the backward KSL pass is fixed.** The
+  real Fortran branch (`tt_ksl`) did K first and then S on every core, so the
+  backward pass was not the exact reverse of the forward one and the Strang
+  palindrome broke. The complex branch (`ztt_ksl`) had it right, and that is
+  what is reproduced. The order of the scheme is verified numerically against an
+  **independent** oracle:
   `tests/test_verify_eigb_ksl.py::test_ksl_order_against_the_dense_projected_flow`
-  интегрирует спроецированное ОДУ `y' = P_{T_y M} A y` плотным DOP853 (проектор
-  строится в тесте с нуля на numpy) и даёт 1.00 для `scheme='first'` и 2.00 для
-  `scheme='symm'` при ошибке моделирования в 25 раз больше измеряемой ошибки
-  расщепления. Сравнивать надо именно со спроецированным потоком, а не с
-  `expm(tau A) y0`: относительно последнего разницы схем не видно.
-* **KSL измеряет и сообщает то, чего фиксированный ранг не видит.**
-  `check_rank=True` (по умолчанию) считает внекасательную часть
-  `(I - P_{T_y M}) A y` и кладёт в историю `defect_rel` и `step_error_est`
-  (= `tau ||(I-P) A y|| / ||y||`); при `step_error_est > defect_warn` — явный
-  `RuntimeWarning`. Измерено: `step_error_est` предсказывает истинную ошибку
-  шага против `scipy.linalg.expm` с точностью до 3%. Стоит одного TT-matvec
-  плюс один свип; `check_rank=False` возвращает старую цену.
-* **Локальный экспоненциал** — свой Арнольди с адаптивным подшагом в стиле
-  EXPOKIT вместо `dexp_mv`; `space` — та же размерность Крылова, `use_normest`
-  влияет только на выбор первого подшага (и не может изменить результат:
-  `test_ksl_knobs_do_not_change_the_answer`). Недостижимая точность —
-  `RuntimeError`, а не тихий ответ.
-* **Локальная задача на собственные значения в `eigb`** при
-  `size > max_full_size` решается `scipy.sparse.linalg.lobpcg` на неявном
-  операторе (вместо PRIMME); истинные локальные невязки измеряются и лежат в
-  `history.max_local_res`. Задачи меньше `5B + 10` всегда идут плотным путём.
-* **`eigb` меряет собственную невязку и сообщает о провале.** `ermax` (движение
-  ритцевских значений) не отличает сходимость от застревания: одноузловой ALS
-  не умеет наращивать ранг, поэтому при `B = 1` и ранге-1 начальном приближении
-  итерация стоит на месте, `ermax` падает до 1e-14 и раньше возвращалось
-  `lam = 7.8e-3` там, где минимум `1.5e-4` — молча. Теперь `check_residual=True`
-  (по умолчанию) считает `||A y_i - lam_i y_i||` в TT-формате (matvec + сумма +
-  QR-свип, без раскрытия в плотный вектор) и кладёт в `history.res` /
-  `history.res_rel`; при относительной невязке выше `res_warn` (1e-2) —
-  `RuntimeWarning` с числами. Цена — примерно один свип.
-  Лечение самой проблемы — начальное приближение большего ранга или `B > 1`.
-* **`sym_tol` по умолчанию** — `sqrt(eps)` рабочего типа, а не фиксированные
-  `1e-8`: в float32 проекция локальной матрицы несимметрична на уровне 1e-7 от
-  одного округления, и фиксированный порог отвергал любую float32-задачу.
-* **Новые необязательные аргументы** (по умолчанию поведение прежнее):
-  `return_history=True` возвращает объект истории (`EigbHistory` / `KslHistory`)
-  с посвиповыми/пошаговыми записями — они пишутся и при `verb=0`;
-  у `eigb` ещё `lobpcg_maxiter`, `sym_tol`, `check_residual`, `res_warn`;
-  у `ksl` — `local_tol`, `check_rank`, `defect_warn`. Несимметричная `A` в
-  `eigb` теперь ошибка, а не молча симметризованная задача; `nswp` без
-  сходимости — `RuntimeWarning` с достигнутым показателем.
-* **Оператор следует за вектором по бэкенду** (соглашение `amen_mv`): numpy-`A`
-  с torch-итерантом раньше падал внутри einops с `TypeError`.
+  integrates the projected ODE `y' = P_{T_y M} A y` with a dense DOP853 (the
+  projector is built from scratch inside the test, numpy only) and gives 1.00
+  for `scheme='first'` and 2.00 for `scheme='symm'`, with a modelling error 25x
+  larger than the splitting error being measured. The comparison has to be
+  against the projected flow, not against `expm(tau A) y0`: relative to the
+  latter the two schemes are indistinguishable.
+* **KSL measures and reports what a fixed rank cannot see.** `check_rank=True`
+  (the default) computes the off-tangent part `(I - P_{T_y M}) A y` and records
+  `defect_rel` and `step_error_est` (= `tau ||(I-P) A y|| / ||y||`) in the
+  history; when `step_error_est > defect_warn` it raises an explicit
+  `RuntimeWarning`. Measured: `step_error_est` predicts the true step error
+  against `scipy.linalg.expm` to within 3%. It costs one TT matvec plus one
+  sweep; `check_rank=False` restores the old price.
+* **The local exponential** is our own Arnoldi with EXPOKIT-style adaptive
+  substepping instead of `dexp_mv`; `space` is the same Krylov dimension, and
+  `use_normest` only affects the choice of the first substep (and cannot change
+  the result: `test_ksl_knobs_do_not_change_the_answer`). An unreachable
+  accuracy is a `RuntimeError`, not a quiet answer.
+* **The local eigenproblem in `eigb`** at `size > max_full_size` is solved by
+  `scipy.sparse.linalg.lobpcg` on an implicit operator (instead of PRIMME); the
+  true local residuals are measured and land in `history.max_local_res`.
+  Problems smaller than `5B + 10` always take the dense path.
+* **`eigb` measures its own residual and reports failure.** `ermax` (the
+  movement of the Ritz values) cannot tell convergence from being stuck:
+  one-site ALS cannot grow a rank, so with `B = 1` and a rank-1 initial guess
+  the iteration stands still, `ermax` drops to 1e-14, and what used to come back
+  was `lam = 7.8e-3` where the minimum is `1.5e-4` — silently. Now
+  `check_residual=True` (the default) computes `||A y_i - lam_i y_i||` in the TT
+  format (matvec + sum + QR sweep, never expanding into a dense vector) and puts
+  it in `history.res` / `history.res_rel`; a relative residual above `res_warn`
+  (1e-2) raises a `RuntimeWarning` with the numbers. It costs about one sweep.
+  The cure for the underlying problem is a higher-rank initial guess or `B > 1`.
+* **`sym_tol` defaults** to `sqrt(eps)` of the working dtype rather than a fixed
+  `1e-8`: in float32 the projection of the local matrix is asymmetric at the
+  1e-7 level from rounding alone, and a fixed threshold rejected every float32
+  problem.
+* **New optional arguments** (the default behaviour is unchanged):
+  `return_history=True` returns a history object (`EigbHistory` / `KslHistory`)
+  with per-sweep or per-step records — written even at `verb=0`; `eigb` also
+  takes `lobpcg_maxiter`, `sym_tol`, `check_residual`, `res_warn`, and `ksl`
+  takes `local_tol`, `check_rank`, `defect_warn`. A non-symmetric `A` in `eigb`
+  is now an error rather than a silently symmetrized problem, and `nswp` without
+  convergence raises a `RuntimeWarning` carrying the indicator reached.
+* **The operator follows the vector's backend** (the `amen_mv` convention): a
+  numpy `A` with a torch iterate used to die inside einops with a `TypeError`.
 
 ## `tt.optimize`, `tt.completion`, `tt.riemannian`, `tt.solvers`
 
-Четыре модуля, которые и в старом ttpy были чистым Python. Сигнатуры прежние,
-старые пути импорта работают (`from tt.optimize import tt_min`,
+Four modules that were pure Python in the old ttpy as well. The signatures are
+unchanged and the old import paths work (`from tt.optimize import tt_min`,
 `from tt.completion.als import ttSparseALS`, `from tt.riemannian import
 riemannian`, `from tt.solvers import GMRES`, `tt.min_tens`, `tt.min_func`,
-`tt.GMRES`); реализация переехала в `tt/algs/{optimize,completion,riemannian,
-solvers}.py`. У всех четырёх появился необязательный `return_history=True`
-(у `ttSparseALS` история возвращалась всегда) — записи ведутся и при `verb=0`.
+`tt.GMRES`); the implementation moved to `tt/algs/{optimize,completion,
+riemannian,solvers}.py`. All four gained an optional `return_history=True`
+(`ttSparseALS` always returned its history) — records are kept even at `verb=0`.
 
-### `min_tens` / `min_func` (бывший `tt/optimize/tt_min.py`)
+### `min_tens` / `min_func` (formerly `tt/optimize/tt_min.py`)
 
-* Левые и правые индексные множества хранятся раздельно. В старом коде один
-  массив `Jy` означал то левый набор, то правый — в зависимости от того, куда
-  идёт свип; это работало, но не проверялось.
-* Свип **в обе стороны** обрезает сглаженный блок до `rmax` сингулярных
-  векторов. Старый код шёл влево через SVD, а вправо через простой QR, из-за
-  чего индексные наборы на каждом втором полусвипе разрастались до ~4·`rmax`.
-* `min_func` вызывает `fun` **только** на массиве `(P, d)` — в том числе при
-  финальном пересчёте в рекордной точке (старый код передавал туда вектор
-  `(d,)`, и векторизованная функция падала в самом конце успешного прогона).
-* Возвращаемое значение всегда пересчитано в возвращаемой точке;
-  `history.consistency` — расхождение с тем, что видел свип (ненулевое только
-  для недетерминированной функции).
-* Новые именованные аргументы: `rho` (крутизна сглаживающей функции по
-  умолчанию `pi/2 - arctan((p - lam)/rho)`; у `min_func` — `0.5`, как в
-  сигнатуре, у `min_tens` — `1.0`, как в старом коде), `seed`,
-  `return_history`.
-* `history.evaluations` считается **с повторами**: соседние свипы просматривают
-  пересекающиеся блоки.
+* The left and right index sets are stored separately. In the old code one array
+  `Jy` meant the left set or the right one depending on the sweep direction;
+  that worked, but it was never checked.
+* The sweep truncates the smoothed block to `rmax` singular vectors **in both
+  directions**. The old code went left through an SVD and right through a plain
+  QR, so the index sets grew to about 4·`rmax` on every other half-sweep.
+* `min_func` calls `fun` **only** on a `(P, d)` array — including the final
+  re-evaluation at the record point (the old code passed a `(d,)` vector there,
+  and a vectorized function died at the very end of a successful run).
+* The returned value is always re-evaluated at the returned point;
+  `history.consistency` is its discrepancy with what the sweep saw (nonzero only
+  for a non-deterministic function).
+* New keyword arguments: `rho` (the steepness of the default smoothing function
+  `pi/2 - arctan((p - lam)/rho)`; `0.5` for `min_func`, as in the signature, and
+  `1.0` for `min_tens`, as in the old code), `seed`, `return_history`.
+* `history.evaluations` counts **with repetitions**: adjacent sweeps look at
+  overlapping blocks.
 
-### `ttSparseALS` (бывший `tt/completion/als.py`)
+### `ttSparseALS` (formerly `tt/completion/als.py`)
 
-* Больше не портит вход: старый код делил `cooP['values']` на норму на месте.
-* Матрицы наименьших квадратов собираются сразу для всех сэмплов двумя
-  прогонами интерфейсов вместо одного Python-вызова `getRow` на пару
-  (сэмпл, срез): `O(P d r^2)` BLAS вместо `O(P d^2 r^2)` интерпретатора.
-* Срез, в который не попал ни один сэмпл, сохраняет прежнее значение, а не
-  обнуляется (обнуление меняет `X`, не меняя функционал, — молча убивает ранг).
-* `alpha` наконец используется (в старом коде вызов был закомментирован): это
-  `rcond` локальной задачи; `alpha <= 0` — точное решение, единственный режим
-  с гарантией монотонного убывания функционала.
-* `converged` теперь означает «функционал дошёл до `tol`». Остановка на
-  стационарной точке ALS выше `tol` — это `stop_reason='stalled'` и
-  `converged=False`. Замер: ранг-2 тензор `8x8x8x8` (96 параметров),
-  восстановление на истинном ранге, `alpha=0`: при ~820 различных сэмплах
-  4 старта из 6 доходят до `fit ~ 1e-15`, 2 застревают на `1e-1`; при ~1330
-  сэмплах — 6 из 6.
-* `time.clock` (удалён из Python 3.8) больше нет.
+* It no longer damages its input: the old code divided `cooP['values']` by the
+  norm in place.
+* The least-squares matrices are assembled for all samples at once by two
+  interface passes instead of one Python `getRow` call per (sample, slice) pair:
+  `O(P d r^2)` in BLAS instead of `O(P d^2 r^2)` in the interpreter.
+* A slice that no sample touched keeps its previous value instead of being
+  zeroed (zeroing changes `X` without changing the functional — it silently
+  destroys rank).
+* `alpha` is finally used (in the old code the call was commented out): it is
+  the `rcond` of the local problem, and `alpha <= 0` means the exact solution,
+  the only mode with a guarantee that the functional decreases monotonically.
+* `converged` now means "the functional reached `tol`". Stopping at an ALS
+  stationary point above `tol` is `stop_reason='stalled'` and
+  `converged=False`. Measured: a rank-2 tensor `8x8x8x8` (96 parameters),
+  recovered at the true rank with `alpha=0`: with ~820 distinct samples 4 of 6
+  starts reach `fit ~ 1e-15` and 2 stall at `1e-1`; with ~1330 samples, 6 of 6.
+* `time.clock` (removed in Python 3.8) is gone.
 
-### `project` / `projector_splitting_add` / `tt_qr` (бывший `tt/riemannian/`)
+### `project` / `projector_splitting_add` / `tt_qr` (formerly `tt/riemannian/`)
 
-* Убрана `numba`-ветка: она дублировала ту же математику развёрнутыми
-  шестикратными циклами и включалась только когда все ранги в списке `Z`
-  совпадали. Те же свёртки через `einsum` быстрее и без компилятора.
-* Работают и на комплексных тензорах (фреймы входят в свёртки сопряжёнными);
-  на вещественных формулы совпадают со старыми.
-* Ветка `debug=True` со встроенными `assert` убрана — вместо неё тесты против
-  плотного проектора, собранного из SVD развёрток `X` независимо от кода.
-* Работают на torch-бэкенде (проверено на CUDA).
+* The `numba` branch is gone: it duplicated the same mathematics with unrolled
+  sixfold loops and only engaged when every rank in the list `Z` was equal. The
+  same contractions through `einsum` are faster and need no compiler.
+* They work on complex tensors as well (the frames enter the contractions
+  conjugated); on real data the formulas coincide with the old ones.
+* The `debug=True` branch with its inline `assert`s is gone — replaced by tests
+  against a dense projector assembled from the SVDs of the unfoldings of `X`,
+  independently of this code.
+* They work on the torch backend (verified on CUDA).
 
-### `GMRES` (бывший `tt/solvers.py`)
+### `GMRES` (formerly `tt/solvers.py`)
 
-* Рестарты — цикл, а не рекурсия (старая версия вызывала себя на каждый
-  рестарт и при большом `maxit` упиралась в стек).
-* `u_0` не портится. Старая версия делала `u_0 += ...` по месту.
-* Возвращается **истинная** относительная невязка `||b - A x|| / ||b||`
-  посчитанного `x`. Старая версия возвращала невязку первой итерации
-  последнего рестарта и по ней же объявляла сходимость.
-* Малая задача наименьших квадратов на матрице Хессенберга решается плотно
-  (`lstsq`) вместо вручную накопленных вращений Гивенса: старые вращения были
-  вещественными и портили комплексный случай, а скалярное произведение
-  сопрягалось не с той стороны.
-* Расслабление точности матвека ограничено единицей: относительная ошибка 1
-  означает «вернуть что угодно».
-* Несходимость — `RuntimeWarning` с достигнутой невязкой, а не молчание.
-* Из сигнатуры убран служебный аргумент `_iteration` (счётчик рекурсии).
+* Restarts are a loop, not recursion (the old version called itself once per
+  restart and ran into the stack at a large `maxit`).
+* `u_0` is not damaged. The old version did `u_0 += ...` in place.
+* The **true** relative residual `||b - A x|| / ||b||` of the computed `x` is
+  returned. The old version returned the residual of the first iteration of the
+  last restart and declared convergence from it.
+* The small least-squares problem on the Hessenberg matrix is solved densely
+  (`lstsq`) instead of with hand-accumulated Givens rotations: the old rotations
+  were real and corrupted the complex case, and the inner product was conjugated
+  on the wrong side.
+* The relaxation of the matvec accuracy is capped at one: a relative error of 1
+  means "return anything".
+* Non-convergence is a `RuntimeWarning` carrying the residual reached, not
+  silence.
+* The internal `_iteration` argument (the recursion counter) is gone from the
+  signature.
 
-### Правки после состязательной проверки (`tests/test_verify_ports.py`)
+### Changes after adversarial verification (`tests/test_verify_ports.py`)
 
-* `project` теперь **отказывается** работать в рангово-дефектной точке.
-  Замер: тензор ранга 1, записанный TT-рангами `(1, 2, 2, 1)`, `d = 3`,
-  `n = 4`, float64 — формула возвращала корректный эрмитов идемпотентный
-  проектор (идемпотентность 1.6e-16), отличающийся от касательного проектора
-  в этой точке на 31 % нормы. Прежняя защита («ортогонализация изменила
-  ранги») не срабатывала никогда: QR ранг не роняет. `X.round(0)` ранг тоже
-  не уменьшает — `chop` при `eps <= 0` возвращает полный размер по
-  определению; уменьшает `X.round(1e-14)`. Проверка точная, а не
-  эвристическая: сингулярные числа треугольного множителя `R_k` левого
-  QR-свипа после правой ортогонализации — это в точности сингулярные числа
-  `(k+1)`-й развёртки `X`.
-* `projector_splitting_add` в такой точке, наоборот, **оставлен рабочим**:
-  замер даёт точность 1.3e-15 на том же примере, отказ был бы регрессией.
-  `tt_qr` там же даёт ортогональность и восстановление 1e-15.
-* `ttSparseALS` больше не молчит о комплексных данных: `cooP['values']`
-  (или `x0`) с мнимой частью — это `TypeError`, а не приведение к `float64`
-  за `ComplexWarning` с последующим «`fit ~ 1e-30`» для подгонки под половину
-  данных.
-* `ttSparseALS` считает и сообщает, сколько локальных систем данные не
-  определяют: `info.underdetermined_slices`, `info.empty_slices`,
-  `info.determined`, плюс `RuntimeWarning`. Замер: тензор ранга 4 формы
-  `6x6x6` (144 параметра) по 38 сэмплам — `fit = 4.9e-31`,
-  `converged = True`, а относительная ошибка против истины 5.8. Теперь
-  `determined = False`. `converged` без `determined` означает только
-  «воспроизводит сэмплы».
-* `ttSparseALS` масштабирует `x0` вместе с данными. Раньше при
-  `maxnsweeps = 0` возвращалось `||values|| * x0`, а «старт из точного
-  решения» стартовал из `||values||`-кратного решения. Множитель уходит в
-  нулевое ядро, которое первое же локальное решение переписывает целиком, —
-  прогон в один свип и длиннее не меняется.
-* `min_tens` / `min_func`: `nswp < 1` и `rmax < 1` — `ValueError` (раньше
-  `nswp=0` падал с `AttributeError: 'NoneType' object has no attribute
-  'reshape'`); `rmax=None` работает как «без ограничения», как и обещал
-  докстринг `_search`; `history.index_sizes` при `d = 1` — список пар, как и
-  при `d > 1` (раньше `[1, 1]`, из-за чего `max_index_set` и `repr(history)`
-  падали с `TypeError`); блок из одних NaN — `FloatingPointError`, а не
-  `AttributeError`.
-* `GMRES`: `eps < 0` — `ValueError` (раньше это молча означало «не обрезать
-  ничего и никогда не сойтись»); деление на точный ноль в расслаблении
-  точности матвека при `eps = 0` и инвариантном подпространстве Крылова
-  закрыто явной веткой.
-* **Оракул в `tests/test_ports.py` был неверен для комплексного случая** и
-  чинился именно он, а не код: проектор на строчное пространство развёртки
-  собирался из `vh[:r].conj().T`, то есть на комплексное сопряжение строчного
-  пространства. Такая матрица эрмитова, идемпотентна и имеет правильный след,
-  поэтому ни один инвариант её не видит, а в точке максимального ранга (где и
-  стоял комплексный тест — `n = [3, 4, 3]`, ранг 3, касательное пространство
-  все 36 измерений) она просто равна единице. На невырожденном примере
-  (`n = [3, 4, 5]`, ранг 2, касательное пространство 24 из 60) расхождение
-  74 %. Правильный оракул — `vh[:r].T`; он совпадает с базисом касательного
-  пространства, построенным прямо по определению
-  (`span_k tau(C_1, ..., dC_k, ..., C_d)`), до 2.6e-15, и с `project` до
-  6.7e-16. Тесты, сравнивающие с плотным проектором, теперь проверяют, что
-  случай невырожден.
+* `project` now **refuses** to work at a rank-deficient point. Measured: a
+  rank-1 tensor written with TT ranks `(1, 2, 2, 1)`, `d = 3`, `n = 4`, float64 —
+  the formula returned a correct Hermitian idempotent projector (idempotence
+  1.6e-16) differing from the tangent projector at that point by 31 % of its
+  norm. The previous guard ("orthogonalization changed the ranks") never fired:
+  a QR never drops rank. `X.round(0)` does not reduce the rank either — `chop`
+  at `eps <= 0` returns the full size by definition; `X.round(1e-14)` does. The
+  test is exact rather than heuristic: the singular values of the triangular
+  factor `R_k` of the left QR sweep, after the right orthogonalization, are
+  exactly the singular values of the `(k+1)`-st unfolding of `X`.
+* `projector_splitting_add` at such a point, by contrast, is **left working**:
+  it measures 1.3e-15 on the same example, and refusing would be a regression.
+  `tt_qr` there gives orthogonality and reconstruction at 1e-15.
+* `ttSparseALS` no longer stays quiet about complex data: `cooP['values']` (or
+  `x0`) with an imaginary part is a `TypeError`, not a cast to `float64` behind
+  a `ComplexWarning` followed by "`fit ~ 1e-30`" for a fit to half the data.
+* `ttSparseALS` counts and reports how many local systems the data fails to
+  determine: `info.underdetermined_slices`, `info.empty_slices`,
+  `info.determined`, plus a `RuntimeWarning`. Measured: a rank-4 tensor of shape
+  `6x6x6` (144 parameters) from 38 samples gives `fit = 4.9e-31`,
+  `converged = True`, and a relative error against the truth of 5.8. Now
+  `determined = False`. `converged` without `determined` only means "reproduces
+  the samples".
+* `ttSparseALS` scales `x0` together with the data. Previously `maxnsweeps = 0`
+  returned `||values|| * x0`, and "start from the exact solution" started from
+  `||values||` times the solution. The factor goes into the zeroth core, which
+  the very first local solve overwrites entirely — a run of one sweep or more is
+  unaffected.
+* `min_tens` / `min_func`: `nswp < 1` and `rmax < 1` are a `ValueError`
+  (previously `nswp=0` died with `AttributeError: 'NoneType' object has no
+  attribute 'reshape'`); `rmax=None` works as "no cap", as the docstring of
+  `_search` always promised; `history.index_sizes` at `d = 1` is a list of pairs
+  just as it is at `d > 1` (previously `[1, 1]`, which made `max_index_set` and
+  `repr(history)` die with a `TypeError`); an all-NaN block is a
+  `FloatingPointError`, not an `AttributeError`.
+* `GMRES`: `eps < 0` is a `ValueError` (previously it silently meant "truncate
+  nothing and never converge"); the division by an exact zero in the matvec
+  accuracy relaxation, at `eps = 0` with an invariant Krylov subspace, is closed
+  by an explicit branch.
+* **The oracle in `tests/test_ports.py` was wrong for the complex case**, and it
+  was the oracle that got fixed, not the code: the projector onto the row space
+  of an unfolding was assembled from `vh[:r].conj().T`, i.e. onto the complex
+  conjugate of the row space. Such a matrix is Hermitian, idempotent and has the
+  right trace, so no invariant sees it, and at a point of maximal rank — which is
+  where the complex test stood (`n = [3, 4, 3]`, rank 3, tangent space all 36
+  dimensions) — it is simply the identity. On a non-degenerate example
+  (`n = [3, 4, 5]`, rank 2, tangent space 24 inside 60) the discrepancy is 74 %.
+  The correct oracle is `vh[:r].T`; it agrees with a basis of the tangent space
+  built straight from the definition (`span_k tau(C_1, ..., dC_k, ..., C_d)`) to
+  2.6e-15, and with `project` to 6.7e-16. The tests that compare against the
+  dense projector now check that the case is non-degenerate.
 
-## Изменения умолчаний в 2.0 (после первой волны портирования)
+## Default changes in 2.0 (after the first wave of porting)
 
-Не относится к легаси-совместимости (в `ttpy` 1.x этих аргументов не было), но
-меняет поведение кода, написанного против ранних сборок 2.0.
+Not a legacy-compatibility matter (these arguments did not exist in `ttpy` 1.x),
+but it changes the behaviour of code written against early 2.0 builds.
 
-* **`amen_solve(..., check_true_res=)` теперь `False`.** Раньше точная невязка
-  `||A x - f|| / ||f||` считалась после подходящих свипов и была критерием
-  остановки. Форма произведения `A x` имеет ядра `(rA_k rx_k, n_k, rA_{k+1}
-  rx_{k+1})` — ранги перемножаются, — и на предобусловленной 2D-задаче
-  (`r_A = 161`, `r_x = 122`) это ранг 19642 и 12.3 ГБ в одном ядре; замеренный
-  пик — 91.8 ГиБ ради числа, которое только печатается. То же произведение,
-  округлённое до 1e-12, имеет ранг 256.
+* **`amen_solve(..., check_true_res=)` is now `False`.** The exact residual
+  `||A x - f|| / ||f||` used to be computed after suitable sweeps and served as
+  the stopping criterion. The product `A x` has cores
+  `(rA_k rx_k, n_k, rA_{k+1} rx_{k+1})` — the ranks multiply — and on a
+  preconditioned 2D problem (`r_A = 161`, `r_x = 122`) that is rank 19642 and
+  12.3 GB in a single core, with a measured peak of 91.8 GiB, for a number that
+  is only printed. The same product rounded to 1e-12 has rank 256.
 
-  Следствия для вызывающего: `info.true_res` теперь `nan` (не догадка, а
-  «не измерялось»), критерий остановки — `max_res`, локальная невязка
-  `||B_k x_k - rhs_k||` каждого блока **до** его решения. Гарантия «не вернуть
-  итерацию хуже уже виденной» переведена на активную меру. Точная невязка
-  доступна прежним аргументом и предупреждает о цене до выделения памяти
-  (`true_res_budget`).
+  Consequences for the caller: `info.true_res` is now `nan` (not a guess but
+  "not measured"), and the stopping criterion is `max_res`, the local residual
+  `||B_k x_k - rhs_k||` of every block **before** it is solved. The guarantee
+  "never return an iterate worse than one already seen" now rests on an active
+  measure. The exact residual is still available through the same argument and
+  warns about its cost before allocating (`true_res_budget`).
 
-* **`ksl` отказывается на жёстких шагах вместо того, чтобы вернуть число.**
-  S-шаги проектор-сплиттинга идут назад по времени, поэтому для диссипативного
-  `A` они усиливают; последующий K-шаг сжимает данные, но не накопленную
-  ошибку округления. Замерено на `dy/dt = -(2^L+1)^2 Laplace y`: при
-  `tau||A|| = 169` возвращалось `||y|| = 3.3e+106` там, где точная норма 0.307.
-  Теперь каждая локальная экспонента пишет коэффициент усиления, история несёт
-  `max_growth` и `roundoff_floor`, при полном исчерпании разрядов —
-  `RuntimeError`, при превышении запрошенного `local_tol` — предупреждение.
-  Порог измерен, а не выведен; таблица замеров стоит рядом с
-  `KSL_GROWTH_EXPONENT`.
+* **`ksl` refuses a stiff step instead of returning a number.** The S-steps of
+  the projector splitting run backwards in time, so for a dissipative `A` they
+  amplify; the following K-step shrinks the data but not the rounding error that
+  accumulated. Measured on `dy/dt = -(2^L+1)^2 Laplace y`: at `tau||A|| = 169`
+  it returned `||y|| = 3.3e+106` where the exact norm is 0.307. Now every local
+  exponential records its growth factor, the history carries `max_growth` and
+  `roundoff_floor`, exhausting the digits entirely is a `RuntimeError`, and
+  exceeding the requested `local_tol` is a warning. The threshold is measured,
+  not derived; the table of measurements sits next to `KSL_GROWTH_EXPONENT`.
 
-* **`eigb` предупреждает по обратной ошибке, а не по относительной невязке.**
-  Порог `res_warn` больше не фиксированный `1e-2`, а `sqrt(eps)`, и применяется
-  к `||A y - lam y|| / ||A||_2`, а не к `/ ||A y||`. Второе требует
-  *относительной* точности каждого собственного числа, что у дна спектра
-  недостижимо: на `qlaplace_dd([10])` числа верны до 1e-9 абсолютно, а
-  `res/||Ay||` равно 3.0e-04. `history.res_rel` сохранена, добавлены
-  `history.res_back` и `history.anorm`.
+* **`eigb` warns on the backward error, not on the relative residual.** The
+  `res_warn` threshold is no longer a fixed `1e-2` but `sqrt(eps)`, and it
+  applies to `||A y - lam y|| / ||A||_2` rather than `/ ||A y||`. The latter
+  demands *relative* accuracy of every eigenvalue, which is unreachable at the
+  bottom of the spectrum: on `qlaplace_dd([10])` the values are correct to 1e-9
+  absolute while `res/||Ay||` is 3.0e-04. `history.res_rel` is kept, and
+  `history.res_back` and `history.anorm` were added.
 
-* **`tt.permute` возвращает сжатое представление.** Раньше пузырьковые
-  перестановки оставляли запас ранга: на трёхпиковой разделимой функции,
-  перемешанной в Мортон-порядок при `d = 15`, — ранг 1024 у тензора,
-  собственный ранг которого 102. Тензор был верен, представление — нет.
+* **`tt.permute` returns a compressed representation.** Bubble transpositions
+  used to leave rank slack behind: on a three-peak separable function shuffled
+  into Morton order at `d = 15`, rank 1024 for a tensor whose own rank is 102.
+  The tensor was right, the representation was not.

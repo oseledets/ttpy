@@ -818,7 +818,7 @@ at `|Ω| = 10 × dof`; riem §5.3) and must not ship as a default.
 
 ## 5. The hard benchmark suite
 
-The user asked for "нормальные сложные тестовые примеры". This is every hard
+The user asked for "proper, hard test examples". This is every hard
 problem proposed across the four specs, in one table.
 
 ### 5.1 What the artifacts are, and where they live
@@ -882,7 +882,7 @@ and only a fixture has to be written.
 | a14 | the negative benchmark: unpreconditioned Rayleigh-quotient descent on QTT | `qlaplace_dd([d])`, `d = 6, 8, 10, 12`, rank cap 4 | `λ_1 = 4 sin²(π/(2(N+1)))`. Measured: 1413 iterations to 1e-3 at `κ=1.7e3`; **never** in 4000 at `κ ≥ 2.7e4`; at `d = 12` the Rayleigh quotient is **411x too large** after 4000 iterations. Reproduced on two different hosts to the exact iteration count | eig §3.2, riem §6.1, §11.2 | it is in the suite to keep anyone from claiming a Riemannian eigensolver is usable on QTT elliptic problems **without** a preconditioner. Riemannian GD is 1398 against truncated SD's 1413 — the tangent projection changes nothing | `bench/` |
 | a15 | Kronecker-sum Laplacian with an exponential-sum preconditioner | `A = Σ_i I⊗…⊗L⊗…⊗I`, `D=4`, `n ∈ {32,128,512}`, manifold rank 1, `ρ_B = 41/51/61` | `λ_1 = D·4 sin²(π/(2(n+1)))`, analytic. Measured: preconditioned **10, 11, 12** iterations to 1e-3 across `κ = 4.4e2 … 1.1e5`; unpreconditioned 475 then never | riem §6.3, §11.3 | the textbook signature of spectral equivalence, and the test that makes the `prec=` interface testable **without waiting for BPX**. `riemannian.project` already sums a list, so this runs today | `tests/` (`n = 32, 128`) + `bench/` (`n = 512`) |
 | a16 | QTT ranks of singular / oscillatory / layer functions | `x^{3/4}, x^{1/2}, x^{1/4}, x−x²/2, sin(2^10 πx), exp(-x/1e-4)`, `L = 10..20` | measured (qtt §1.2): an algebraic vertex singularity costs **two** extra rank units at 1e-6 and **four** at 1e-10, **flat in `L`**; the oscillatory function is rank 16 exactly where the grid barely resolves it and rank **2** once resolved; the boundary layer is rank **1** | qtt §1.2, H2 (approximation half) | the entire empirical case for "textbook discretization on a `2^50` grid, compressed" | `tests/` |
-| a17 | the exact `D = 1` inverse as a direct solve | `A_DN = (I−S)ᵀ(I−S)`, `T = Toeplitz(ones, kind='L')`, `a ≡ 1`, `L = 10..40` | `u = x − x²/2`, nodally exact. Measured: relative nodal error 1.6e-15 … 5.55e-15 at rank 3 in 2–4 ms, while `4^L·eps` reaches 2.68e+08 | qtt §2.4, V12a | the one corner where "может можно лучше" is right. Primitives exist today (`IpaS`, `Toeplitz`); M3 turns it into an entry point | `tests/` |
+| a17 | the exact `D = 1` inverse as a direct solve | `A_DN = (I−S)ᵀ(I−S)`, `T = Toeplitz(ones, kind='L')`, `a ≡ 1`, `L = 10..40` | `u = x − x²/2`, nodally exact. Measured: relative nodal error 1.6e-15 … 5.55e-15 at rank 3 in 2–4 ms, while `4^L·eps` reaches 2.68e+08 | qtt §2.4, V12a | the one corner where "maybe we can do better" is right. Primitives exist today (`IpaS`, `Toeplitz`); M3 turns it into an entry point | `tests/` |
 | a18 | unpreconditioned AMEn accuracy floor | `qlaplace_dd([d])`, `d = 6..24`, `eps = 1e-10`, `nswp = 40` | measured for the **DN** operator (qtt §2.1): the achieved relative nodal error tracks `4^L·eps` to within a factor 1.7 across eight orders of magnitude, and AMEn reports `converged=False`, `true_res = 9.76` at `d = 24` | qtt §2.1, V9 | representation ill-conditioning, measured end to end. **The DD variant runs today but its reference numbers are `not measured`** — the spec's numbers are DN, so the runnable-today arm is a rank/`true_res` observation until K1 lands | `bench/` |
 | a19 | Anderson localization, as a documented refusal | `−Δ_h + diag(V)`, `V` i.i.d. uniform on `[−W/2, W/2]`, 1D QTT grid | none: the diagonal of an i.i.d. random vector has **full** QTT rank by construction | eig §9.6 | the honest "tensor methods do not apply unless you change the question" case: assert that building the operator hits `rmax` and that the solver says so | `tests/` |
 
@@ -1086,7 +1086,7 @@ So that the next reader does not re-litigate it.
 | **Porting t3f's `variables.py`, `nn.KerasDense`, `name=`/`tf.name_scope`, `shapes.lazy_*`, `tensor_train_base.graph/op/eval`** | TF idiom and graph-mode leftovers; `variables.py` is the only `tensorflow.compat.v1` file in the library (riem §7.2). The repo has also been dead since April 2021 |
 | **Anderson localization as anything but a documented refusal** | the operator is not compressible by construction (eig §9.6). It stays as a test that we *say so* |
 | **Changing any legacy signature**: `project`, `projector_splitting_add`, `tt_qr`, `cores_orthogonalization_step`, `eigb`, `tt.eigb.eigb`, `tt.eigb_solve`, `tt.ksl.ksl` | R2 is absolute, `tests/test_ports.py` and `tests/test_eigb_ksl.py::test_legacy_imports` assert object identity, and both consumer specs (eig §5, riem §9) commit to additive-only changes |
-| **The legacy Fortran as an oracle** | R5: "Легаси-код **не** является оракулом." Every acceptance criterion in §4 names a dense computation, an analytic formula, or an invariant |
+| **The legacy Fortran as an oracle** | R5: "The legacy code is **not** an oracle." Every acceptance criterion in §4 names a dense computation, an analytic formula, or an invariant |
 
 ---
 

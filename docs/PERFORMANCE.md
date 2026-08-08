@@ -1,322 +1,334 @@
-# Производительность
+# Performance
 
-Число без режима — не измерение. Все цифры ниже сняты на одной машине,
-режим указан рядом; сырые данные лежат в `bench/results/*.json` вместе с
-окружением (хост, версии, число потоков, размеры, число повторов).
+A number without its regime is not a measurement. Every figure below was taken
+on one machine with its regime stated next to it; the raw data is in
+`bench/results/*.json` together with the environment (host, versions, thread
+count, sizes, repetitions).
 
-**Стенд.** 2 x Intel Xeon 6767P (128 физических ядер, 256 потоков), 2 ТБ RAM,
-NVIDIA B300 SXM6 (275 ГБ), CUDA 13.0, Python 3.12, numpy 2.x (OpenBLAS),
-torch 2.13.0+cu130. Медиана из 3 прогонов после прогрева, GPU синхронизируется
-перед остановкой таймера. Машина в момент замеров была не полностью свободна
-(шли фоновые задачи) — числа стоит читать как «порядок величины и соотношение»,
-а не как рекорд.
+**Test bench.** 2 x Intel Xeon 6767P (128 physical cores, 256 threads), 2 TB
+RAM, NVIDIA B300 SXM6 (275 GB), CUDA 13.0, Python 3.12, numpy 2.x (OpenBLAS),
+torch 2.13.0+cu130. Median of 3 runs after a warm-up, with the GPU synchronized
+before the timer stops. The machine was not entirely idle while the numbers were
+taken (background jobs were running), so read them as "order of magnitude and
+ratio", not as a record.
 
-## 1. Округление — это латентность LAPACK, а не флопсы
+## 1. Rounding is LAPACK latency, not flops
 
-`round` для TT — это цепочка из `d` последовательных QR и SVD на матрицах
-размера примерно `(n r) x r`. При `d = 60, n = 2, r = 200` это 120 вызовов
-LAPACK на матрицах 400x200. Такие вызовы нельзя ни объединить (ядро `k+1`
-зависит от `k`), ни распараллелить внутри.
+`round` for a TT tensor is a chain of `d` sequential QR and SVD calls on
+matrices of roughly `(n r) x r`. At `d = 60, n = 2, r = 200` that is 120 LAPACK
+calls on 400x200 matrices. Such calls can neither be fused (core `k+1` depends
+on `k`) nor parallelized internally.
 
-Отсюда два неожиданных для многих следствия.
+Two consequences follow that surprise many people.
 
-**Многопоточный BLAS вредит.** Режим: numpy, float64, `d=60, n=2, r=200`,
-операция `round(1e-8)`:
+**Multithreaded BLAS hurts.** Regime: numpy, float64, `d=60, n=2, r=200`,
+operation `round(1e-8)`:
 
-| потоков | 1 | 2 | 4 | 8 | 16 | 64 |
+| threads | 1 | 2 | 4 | 8 | 16 | 64 |
 |---|---|---|---|---|---|---|
-| медиана, мс | **496** | 995 | 1269 | 1353 | 2209 | 1681 |
+| median, ms | **496** | 995 | 1269 | 1353 | 2209 | 1681 |
 
-Один поток в 3.4 раза быстрее 64. Если ваш процесс не занят ничем другим,
-ставьте `OMP_NUM_THREADS=1..4` для TT-нагрузок с рангами в сотни.
+One thread is 3.4x faster than 64. If your process is doing nothing else, set
+`OMP_NUM_THREADS=1..4` for TT workloads with ranks in the hundreds.
 
-**GPU в fp64 проигрывает CPU на тех же операциях.** Режим: float64, numpy
-(4 потока) против torch/B300:
+**In fp64 the GPU loses to the CPU on the same operations.** Regime: float64,
+numpy (4 threads) against torch/B300:
 
-| операция | размер | numpy CPU | torch B300 |
+| operation | size | numpy CPU | torch B300 |
 |---|---|---|---|
-| `round` | d=30, n=2, r=50 | **15.7 мс** | 268 мс |
-| `round` | d=60, n=2, r=200 | **1468 мс** | 3670 мс |
-| `round` | d=10, n=8, r=400 | 1877 мс | **1277 мс** |
-| `add+round` | d=30, n=2, r=100 | **272 мс** | 1279 мс |
-| `matvec+round` | d=60, n=2, r=150 | **3608 мс** | 5511 мс |
-| `dot` | d=30, n=2, r=100 | 21.2 мс | **2.9 мс** |
-| `dot` | d=60, n=2, r=200 | 309 мс | **10.8 мс** |
-| `dot` | d=20, n=4, r=300 | 804 мс | **9.9 мс** |
+| `round` | d=30, n=2, r=50 | **15.7 ms** | 268 ms |
+| `round` | d=60, n=2, r=200 | **1468 ms** | 3670 ms |
+| `round` | d=10, n=8, r=400 | 1877 ms | **1277 ms** |
+| `add+round` | d=30, n=2, r=100 | **272 ms** | 1279 ms |
+| `matvec+round` | d=60, n=2, r=150 | **3608 ms** | 5511 ms |
+| `dot` | d=30, n=2, r=100 | 21.2 ms | **2.9 ms** |
+| `dot` | d=60, n=2, r=200 | 309 ms | **10.8 ms** |
+| `dot` | d=20, n=4, r=300 | 804 ms | **9.9 ms** |
 
-Картина ровно та, которую предсказывает анализ: где считается свёртка
-(`dot` — сплошные GEMM, ни одной факторизации), GPU быстрее в 7–80 раз; где
-считается цепочка мелких факторизаций, выигрывает CPU, и разрыв тем меньше,
-чем крупнее матрицы (при `n=8, r=400` GPU уже впереди).
+The picture is exactly the one the analysis predicts: where a contraction is
+computed (`dot` — nothing but GEMMs, not a single factorization) the GPU is
+7–80x faster; where a chain of small factorizations is computed the CPU wins,
+and the gap narrows as the matrices grow (at `n=8, r=400` the GPU is already
+ahead).
 
-## 2. Что с этим делать: менять алгоритм, а не крутить флаги
+## 2. What to do about it: change the algorithm, not the flags
 
-Раз узкое место — сама цепочка SVD, её надо убрать. Рандомизированное
-округление (Al Daas et al., SIAM J. Sci. Comput. 45(1), 2023, arXiv:2110.04393)
-заменяет её на скетч случайным TT плюс один QR на ядро, то есть на матричные
-умножения:
+Since the bottleneck is the SVD chain itself, the chain has to go. Randomized
+rounding (Al Daas et al., SIAM J. Sci. Comput. 45(1), 2023, arXiv:2110.04393)
+replaces it with a sketch against a random TT plus one QR per core, i.e. with
+matrix multiplications:
 
 ```python
-y = x.round(rmax=100, method="randomized")          # тот же ранг
+y = x.round(rmax=100, method="randomized")          # the same rank
 y, err = x.round(rmax=100, method="randomized", return_error=True)
 ```
 
-`err` — верхняя оценка ошибки; она честно насыщается на уровне
-`||x|| * sqrt(eps)`, потому что вычисляется через разность `||x||^2 - ||y||^2`,
-которая при малой ошибке теряет все значащие цифры. Ниже этого порога
-пакет говорит «не знаю точнее», а не выдаёт уверенное маленькое число.
+`err` is an upper estimate of the error; it honestly saturates at
+`||x|| * sqrt(eps)`, because it is computed through the difference
+`||x||^2 - ||y||^2`, which loses every significant digit once the error is
+small. Below that threshold the package says "I cannot tell you more precisely"
+instead of producing a confident small number.
 
-Точность: на случайных TT ранга 20 (d=12, n=2) ошибка рандомизированного
-округления не превышала 3-кратной ошибки детерминированного при том же
-целевом ранге (`tests/test_core.py::test_randomized_round_matches_svd_accuracy`).
+Accuracy: on random rank-20 TT tensors (d=12, n=2) the error of randomized
+rounding never exceeded 3x the error of the deterministic one at the same target
+rank (`tests/test_core.py::test_randomized_round_matches_svd_accuracy`).
 
-### Замер: детерминированное против рандомизированного
+### Measurement: deterministic versus randomized
 
-Режим: `bench/bench_round.py`, медиана из 3 прогонов, случайный TT с ядрами,
-нормированными на 1/sqrt(r) (иначе норма произведения переполняет float32),
-`OMP_NUM_THREADS=4`, GPU — одна B300. `err` — относительная ошибка усечения,
-измеренная одинаково для обоих методов.
+Regime: `bench/bench_round.py`, median of 3 runs, a random TT whose cores are
+normalized by 1/sqrt(r) (otherwise the norm of the product overflows float32),
+`OMP_NUM_THREADS=4`, one B300 as the GPU. `err` is the relative truncation
+error, measured identically for both methods.
 
-| dtype / устройство | задача | SVD | рандомиз. | ускор. | err SVD / rand |
+| dtype / device | problem | SVD | randomized | speed-up | err SVD / rand |
 |---|---|---|---|---|---|
-| numpy fp64 | d=30, n=2, 100→50 | 82 мс | **43 мс** | 1.9x | 0.645 / 0.825 |
-| numpy fp64 | d=60, n=2, 200→100 | **711 мс** | 876 мс | 0.8x | 0.877 / 0.985 |
-| numpy fp64 | d=20, n=4, 300→150 | **793 мс** | 1396 мс | 0.6x | 0.897 / 0.981 |
-| torch fp64 | d=60, n=2, 200→100 | 4427 мс | 1498 мс | 3.0x | те же |
-| torch fp64 | d=20, n=4, 300→150 | 1884 мс | 758 мс | 2.5x | те же |
-| torch fp32 | d=60, n=2, 200→100 | 319 мс | **204 мс** | 1.6x | те же |
-| torch fp32 | d=20, n=4, 300→150 | 153 мс | **96 мс** | 1.6x | те же |
+| numpy fp64 | d=30, n=2, 100→50 | 82 ms | **43 ms** | 1.9x | 0.645 / 0.825 |
+| numpy fp64 | d=60, n=2, 200→100 | **711 ms** | 876 ms | 0.8x | 0.877 / 0.985 |
+| numpy fp64 | d=20, n=4, 300→150 | **793 ms** | 1396 ms | 0.6x | 0.897 / 0.981 |
+| torch fp64 | d=60, n=2, 200→100 | 4427 ms | 1498 ms | 3.0x | same |
+| torch fp64 | d=20, n=4, 300→150 | 1884 ms | 758 ms | 2.5x | same |
+| torch fp32 | d=60, n=2, 200→100 | 319 ms | **204 ms** | 1.6x | same |
+| torch fp32 | d=20, n=4, 300→150 | 153 ms | **96 ms** | 1.6x | same |
 
-Читается так:
+Read it like this:
 
-1. **Быстрее всего — fp32 на GPU с рандомизированным округлением.** На
-   `d=20, n=4, 300→150` это 96 мс против 793 мс у numpy/fp64, то есть **8.3x**.
-   На `d=60, n=2` — 204 мс против 711 мс, **3.5x**.
-2. **Рандомизация помогает именно на GPU** (2.5–3.0x в fp64, 1.6x в fp32), а на
-   CPU при больших рангах даже проигрывает (0.6x): там цепочка SVD уже упирается
-   в оптимизированный LAPACK, а скетч добавляет проходы по памяти.
-3. **fp64 на B300 бесполезен для факторизаций**: 4427 мс против 711 мс у CPU на
-   той же задаче. Это свойство железа (у Blackwell урезана двойная точность),
-   а не библиотеки.
-4. **Ошибка усечения не зависит от точности вычислений** (fp32 и fp64 дали
-   одинаковые `err`): её определяет отброшенный спектр, а не арифметика. Но
-   рандомизированный метод на случайных данных с плоским спектром заметно хуже
-   (0.985 против 0.877): скетч рассчитан на спадающий спектр. Для гладких
-   функций и QTT-сумм разрыв исчезает, для белого шума — нет.
+1. **The fastest combination is fp32 on the GPU with randomized rounding.** On
+   `d=20, n=4, 300→150` that is 96 ms against 793 ms for numpy/fp64, i.e.
+   **8.3x**. On `d=60, n=2` it is 204 ms against 711 ms, **3.5x**.
+2. **Randomization helps specifically on the GPU** (2.5–3.0x in fp64, 1.6x in
+   fp32); on the CPU at large ranks it even loses (0.6x), because there the SVD
+   chain is already up against optimized LAPACK and the sketch only adds passes
+   over memory.
+3. **fp64 on a B300 is useless for factorizations**: 4427 ms against 711 ms on
+   the CPU for the same problem. That is a property of the hardware (Blackwell
+   has double precision cut down), not of the library.
+4. **The truncation error does not depend on the arithmetic precision** (fp32
+   and fp64 gave identical `err`): it is set by the discarded spectrum, not by
+   the arithmetic. But on random data with a flat spectrum the randomized method
+   is noticeably worse (0.985 against 0.877): the sketch is designed for a
+   decaying spectrum. For smooth functions and QTT sums the gap disappears; for
+   white noise it does not.
 
-Практический вывод: `method="randomized"` включайте на GPU и для больших рангов,
-на CPU держите умолчание. Библиотека не выбирает за вас, потому что выбор
-зависит от спектра ваших данных, который она не знает.
+Practical conclusion: turn `method="randomized"` on for the GPU and for large
+ranks, and keep the default on the CPU. The library does not choose for you,
+because the choice depends on the spectrum of your data, which it does not know.
 
-## 3. Против старого ttpy (Fortran)
+## 3. Against the old ttpy (Fortran)
 
-Старый пакет всё-таки удалось собрать — рецепт и шесть обходных путей в
-[LEGACY_BUILD.md](LEGACY_BUILD.md). Это даёт точку отсчёта.
+The old package could be built after all — the recipe and its six workarounds
+are in [LEGACY_BUILD.md](LEGACY_BUILD.md). That gives a reference point.
 
-Режим: один хост (Xeon 6767P), оба пакета запущены **подряд, закреплены на одних
-и тех же ядрах** (`taskset -c 100-120`), `OMP_NUM_THREADS=4`, float64, одинаковые
-входные тензоры (ядра из фиксированного зерна, передаются через `from_list`),
-медиана из 3 прогонов. Слева Fortran (numpy 1.24, Python 3.11), справа ttpy 2
+Regime: one host (Xeon 6767P), both packages run **back to back, pinned to the
+same cores** (`taskset -c 100-120`), `OMP_NUM_THREADS=4`, float64, identical
+input tensors (cores from a fixed seed, handed over through `from_list`), median
+of 3 runs. Fortran on the left (numpy 1.24, Python 3.11), ttpy 2 on the right
 (numpy 2.5, Python 3.12).
 
-Первая версия этой таблицы была снята без закрепления ядер и в момент, когда
-машину грузили другие задачи; она завышала отставание ttpy 2 в 2–3 раза.
-Приведённые ниже числа сняты заново.
+The first version of this table was taken without core pinning and while other
+jobs were loading the machine; it overstated ttpy 2's disadvantage by a factor
+of 2–3. The numbers below were taken again.
 
-| задача | старый (Fortran) | ttpy 2 | отношение |
+| problem | old (Fortran) | ttpy 2 | ratio |
 |---|---|---|---|
-| `round` d=30, n=2, r=50 | 10.5 мс | 11.0 мс | 1.05x медленнее |
-| `round` d=60, n=2, r=100 | 374 мс | **304 мс** | **1.23x быстрее** |
-| `round` d=20, n=4, r=150 | 441 мс | **352 мс** | **1.25x быстрее** |
-| `add+round` d=30, r=50 | 126 мс | **101 мс** | 1.24x быстрее |
-| `add+round` d=60, r=100 | 1397 мс | **908 мс** | **1.54x быстрее** |
-| `matvec+round` d=30, r=50 | 189 мс | **125 мс** | 1.51x быстрее |
-| `matvec+round` d=40, r=100 | 980 мс | **629 мс** | 1.56x быстрее |
-| `dot` d=60, r=100 | 10.1 мс | **5.1 мс** | **1.98x быстрее** |
-| `tt_svd` d=10, n=4 (1 млн элементов) | 8272 мс | **698 мс** | **11.9x быстрее** |
-| `amen_solve` d=12, eps=1e-6 | 23.2 мс | **8.2 мс** | **2.8x быстрее** |
-| `amen_solve` 2D, 1024x1024, eps=1e-6 | 198.5 мс | **193.1 мс** | **1.03x быстрее** |
+| `round` d=30, n=2, r=50 | 10.5 ms | 11.0 ms | 1.05x slower |
+| `round` d=60, n=2, r=100 | 374 ms | **304 ms** | **1.23x faster** |
+| `round` d=20, n=4, r=150 | 441 ms | **352 ms** | **1.25x faster** |
+| `add+round` d=30, r=50 | 126 ms | **101 ms** | 1.24x faster |
+| `add+round` d=60, r=100 | 1397 ms | **908 ms** | **1.54x faster** |
+| `matvec+round` d=30, r=50 | 189 ms | **125 ms** | 1.51x faster |
+| `matvec+round` d=40, r=100 | 980 ms | **629 ms** | 1.56x faster |
+| `dot` d=60, r=100 | 10.1 ms | **5.1 ms** | **1.98x faster** |
+| `tt_svd` d=10, n=4 (1M elements) | 8272 ms | **698 ms** | **11.9x faster** |
+| `amen_solve` d=12, eps=1e-6 | 23.2 ms | **8.2 ms** | **2.8x faster** |
+| `amen_solve` 2D, 1024x1024, eps=1e-6 | 198.5 ms | **193.1 ms** | **1.03x faster** |
 
-Как это читать:
+How to read this:
 
-* **На основных операциях чистый Python не медленнее Фортрана, а быстрее**
-  (1.2–1.6x). Причина не в мастерстве, а в том, что вся тяжёлая работа уходит в
-  современный LAPACK/BLAS, а Фортран 2013 года несёт свои реализации.
-* **`tt_svd` быстрее в 11.9 раза** — тот же эффект в чистом виде: `gesdd` с
-  блочной схемой против старого кода.
-* **`dot` был в 4.2 раза медленнее и стал в 2 раза быстрее** после того, как
-  горячий путь перевели с `einops.einsum` на два явных GEMM: на свёртках
-  размера `r x n x r` разбор паттерна стоит дороже самой арифметики
-  (42.2 мс -> 5.1 мс). Блочный случай (`r0 > 1`) по-прежнему идёт через einsum,
-  оба пути покрыты тестами против плотной свёртки.
-* **`amen_solve` был медленнее в 30 раз — из-за унаследованного умолчания.**
-  `max_full_size=50` пришло из ttpy 1.x, где локальный решатель — компилированный
-  Fortran, и порог, при котором плотное решение перестаёт окупаться, низкий.
-  В интерпретируемой реализации порог совсем другой. На 2^12 QTT-лапласиане:
-  444 мс при 50 против 8 мс при 1000, и плотный путь при этом **точнее**
-  (невязка 1.1e-9 против 1.8e-7) и даёт меньшие ранги (7 против 12).
-  Умолчание изменено на 1000, отличие описано в COMPAT.md. После этого решатель
-  быстрее Фортрана в 2.8 раза и точнее в 60 раз на той же задаче.
-  Это ровно тот случай, когда константа пережила механизм, который её оправдывал.
+* **On the core operations pure Python is not slower than Fortran but faster**
+  (1.2–1.6x). The reason is not craftsmanship: all the heavy work goes to a
+  modern LAPACK/BLAS, while Fortran from 2013 carries its own implementations.
+* **`tt_svd` is 11.9x faster** — the same effect in its purest form: a blocked
+  `gesdd` against the old code.
+* **`dot` used to be 4.2x slower and is now 2x faster**, after the hot path was
+  moved from `einops.einsum` to two explicit GEMMs: on contractions of size
+  `r x n x r` parsing the pattern costs more than the arithmetic itself
+  (42.2 ms -> 5.1 ms). The block case (`r0 > 1`) still goes through einsum, and
+  both paths are covered by tests against a dense contraction.
+* **`amen_solve` used to be 30x slower — because of an inherited default.**
+  `max_full_size=50` came from ttpy 1.x, where the local solver is compiled
+  Fortran and the size at which a dense solve stops paying off is low. In an
+  interpreted implementation that threshold is a completely different number. On
+  a 2^12 QTT Laplacian: 444 ms at 50 against 8 ms at 1000, and the dense path is
+  **more accurate** as well (residual 1.1e-9 against 1.8e-7) at lower ranks
+  (7 against 12). The default was changed to 1000 and the difference is
+  documented in COMPAT.md. After that the solver is 2.8x faster than Fortran and
+  60x more accurate on the same problem. This is exactly the case where a
+  constant outlived the mechanism that justified it.
 
-* **Обе реализации разваливаются на d >= 20, и только одна об этом сообщает.**
-  QTT-лапласиан на 2^30 точках имеет число обусловленности порядка 1e17, то есть
-  задача неразрешима в double без предобусловливания. Измерено (eps=1e-8):
+* **Both implementations fall apart at d >= 20, and only one of them says so.**
+  The QTT Laplacian on 2^30 points has a condition number of order 1e17, i.e.
+  the problem is unsolvable in double precision without preconditioning.
+  Measured (eps=1e-8):
 
-  | d | старый (Fortran) | ttpy 2 |
+  | d | old (Fortran) | ttpy 2 |
   |---|---|---|
-  | 12 | 23.2 мс, невязка 2.0e-8 | 8.2 мс, невязка 3.4e-10 |
-  | 20 | 1126 мс, невязка **1.2e+03**, молча | 1384 мс, невязка 3.1e-05, с предупреждением |
-  | 30 | 3439 мс, невязка **6.4e+05**, молча | 7875 мс, невязка 8.0, с предупреждением |
+  | 12 | 23.2 ms, residual 2.0e-8 | 8.2 ms, residual 3.4e-10 |
+  | 20 | 1126 ms, residual **1.2e+03**, silently | 1384 ms, residual 3.1e-05, with a warning |
+  | 30 | 3439 ms, residual **6.4e+05**, silently | 7875 ms, residual 8.0, with a warning |
 
-  Старый пакет возвращает мусор без единого слова. Новый возвращает результат
-  заметно ближе к решению и печатает, какая невязка достигнута на самом деле,
-  какой свип был лучшим и что именно не сошлось.
-* При eps=1e-10 **ни один из пакетов не достигает заявленной точности**
-  (7.8e-10 у старого, 5.6e-10 у нового), но старый молчит, а новый выдаёт
-  предупреждение с настоящей невязкой и указанием несошедшихся блоков.
+  The old package returns garbage without a word. The new one returns a result
+  markedly closer to the solution and prints the residual it actually reached,
+  which sweep was the best, and what exactly failed to converge.
+* At eps=1e-10 **neither package reaches the requested accuracy** (7.8e-10 for
+  the old one, 5.6e-10 for the new), but the old one stays quiet while the new
+  one warns with the real residual and names the blocks that did not converge.
 
-## 3a. AMEn: как закрывался разрыв на 2D
+## 3a. AMEn: how the 2D gap was closed
 
-Единственная задача, где Фортран оставался впереди. Замеры вперемежку, оба
-пакета на одних ядрах, 2D QTT-лапласиан 1024x1024, eps=1e-6:
+The one problem where Fortran stayed ahead. Runs interleaved, both packages on
+the same cores, 2D QTT Laplacian 1024x1024, eps=1e-6:
 
-| шаг | время | что сделано |
-|---|---|---|
-| начало | 2102 мс | |
-| 972 мс | einsum через BLAS (`optimize` einops не передаёт) |
-| 719 мс | бинарные свёртки скомпилированы в batched matmul |
-| 645 мс | снята обвязка с этого пути |
-| 529 мс | GMRES: непрерывный базис, Грам-Шмидт двумя произведениями, Гивенс |
-| 445 мс | локальный оператор собирается один раз в BLAS-раскладке (2x на матвек) |
-| 428 мс | inexact-допуск локальных решений (7482 итерации -> 4635) |
-| 258 мс | локальный решатель целиком в скомпилированном ядре (numba) |
-| 237 мс | интерфейсные свёртки (`_project`/`_apply`/`_phi_next`) в ядрах |
-| 236 мс | интерфейсные свёртки (`_project`/`_apply`/`_phi_next`) в ядрах |
-| 205 мс | истинная невязка считается по `max_res`, а не по `max_dx` |
-| **193 мс** | убрано двойное обращение блоков предобусловливателя |
-| Fortran | **198 мс** | |
+| time | what was done |
+|---|---|
+| 2102 ms | starting point |
+| 972 ms | einsum routed through BLAS (einops does not forward `optimize`) |
+| 719 ms | binary contractions compiled into a batched matmul |
+| 645 ms | the wrapper removed from this path |
+| 529 ms | GMRES: contiguous basis, Gram-Schmidt as two products, Givens |
+| 445 ms | the local operator assembled once in BLAS layout (2x on the matvec) |
+| 428 ms | inexact tolerance for the local solves (7482 iterations -> 4635) |
+| 258 ms | the local solver entirely in a compiled kernel (numba) |
+| 236 ms | interface contractions (`_project`/`_apply`/`_phi_next`) in kernels |
+| 205 ms | the true residual computed from `max_res` rather than `max_dx` |
+| **193 ms** | the double inversion of the preconditioner blocks removed |
+| Fortran: **198 ms** | |
 
-Итого **10.9x**, десять независимых находок, каждая измерена. На 2D мы теперь
-быстрее исходного Фортрана при той же точности и тех же рангах; на 1D при d=12
-тоже (11.0 против 11.5 мс, невязка 1.3e-09 против 1.8e-07, ранг 7 против 13).
-На самой мелкой задаче (d=10) мы медленнее (8.9 против 4.9 мс), потому что
-перевыполняем: истинная невязка проверяется, когда дешёвый индикатор подходит к
-порогу на порядок, и к этому моменту она уже 1.3e-10 при запрошенных 1e-6.
+That is **10.9x** in total, from ten independent findings, each of them
+measured. In 2D we are now faster than the original Fortran at the same accuracy
+and the same ranks; in 1D at d=12 as well (11.0 against 11.5 ms, residual
+1.3e-09 against 1.8e-07, rank 7 against 13). On the smallest problem (d=10) we
+are slower (8.9 against 4.9 ms) because we overshoot: the true residual is
+checked once the cheap indicator comes within an order of magnitude of the
+threshold, and by that point it is already 1.3e-10 against the 1e-6 requested.
 
-Пять вещей были измерены и **отвергнуты**, чтобы их не пробовали снова:
+Five things were measured and **rejected**, so that nobody tries them again:
 
-* **Cholesky для симметричных локальных систем** — на n=400 в 1.6 раза медленнее
-  `np.linalg.solve` (scipy копирует матрицу), а определение симметрии по блоку
-  стоило дороже самого решения (плотные решения 216 -> 430 мс).
-* **Смешанная точность с итерационным уточнением** — 1.09-1.39x, не стоит
-  усложнения.
-* **Блочный Гаусс-Зейдель как предобусловливатель** — его применение
-  последовательно по блокам и стоит в 8-22 раза дороже якобиевского.
-* **Двоичный поиск ранга при усечении по невязке** — невязка по рангу лишь
-  *почти* монотонна, и бисекция выбирала ранги, стоившие сходимости (d=14
-  останавливался на 1.3e-08 вместо 1e-10). Линейный проход сверху вниз выходит
-  за несколько шагов и потому стоит 30 мс из 200, а не больше.
-* **`sqrt(<x,x>)` вместо ортогонализации для нормы** — в 12 раз быстрее, но в
-  TT-формате это свёртка с сокращающимися промежуточными величинами: 12 тестов
-  упали, а на задаче с конвекцией она сообщила невязку 1.25e-06 там, где
-  истинная была ниже 1e-06, то есть превратила сошедшийся прогон в провальный.
+* **Cholesky for symmetric local systems** — 1.6x slower than `np.linalg.solve`
+  at n=400 (scipy copies the matrix), and detecting symmetry per block cost more
+  than the solve itself (dense solves 216 -> 430 ms).
+* **Mixed precision with iterative refinement** — 1.09-1.39x, not worth the
+  complexity.
+* **Block Gauss-Seidel as a preconditioner** — its application is sequential in
+  the blocks and costs 8-22x more than the Jacobi one.
+* **Binary search for the rank when truncating in the residual norm** — the
+  residual is only *almost* monotone in the rank, and bisection picked ranks
+  that cost convergence (d=14 stopped at 1.3e-08 instead of 1e-10). A linear
+  scan from the top exits in a few steps and therefore costs 30 ms out of 200,
+  not more.
+* **`sqrt(<x,x>)` instead of an orthogonalization for the norm** — 12x faster,
+  but in the TT format that is a contraction whose intermediates cancel: 12
+  tests failed, and on a convection problem it reported a residual of 1.25e-06
+  where the true one was below 1e-06, i.e. it turned a converged run into a
+  failed one.
 
-## 3b. KSL: мы в 9 раз медленнее легаси (было 23)
+## 3b. KSL: we are 9x slower than the legacy code (it was 23x)
 
-**Осторожно с постановкой.** Первая версия этого раздела утверждала, что легаси
-KSL «не решает задачу»: он давал относительную ошибку 1.10 при любом `tau`, в
-том числе при `tau -> 0`, где интегратор обязан вернуть `y0`. Утверждение было
-**неверным**, и причина — в моём входе. `y0` имел ранги `[1,4,4,4,4,4,1]` при
-`n = 2`, а граничная связь TT-тензора не может превышать `min(n^k, n^(d-k))`,
-то есть 2. Это ранг-дефицитная, вырожденная стартовая точка — худший вход для
-интегратора с фиксированным рангом, а не рабочий режим.
+**Careful with the framing.** The first version of this section claimed that the
+legacy KSL "does not solve the problem": it gave a relative error of 1.10 at
+every `tau`, including `tau -> 0`, where an integrator is obliged to return
+`y0`. That claim was **wrong**, and the cause was my input. `y0` had ranks
+`[1,4,4,4,4,4,1]` at `n = 2`, while a boundary bond of a TT tensor cannot exceed
+`min(n^k, n^(d-k))`, i.e. 2. That is a rank-deficient, degenerate starting point
+— the worst possible input for a fixed-rank integrator, not a working regime.
 
-Честный замер, `d = 6`, `n = 2`, симметричный `A` с `||A||_2 = 1`, ранги
-`y0 = [1,2,4,4,4,2,1]` (допустимые), одни и те же ядра из файла для обеих
-реализаций, b300/numpy/float64, минимум из 5 прогонов, эталон — плотный `expm`:
+An honest measurement: `d = 6`, `n = 2`, a symmetric `A` with `||A||_2 = 1`,
+ranks `y0 = [1,2,4,4,4,2,1]` (admissible), the same cores loaded from a file for
+both implementations, b300/numpy/float64, minimum of 5 runs, a dense `expm` as
+the reference:
 
-| `tau` | легаси, время | легаси, ошибка | ttpy2, время | ttpy2, ошибка |
+| `tau` | legacy, time | legacy, error | ttpy2, time | ttpy2, error |
 |---|---|---|---|---|
-| 1e-8 | **0.23 мс** | 2.208e-09 | 4.26 мс | 2.208e-09 |
-| 1e-4 | 0.22 мс | 2.208e-05 | 5.27 мс | 2.208e-05 |
-| 0.05 | 0.23 мс | 1.111e-02 | 5.25 мс | 1.111e-02 |
-| 0.20 | 0.23 мс | 4.507e-02 | 5.24 мс | 4.506e-02 |
-| 0.80 | 0.22 мс | 1.854e-01 | 5.28 мс | 1.744e-01 |
+| 1e-8 | **0.23 ms** | 2.208e-09 | 4.26 ms | 2.208e-09 |
+| 1e-4 | 0.22 ms | 2.208e-05 | 5.27 ms | 2.208e-05 |
+| 0.05 | 0.23 ms | 1.111e-02 | 5.25 ms | 1.111e-02 |
+| 0.20 | 0.23 ms | 4.507e-02 | 5.24 ms | 4.506e-02 |
+| 0.80 | 0.22 ms | 1.854e-01 | 5.28 ms | 1.744e-01 |
 
-Точность совпадает до 3–4 знаков (при `tau = 0.8` наш немного лучше), ранги у
-обоих не меняются. **Фортран быстрее в 23 раза.** Это честный разрыв и открытая
-цель оптимизации: 22 локальные экспоненты (`2(2d-1)`) с Крыловским
-подшагованием на задаче из 64 чисел — 5 мс — это накладные расходы Python,
-а не флопсы. Тот же разрыв закрывался для `amen_solve` (см. 3a) и здесь не
-закрывался вовсе.
+The accuracy agrees to 3–4 digits (at `tau = 0.8` ours is slightly better) and
+neither implementation changes the ranks. **Fortran is 23x faster.** That is an
+honest gap and an open optimization target: 22 local exponentials (`2(2d-1)`)
+with Krylov substepping on a problem of 64 numbers taking 5 ms is Python
+overhead, not flops. The same gap was closed for `amen_solve` (see 3a) and was
+not closed here at all.
 
-Что у нас всё же лучше: на том самом ранг-дефицитном входе легаси возвращает
-вектор, отстоящий от `y0` на 1.0996 при `tau = 1e-8`, и молча меняет ранг с 4
-на 2; наш даёт 3.37e-09, ровно пропорционально `tau`. То есть мы устойчивы к
-вырожденной стартовой точке, а он нет — но это узкий случай, и он не оправдывает
-разрыва по времени.
+Where we are better: on that same rank-deficient input the legacy code returns a
+vector 1.0996 away from `y0` at `tau = 1e-8` and silently changes the rank from
+4 to 2; ours gives 3.37e-09, exactly proportional to `tau`. So we are robust to
+a degenerate starting point and it is not — but that is a narrow case and it
+does not justify the gap in time.
 
-Отдельно: легаси печатает «Solving a complex-valued dynamical problem» на
-вещественном входе, хотя Python-обёртка выбирает **вещественную** ветку
-(`np.iscomplex(...).any()` равно False, проверено). Сообщение врёт о самом себе;
-на числа это не влияет.
+Separately: the legacy code prints "Solving a complex-valued dynamical problem"
+on real input, even though the Python wrapper selects the **real** branch
+(`np.iscomplex(...).any()` is False, verified). The message lies about itself;
+it does not affect the numbers.
 
-Цена сторожа жёсткости, добавленного в `_step_exp` (две нормы на локальную
-экспоненту), измерена против собственного родителя: **4.33 → 4.45 мс, +2.8 %**.
+The cost of the stiffness guard added to `_step_exp` (two norms per local
+exponential) was measured against its own parent: **4.33 → 4.45 ms, +2.8 %**.
 
-### Как закрывался разрыв
+### How the gap was narrowed
 
-Профиль одного шага (30 повторов, `cProfile`) показал, что арифметики там почти
-нет: локальные задачи имеют размер **4, 16 и 32 числа**, по одному подшагу,
-Крылов 4–8. Всего ~260 тыс. флопов на шаг — фортран делает это за 0.22 мс, то
-есть идёт на скорости арифметики.
+A profile of one step (30 repetitions, `cProfile`) showed there is hardly any
+arithmetic in it: the local problems are **4, 16 and 32 numbers**, one substep
+each, Krylov 4–8. About 260k flops per step in total — Fortran does that in
+0.22 ms, i.e. it runs at the speed of the arithmetic.
 
-| правка | время | что именно |
+| change | time | what exactly |
 |---|---|---|
-| исходно | 4.30 мс | |
-| кэш в `backend_of` | 3.92 мс | 508 норм на шаг, каждая конструировала объект бэкенда (18 270 вызовов `NumpyBackend.__init__` на 30 шагов) |
-| точная экспонента при малом блоке | **2.00 мс** | при размере ≤ 40 `expm` дешевле восьми итераций Арнольди: 10.6 / 21.8 / 46.0 мкс при размерах 4 / 16 / 32 против ~180 мкс на Крыловский путь |
+| baseline | 4.30 ms | |
+| a cache in `backend_of` | 3.92 ms | 508 norms per step, each constructing a backend object (18 270 `NumpyBackend.__init__` calls over 30 steps) |
+| exact exponential for a small block | **2.00 ms** | at size ≤ 40 `expm` is cheaper than eight Arnoldi iterations: 10.6 / 21.8 / 46.0 µs at sizes 4 / 16 / 32 against ~180 µs for the Krylov path |
 
-Точность при этом **не изменилась ни в одном знаке** (2.208e-09, 1.111e-02,
-1.744e-01 до и после), а две аппроксимации исчезли: у точных шагов нет ни
-Крыловской ошибки, ни подшагования, поэтому `err_est = 0` там правда, а не
-вырождение. Они помечены `exact=True` в истории — без этой пометки нулевую
-оценку не отличить от схлопнувшегося Крыловского пространства, которое
-сообщает то же самое и при этом врёт.
+The accuracy did **not change in a single digit** (2.208e-09, 1.111e-02,
+1.744e-01 before and after), and two approximations disappeared: an exact step
+has neither a Krylov error nor substepping, so `err_est = 0` there is the truth
+rather than a degeneracy. Such steps are marked `exact=True` in the history —
+without that mark a zero estimate cannot be told apart from a collapsed Krylov
+space, which reports the same thing and is lying.
 
-**Разрыв остаётся 9-кратным** (2.00 мс против 0.22), и доминирующего пункта
-больше нет: `expm` 16 %, свёртки через `einsum` 25 %, `QR` 15 %, накладные
-`einops` 12 %. Дальше — только компиляция всего свипа (как `_fast.gmres_local`
-для AMEn), потому что каждый отдельный вызов numpy на блоке из 32 чисел стоит
-примерно столько же, сколько вся его арифметика.
+**The gap is still 9x** (2.00 ms against 0.22), and there is no dominant item
+left: `expm` 16 %, contractions through `einsum` 25 %, `QR` 15 %, `einops`
+overhead 12 %. What remains is compiling the whole sweep (as `_fast.gmres_local`
+does for AMEn), because every individual numpy call on a block of 32 numbers
+costs about as much as all of its arithmetic.
 
-## 3c. Что изменилось после первой волны замеров
+## 3c. What changed after the first wave of measurements
 
-Числа в разделах 1–3 сняты до этих правок и относятся к прежнему коду.
+The numbers in sections 1–3 were taken before these changes and describe the
+earlier code.
 
-* **Локальный Якоби в `amen_solve` был квадратичен по рангу оператора.**
-  Скомпилированное ядро сливает все шесть циклов (`r1 r2 n m R1 R2`), тогда как
-  двухшаговая свёртка стоит `r1 n m R1 R2 + r1 r2 n m R2`. При рангах, под
-  которые оно писалось (`r=34, n=2, R_A=4`), отношение 3.6 и слияние выигрывает
-  на накладных расходах; при `R_A = 161` отношение 84. Выбор теперь по
-  стоимости: **2708 мс → 46.7 мс** на вызов при формах BPX, без изменений
-  (0.09 мс) в родном режиме. Конец-в-конец на 2D-задаче: **295 → 109 с**.
-* **Точная невязка в `amen_solve` выключена по умолчанию.** Пик памяти
-  **33.85 ГиБ → 0.81 ГиБ** на той же задаче, и счёт ускорился с 62.2 до 47.6 с.
-* **`tt.permute` дожимает результат.** Ранг 1024 → 118 на разделимой функции в
-  Мортон-порядке при `d = 15` (собственный ранг тензора 102).
-* Паритет AMEn цел: 1D `d = 12` на достижимом допуске — 12.6 мс за 3 свипа,
-  2D `d = 7+7` — 93 мс.
+* **The local Jacobi in `amen_solve` was quadratic in the operator rank.** The
+  compiled kernel fuses all six loops (`r1 r2 n m R1 R2`), whereas a two-step
+  contraction costs `r1 n m R1 R2 + r1 r2 n m R2`. At the ranks it was written
+  for (`r=34, n=2, R_A=4`) the ratio is 3.6 and fusing wins on overhead; at
+  `R_A = 161` the ratio is 84. The choice is now made by cost: **2708 ms → 46.7
+  ms** per call at BPX shapes, with no change (0.09 ms) in the native regime.
+  End to end on the 2D problem: **295 → 109 s**.
+* **The exact residual in `amen_solve` is off by default.** Peak memory
+  **33.85 GiB → 0.81 GiB** on the same problem, and the run went from 62.2 to
+  47.6 s.
+* **`tt.permute` recompresses its result.** Rank 1024 → 118 on a separable
+  function in Morton order at `d = 15` (the tensor's own rank is 102).
+* AMEn parity is intact: 1D `d = 12` at an attainable tolerance is 12.6 ms over
+  3 sweeps, 2D `d = 7+7` is 93 ms.
 
-## 4. Установка
+## 4. Installation
 
 | | |
 |---|---|
-| колесо | `ttpy-2.0.0.dev0-py3-none-any.whl`, 26 КБ, `py3-none-any` |
-| `uv pip install` в пустой venv | 0.3 с (тёплый кэш uv) |
-| скомпилированных расширений | 0 |
-| обязательные зависимости | numpy, scipy, einops |
+| wheel | `ttpy-2.0.0.dev0-py3-none-any.whl`, 26 KB, `py3-none-any` |
+| `uv pip install` into an empty venv | 0.3 s (warm uv cache) |
+| compiled extensions | 0 |
+| required dependencies | numpy, scipy, einops |
 
-Для сравнения: старый ttpy требовал gfortran, f2py, `numpy.distutils`
-(удалён в numpy 1.26) и три git-сабмодуля, два из которых на bitbucket.
+For comparison: the old ttpy required gfortran, f2py, `numpy.distutils` (removed
+in numpy 1.26) and three git submodules, two of them on bitbucket.

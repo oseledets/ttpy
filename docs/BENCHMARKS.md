@@ -1,158 +1,162 @@
-# Бенчмарки: задачи, а не операции
+# Benchmarks: problems, not operations
 
-`bench/bench_core.py` и `bench/bench_round.py` меряют **операции** — округление,
-`dot`, `matvec` — и их единственный выход это время. `bench/bench_showcase.py`
-меряет **задачи**, и строка попадает туда только если несёт эталон, который
-получен не нами.
+`bench/bench_core.py` and `bench/bench_round.py` measure **operations** —
+rounding, `dot`, `matvec` — and their only output is a time.
+`bench/bench_showcase.py` measures **problems**, and a row gets in only if it
+carries a reference we did not produce ourselves.
 
-Три вида допустимых эталонов:
+Three kinds of admissible reference:
 
-1. **замкнутая форма** — критическая энергия Изинга (Пфёти), спектр
-   квадратичного гамильтониана через нормальные моды, `Im[((e^i−1)/i)^d]` для
-   синус-интеграла, формула Генца для corner-peak, узловое решение `x − x²/2`;
-2. **опубликованный структурный факт** — кванти́ческие ранги Хоромского: 1 у
-   экспоненты, 2 у синуса, `m+1` у многочлена степени `m`, независимо от `d`;
-3. **независимый плотный или разреженный счёт**, который мы можем себе позволить
-   на малом размере — `numpy.linalg.eigvalsh`, `scipy.sparse.linalg.eigsh`,
-   `numpy.fft`.
+1. **a closed form** — the critical Ising energy (Pfeuty), the spectrum of a
+   quadratic Hamiltonian through its normal modes, `Im[((e^i−1)/i)^d]` for the
+   sine integral, Genz's formula for the corner peak, the nodal solution
+   `x − x²/2`;
+2. **a published structural fact** — Khoromskij's quantics ranks: 1 for the
+   exponential, 2 for the sine, `m+1` for a polynomial of degree `m`,
+   independent of `d`;
+3. **an independent dense or sparse computation** we can afford at a small size
+   — `numpy.linalg.eigvalsh`, `scipy.sparse.linalg.eigsh`, `numpy.fft`.
 
-Всё остальное — время без того, с чем его сравнить — остаётся в `bench_core.py`.
+Everything else — a time with nothing to compare it against — stays in
+`bench_core.py`.
 
 ```bash
 python bench/bench_showcase.py --out bench/results/showcase.json
 python bench/bench_showcase.py --problems tfim integrals --scale large
 ```
 
-`--scale small` — прогон на дым (около 100 с целиком), `--scale large` —
-осознанный тяжёлый прогон.
+`--scale small` is a smoke run (about 100 s end to end), `--scale large` is a
+deliberate heavy one.
 
 ---
 
-## Что откуда взято
+## Where each reference comes from
 
-### Спиновые цепочки
+### Spin chains
 
-**Поперечное поле Изинга в критической точке.** `H = −Σ σᶻᵢσᶻᵢ₊₁ − Σ σˣᵢ`,
-открытая цепочка. Точная энергия основного состояния
+**Transverse-field Ising at the critical point.** `H = −Σ σᶻᵢσᶻᵢ₊₁ − Σ σˣᵢ`,
+open chain. The exact ground-state energy is
 
     E₀(L) = 1 − 1 / sin(π / (2(2L+1)))
 
 — Pfeuty, *The one-dimensional Ising model with a transverse field*, Ann. Phys.
-57:79 (1970), через преобразование Йордана–Вигнера. Проверена против плотного
-`eigh` до 5e-15 при L = 4, 8, 10, 12.
+57:79 (1970), via the Jordan–Wigner transformation. Checked against a dense
+`eigh` to 5e-15 at L = 4, 8, 10, 12.
 
-**Гейзенберг.** `H = Σᵢ Sᵢ·Sᵢ₊₁`, открытая цепочка. Замкнутой формулы для
-конечной цепочки нет — при L=12 эталон плотный `eigh`. Для длинных цепочек
-эталон **асимптотический**: энергия на узел бесконечной цепочки `1/4 − ln 2`
-(Hulthén 1938, Бете-анзац). Это не энергия никакой конечной цепочки, поэтому
-сравнивается **разность** `(E(2L) − E(L))/L`, которая гасит поверхностный член
-порядка `1/L`; логарифмическая поправка остаётся, и измеренные 6.7e-04 — это она,
-а не ошибка решателя.
+**Heisenberg.** `H = Σᵢ Sᵢ·Sᵢ₊₁`, open chain. There is no closed form for a
+finite chain — at L=12 the reference is a dense `eigh`. For long chains the
+reference is **asymptotic**: the energy per site of the infinite chain is
+`1/4 − ln 2` (Hulthén 1938, Bethe ansatz). That is not the energy of any finite
+chain, so what is compared is the **difference** `(E(2L) − E(L))/L`, which
+cancels the surface term of order `1/L`. The logarithmic correction remains, and
+the measured 6.7e-04 is that correction, not solver error.
 
-### Колебательные спектры
+### Vibrational spectra
 
-Единицы всюду безразмерные: `ħ = 1`, масс-взвешенные нормальные координаты,
-опорный осциллятор единичной частоты, так что `(1/2)(−d²/dq² + q²)` — это в
-точности `diag(k + 1/2)`. Любое опубликованное число в см⁻¹ или хартри требует
-пересчёта, прежде чем его можно сравнивать.
+Units are dimensionless throughout: `ħ = 1`, mass-weighted normal coordinates, a
+reference oscillator of unit frequency, so that `(1/2)(−d²/dq² + q²)` is exactly
+`diag(k + 1/2)`. Any published number in cm⁻¹ or hartree has to be converted
+before it can be compared.
 
-**Связанные осцилляторы.** `H = Σᵢ (wᵢ/2)(−d²/dqᵢ² + qᵢ²) + α Σᵢ<ⱼ qᵢqⱼ`,
-`wⱼ = sqrt(j/2)`, `α = 0.1` — раздел V.1 работы Rakhuba & Oseledets,
-*Calculating vibrational spectra of molecules using tensor train decomposition*,
-J. Chem. Phys. 145:124101 (2016), arXiv:1605.08422. Связаны **все** пары, а не
-соседние, и MPO всё равно имеет TT-ранг 3.
+**Coupled oscillators.** `H = Σᵢ (wᵢ/2)(−d²/dqᵢ² + qᵢ²) + α Σᵢ<ⱼ qᵢqⱼ`,
+`wⱼ = sqrt(j/2)`, `α = 0.1` — section V.1 of Rakhuba & Oseledets, *Calculating
+vibrational spectra of molecules using tensor train decomposition*, J. Chem.
+Phys. 145:124101 (2016), arXiv:1605.08422. **All** pairs are coupled, not just
+neighbours, and the MPO still has TT rank 3.
 
-Эталон аналитический и не трогает тензорных форматов: гамильтониан квадратичен,
-`H = ½ pᵀA p + ½ qᵀB q`, и его спектр это `Σₖ (mₖ + ½)Ωₖ`, где `Ωₖ²` —
-собственные числа `AB`. То есть плотная задача `d × d` служит оракулом для
-квантовой задачи размера `n^d`. Случай `α = 0` меряется отдельно: там базис
-точен, и остаётся только ошибка решателя.
+The reference is analytic and touches no tensor format: the Hamiltonian is
+quadratic, `H = ½ pᵀA p + ½ qᵀB q`, and its spectrum is `Σₖ (mₖ + ½)Ωₖ` where
+`Ωₖ²` are the eigenvalues of `AB`. So a dense `d × d` problem serves as the
+oracle for a quantum problem of size `n^d`. The `α = 0` case is measured
+separately: there the basis is exact and only solver error remains.
 
-**Хенон–Хейлес.** `H = Σ (1/2)(−d²/dqᵢ² + qᵢ²) + λ Σ (qᵢ²qᵢ₊₁ − qᵢ₊₁³/3)`,
-`λ = 0.111803` — значение, принятое в литературе MCTDH / DVR / TT. Эталон при
-d = 2, 3 — плотный `eigh`; при `λ = 0` — аналитический `d/2`; при больших `d`
-опубликованного числа в наших единицах нет, и строка помечена как «без эталона».
+**Hénon–Heiles.** `H = Σ (1/2)(−d²/dqᵢ² + qᵢ²) + λ Σ (qᵢ²qᵢ₊₁ − qᵢ₊₁³/3)`,
+`λ = 0.111803` — the value used in the MCTDH / DVR / TT literature. The
+reference at d = 2, 3 is a dense `eigh`; at `λ = 0` it is the analytic `d/2`; at
+large `d` no published number exists in our units, and the row is marked "no
+reference".
 
-Важная деталь реализации: `q²` и `q³` берутся как **галёркинские** матричные
-элементы `⟨i|q²|j⟩`, а не как степени усечённой `Q`. Точные элементы требуют
-промежуточных состояний выше базиса, поэтому произведения строятся при `n + 6`
-и потом обрезаются. Возведение усечённой `Q` в квадрат теряет `⟨n−1|q²|n−1⟩` на
-`n/2` — процентная ошибка на верхних базисных функциях, которая молча меняет
-диагонализируемый оператор.
+An implementation detail that matters: `q²` and `q³` are taken as **Galerkin**
+matrix elements `⟨i|q²|j⟩`, not as powers of the truncated `Q`. The exact
+elements need intermediate states above the basis, so the products are built at
+`n + 6` and truncated afterwards. Squaring the truncated `Q` loses
+`⟨n−1|q²|n−1⟩` by `n/2` — a percent-level error on the top basis functions,
+which silently changes the operator being diagonalized.
 
-### Многомерные интегралы
+### High-dimensional integrals
 
-**Синус-интеграл.** `∫[0,1]^d sin(Σxᵢ) dx = Im[((e^i − 1)/i)^d]` — замкнутая
-форма, работает до `d = 50` и дальше.
+**Sine integral.** `∫[0,1]^d sin(Σxᵢ) dx = Im[((e^i − 1)/i)^d]` — closed form,
+good to `d = 50` and beyond.
 
-**Corner peak Генца.** `∫ (1 + Σ aᵢxᵢ)^{−(d+1)}` — одно из шести семейств
-Genz, *Testing multidimensional integration routines* (1984); интеграл берётся
-в замкнутой форме по включениям-исключениям.
+**Genz corner peak.** `∫ (1 + Σ aᵢxᵢ)^{−(d+1)}` — one of the six Genz families,
+*Testing multidimensional integration routines* (1984); the integral has a
+closed form by inclusion–exclusion.
 
-Обе строки меряют не только точность, но и **число обращений к функции**: в
-кресте это и есть цена, а не время.
+Both rows measure not only accuracy but the **number of function calls**: in a
+cross approximation that is the cost, not the wall time.
 
-### Кванти́ческие ранги
+### Quantics ranks
 
 Khoromskij, *O(d log N)-quantics approximation of N-d tensors*, Constr. Approx.
-34:257–280 (2011): на равномерной сетке из `2^d` точек экспонента имеет
-QTT-ранг 1, синус — 2, многочлен степени `m` — `m+1`, независимо от `d`. Это
-целые числа, то есть эталон в строгом смысле.
+34:257–280 (2011): on a uniform grid of `2^d` points the exponential has QTT
+rank 1, the sine 2, a polynomial of degree `m` has `m+1`, independent of `d`.
+Those are integers, i.e. a reference in the strict sense.
 
-Проверка идёт **через `tt.cross`**, которому дан только чёрный ящик над битовыми
-шаблонами: если он возвращает ранг 2 для синуса на сетке из `2^40` точек, то
-структура найдена, а не заложена.
+The check runs **through `tt.cross`**, which is given nothing but a black box
+over bit patterns: if it comes back with rank 2 for the sine on a grid of `2^40`
+points, the structure was found rather than assumed.
 
-**Допуск здесь часть утверждения.** Измеренные сингулярные числа средней
-развёртки при `d = 10`, относительно первого: у многочлена степени 3
-`s₄ = 2.2e-10`, у степени 5 `s₅ = 4.3e-11`, `s₆ = 6.8e-15`. При `eps = 1e-10`
-многочлен степени 5 возвращается рангом 5 — правильно для такого допуска и
-бесполезно как проверка точного `m+1`. Поэтому `QTT_RANK_EPS = 1e-13`: он
-разрешает оба с запасом и всё ещё выше уровня 1e-15, где крест начал бы гоняться
-за шумом округления.
+**Here the tolerance is part of the claim.** The measured singular values of the
+middle unfolding at `d = 10`, relative to the first: for the degree-3 polynomial
+`s₄ = 2.2e-10`, for degree 5 `s₅ = 4.3e-11` and `s₆ = 6.8e-15`. At `eps = 1e-10`
+the degree-5 polynomial comes back at rank 5 — correct for that tolerance, and
+useless as a check of the exact `m+1`. Hence `QTT_RANK_EPS = 1e-13`: it admits
+both with room to spare and is still above the 1e-15 level where the cross would
+start chasing rounding noise.
 
-Гауссиан стоит в таблице как случай, где точного ранга не опубликовано — есть
-только утверждение об ограниченности по `d`, и его меряет развёртка по `d`.
+The Gaussian is in the table as the case where no exact rank has been published
+— only a statement that it is bounded in `d`, which a sweep over `d` measures.
 
-### QTT-БПФ и Пуассон
+### QTT FFT and Poisson
 
-**БПФ**: эталон — `numpy.fft` на том же векторе, плюс структурный факт о ранге.
-**Пуассон**: прямое решение `−u'' = 1` через точный обратный оператор
-(`qtri_ones` обращает `qdiff` в точности), эталон — узловое решение `x − x²/2`
-при `∫u = 1/2`. Идёт до `2³⁰` неизвестных.
+**FFT**: the reference is `numpy.fft` on the same vector, plus the structural
+fact about the rank. **Poisson**: `−u'' = 1` solved directly through the exact
+inverse operator (`qtri_ones` inverts `qdiff` exactly), with the nodal solution
+`x − x²/2` at `∫u = 1/2` as the reference. It runs to `2³⁰` unknowns.
 
-### Отказ, записанный как результат
+### A failure recorded as a result
 
-**Локализация Андерсона.** `−Δ_h + diag(V)` с независимым равномерным `V`.
-Эталон здесь — счётный аргумент, а не измерение: у типичного вектора длины `2^d`
-TT-ранги равны в точности `min(2^k, 2^{d−k})`, то есть максимально возможным, и
-оператор несжимаем. Строка существует затем, чтобы утверждение «тензорные методы
-здесь неприменимы» было измеренным фактом набора, а не фольклором, и чтобы
-будущая ранговая эвристика, которая молча усечёт этот потенциал, была поймана.
+**Anderson localization.** `−Δ_h + diag(V)` with independent uniform `V`. The
+reference here is a counting argument rather than a measurement: a typical
+vector of length `2^d` has TT ranks exactly `min(2^k, 2^{d−k})`, i.e. the
+largest possible, and the operator is incompressible. The row exists so that
+"tensor methods do not apply here" is a measured fact of the suite rather than
+folklore, and so that a future rank heuristic that silently truncates this
+potential gets caught.
 
-### Химическое основное кинетическое уравнение
+### Chemical master equation
 
-Цепочка реакций `0 → S₁ → S₂ → … → S_d → 0`. Jahnke & Huisinga, *Solving the
-chemical master equation for monomolecular reaction systems analytically*,
-J. Math. Biol. 54:1–26 (2007): такая система из пустого состояния имеет точное
-решение `∏ᵢ Poisson(mᵢ(t))` с `m' = Am + b` — замкнутая форма для задачи с
-`n^d` состояниями.
+The reaction chain `0 → S₁ → S₂ → … → S_d → 0`. Jahnke & Huisinga, *Solving the
+chemical master equation for monomolecular reaction systems analytically*, J.
+Math. Biol. 54:1–26 (2007): from the empty state such a system has the exact
+solution `∏ᵢ Poisson(mᵢ(t))` with `m' = Am + b` — a closed form for a problem
+with `n^d` states.
 
-Интегрируется неявным Эйлером через `amen_solve`. **В сообщаемое число входят
-две ошибки**: `O(τ)` от дискретизации по времени, которая принадлежит методу и
-ограничивается делением `τ` пополам, и ошибка тензорного решателя. Обе в строке;
-разделять их — отдельная работа, и до тех пор эту строку нельзя читать как
-точность решателя.
+It is integrated by implicit Euler through `amen_solve`. **The reported number
+contains two errors**: the `O(τ)` time-discretization error, which belongs to
+the method and is bounded by halving `τ`, and the tensor solver's error. Both
+are in the row; separating them is a separate piece of work, and until then this
+row must not be read as solver accuracy.
 
 ---
 
-## Правило
+## The rule
 
-Число без режима бесполезно, поэтому режим едет вместе с числом: бэкенд,
-устройство, dtype, число потоков, размеры, число повторов. Время — медиана
-`repeats` прогонов после прогрева при `repeats > 1` и единственный прогон иначе
-(это записано в поле `warmup`). JSON несёт машину.
+A number without its regime is useless, so the regime travels with the number:
+backend, device, dtype, thread count, sizes, repetitions. A time is the median
+of `repeats` runs after a warm-up when `repeats > 1`, and a single run otherwise
+(recorded in the `warmup` field). The JSON carries the machine.
 
-И отдельно: **утверждение о ранге имеет смысл только вместе с допуском, который
-его разрешает.** Один и тот же многочлен имеет ранг 5 при 1e-10 и 6 при 1e-13,
-и оба ответа верны для своего допуска.
+And separately: **a rank claim only means something together with the tolerance
+that admits it.** The same polynomial has rank 5 at 1e-10 and 6 at 1e-13, and
+both answers are correct for their tolerance.

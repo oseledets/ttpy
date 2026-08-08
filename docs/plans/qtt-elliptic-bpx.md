@@ -171,7 +171,7 @@ global `prec=` on `amen_solve` (§4.1).
    (`2^30 ≈ 1.07e9` nodes), unpreconditioned `amen_solve` reaches a relative
    nodal error of **1.05e+00** after 40 sweeps / 25.1 s; the BPX-preconditioned
    solve reaches **1.23e-11** in **6 sweeps / 0.33 s** (§2.2).
-4. **"Может можно лучше" is right in exactly one corner.** In `D = 1` with
+4. **"Maybe we can do better" is right in exactly one corner.** In `D = 1` with
    `A = M^T diag(a) M`, the exact inverse is `T diag(1/a) T^T` with
    `T = (I-S)^{-1}` of QTT rank **2**, so the whole solve is two matvecs: at
    `L = 40` it returns the nodal solution to a relative **5.55e-15** in **4 ms**
@@ -487,8 +487,8 @@ QTT rank 8. **The eigensolver spec should ask for `C_{2,L}`, not `C_L`.**
 
 ### 1.5 Why BPX has a low-rank QTT representation, explicitly
 
-This is the "хрен разберёшься" part. It rests on two three-line lemmas and one
-observation about sums.
+This is the "good luck making sense of it" part. It rests on two three-line
+lemmas and one observation about sums.
 
 **Lemma A (BK Lemma 1).** With `I = [[1,0],[0,1]]`, `J = [[0,1],[0,0]]` and the
 *strong Kronecker product* `⋊⋉` (BK Definition 1: block-matrix multiplication in
@@ -985,7 +985,7 @@ Build order:
    unpreconditioned solve is 100 % wrong after 25 s (§2.2).
 
 **So: is BPX the right answer? For a general elliptic operator, yes, and it is
-the only right answer measured here.** The user's "может можно лучше" is
+the only right answer measured here.** The user's "maybe we can do better" is
 correct in one specific and useful corner — `D = 1`, `A = M^T diag(a) M`, where
 the exact inverse has QTT rank 4 and a direct solve beats every preconditioner
 by ten orders of magnitude — and wrong everywhere else, because the cheaper

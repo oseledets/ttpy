@@ -104,11 +104,15 @@ python bench/bench_core.py --backends numpy torch --out bench/results/core.json
 ```
 
 Requirements live in [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) and are the
-source of truth: the code should be reproducible from them and the tests.
+source of truth: the code should be reproducible from them and the tests. The
+measured limits behind the defaults — accuracy floors, what each knob is worth
+in which regime, what a float32 or MPS backend can and cannot do — are in
+[docs/NUMERICS.md](docs/NUMERICS.md), which the docstrings point at rather than
+carry themselves.
 
 ## Where it stands
 
-801 tests, all against dense ground truth or a mathematical invariant — never
+823 tests, all against dense ground truth or a mathematical invariant — never
 against the old implementation. Measured against the Fortran ttpy on one host
 (details and raw data in [docs/PERFORMANCE.md](docs/PERFORMANCE.md)): faster on
 rounding (1.2-1.5x), on `dot` (2x), on `tt_svd` (11.9x) and on `amen_solve`

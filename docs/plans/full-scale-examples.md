@@ -569,7 +569,7 @@ literature the user asked for and because they point the same way as tamen.
 > dimensions*, J. Comput. Phys. **424** (2021) 109835, arXiv:1802.02839.
 > Companion: L. Markeeva, I. Oseledets, *Building Z-permuted matrices in the QTT
 > format*, Comput. Math. Math. Phys. **60** (2020),
-> doi:10.1134/S096554252012009X (Russian version in Труды МФТИ 12(3), 44–56).
+> doi:10.1134/S096554252012009X (Russian version in Trudy MFTI 12(3), 44–56).
 > Code: **`github.com/RerRayne/qtt-laplace`**, **no licence file**, Python 2,
 > 989 lines, dormant since 2018-05-12.
 

@@ -1229,7 +1229,7 @@ sampler 2.9 s → 49.6 s at **no** accuracy gain. *Experiment:* sweep the square
 tolerance independently of the cross's over `{eps, eps^{3/2}, eps², 1e-14}` on
 both of F3's densities and plot `ESS/N` against rank. Two hours. The answer must
 be a documented default with a warning, not a derived quantity — this is exactly
-`REQUIREMENTS.md` R4's "не тихая подстановка правдоподобного ответа".
+`REQUIREMENTS.md` R4's "never a plausible answer substituted quietly".
 
 **Q33 — Would importance weights have caught `cross-approximation.md` §1.3's
 silent failure?** *Blocks:* nothing, but it is the cheapest possible reuse of
