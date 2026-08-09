@@ -508,6 +508,11 @@ def dmrg_cross(fun, x0, eps=1e-6, rmax=None, pivoting=1, strike_limit=3,
         seed: Seed of the pivot lottery -- the run is deterministic for a
             fixed seed, unlike the reference implementation.
 
+    Note:
+        The first call with a given jitted ``fun`` compiles the bond kernel
+        for it (seconds); later calls with the same ``fun`` reuse it.  To keep
+        a benchmark honest, warm up with a throwaway run on a tiny grid.
+
     Returns:
         :class:`tt.vector` carrying a :class:`DmrgCrossHistory` as
         ``.history``.  The ranks are exactly what the greedy built -- there is

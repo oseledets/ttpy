@@ -1,9 +1,14 @@
 #!/usr/bin/env python
 """Ising susceptibility integrals by greedy cross -- ttcross's own benchmark.
 
-    python examples/ising_integrals.py             # C_6, C_16, D_6, E_6
-    python examples/ising_integrals.py c 32        # one integral: KIND INDEX
-    python examples/ising_integrals.py e 6 129     # ... and quadrature size
+    python examples/ising_integrals.py                 # C_6, C_16, D_6, E_6
+    python examples/ising_integrals.py c 32            # one integral: KIND INDEX
+    python examples/ising_integrals.py e 6 129         # ... quadrature size
+    python examples/ising_integrals.py c 16 65 1e-8    # ... and accuracy
+
+The accuracy is a real argument, not a build constant -- the one thing the
+reference driver hard-codes (``500 * eps_machine``) and the reason its
+published integrals saturate near 11 digits.
 
 The problem family of Bailey, Borwein & Crandall, *Integrals of the Ising
 class*, J. Phys. A 39:12271 (2006): ``C_m``, ``D_m`` and ``E_m`` are
@@ -130,6 +135,9 @@ def run(kind, m, n=65, eps=1e-12):
     nodes = (x + 1.0) / 2.0
     scale = float(n // 2)
     fun = integrand(kind, m, nodes, (w / 2.0) * scale)
+    # A tiny throwaway cross compiles fun AND the bond kernel for this
+    # dispatcher, off the clock; the timed run below is pure algorithm.
+    dmrg_cross(fun, [2] * d, rmax=2, eps=None)
 
     t0 = time.perf_counter()
     y = dmrg_cross(fun, [n] * d, eps=eps)
@@ -137,7 +145,8 @@ def run(kind, m, n=65, eps=1e-12):
     val = float(tt.dot(y, tt.ones(n, d))) / scale ** d
 
     h = y.history
-    line = (f"{kind.upper()}_{m:<3d} n={n:<4d} rank {max(h.ranks):3d}  "
+    line = (f"{kind.upper()}_{m:<3d} n={n:<4d} eps={eps:<8.0e} "
+            f"rank {max(h.ranks):3d}  "
             f"evals {h.fun_eval:9d}  {dt * 1e3:8.1f} ms")
     tru = TRUE.get((kind, m))
     if tru is not None:
@@ -155,7 +164,8 @@ if __name__ == "__main__":
         kind = sys.argv[1].lower()
         m = int(sys.argv[2]) if len(sys.argv) > 2 else 6
         n = int(sys.argv[3]) if len(sys.argv) > 3 else 65
-        run(kind, m, n)
+        eps = float(sys.argv[4]) if len(sys.argv) > 4 else 1e-12
+        run(kind, m, n, eps)
     else:
         for kind, m in [("c", 6), ("c", 16), ("d", 6), ("e", 6)]:
             run(kind, m)
