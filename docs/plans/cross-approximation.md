@@ -437,9 +437,13 @@ single-process, ttpy2 at default `kickrank=1, rf=2`, numpy/Accelerate float64.
    pivot rule stop it there), while `rect_cross` pushed the same tensors to
    12.6–13.6 digits. The ceiling is the stopping rule's, not the method's —
    but as shipped, the last two digits belong to us.
-3. **Dimension scaling favours the greedy growth**: C_16 cost ttcross the same
-   ~89k evaluations as C_6, while our count grew ~3.3x (linearly in `d`) to
-   3.6M. At `d = 15` that is a 40x gap in evaluations.
+3. ~~Dimension scaling favours the greedy growth~~ — **withdrawn, it was a
+   lucky run.** The C_16-at-89k row below is real but atypical: the reference's
+   lottery is unseeded and its accuracy rule is always armed, so occasionally
+   the pivots freeze and it strikes out early (~88k evaluations, 11.19
+   digits). Seven repeats measured later: **every one ran the full 19 sweeps
+   at ~379.5k evaluations in 89–118 ms** — the same schedule as the port's.
+   The greedy's per-sweep cost grows linearly in `d` for everyone.
 4. The §5 verdict — port the indicator, not the engine — was overtaken by
    this table: the 5–40x evaluation gap on smooth integrands was judged worth
    a second engine, and the port was ordered and done the same day
@@ -502,16 +506,21 @@ to 1 ulp), best of 5 against the Fortran's best of 3:
 |---|---|---|---|
 | C_6 | 15.3 ms (5.82M ev/s) | 13.6 ms (6.54M) | **10.8 ms (8.25M)** |
 | E_6 | 17.2 ms (5.07M) | 15.1 ms (5.77M) | **11.7 ms (7.44M)** |
-| C_16 | 15.6 ms (5.69M) | 62.4 ms (6.08M) | 50.3 ms (**7.55M**) |
+| C_16 | 89–118 ms (≈4.0M) | **62.4 ms (6.08M)** | **50.3 ms (7.55M)** |
 
 The numpy path alone is 8–14% faster than the compiled original per
 evaluation; the **compiled path** (`tt/algs/_dmrg_fast.py`, engages
 automatically when ``fun`` is a numba dispatcher — one jitted kernel per bond
 visit, hand-written LAPACK-convention triangular solves, identical lottery
 draws to the numpy path) is **30–42% faster than the Fortran** end to end
-where the schedules match, at identical evaluation counts.  C_16's wall-clock
-loss is purely the 4.3x larger evaluation count of its different pivot walk,
-which also buys +2.9 digits — at matched counts its throughput leads too.
+where the schedules match, at identical evaluation counts.  The C_16 row was
+first published here with a Fortran wall of 15.6 ms and a story about a "4.3x
+smaller evaluation count of a different pivot walk" — **both wrong**, caught
+when the per-sweep logs were compared: that timing came from a rare
+early-strike-out run of the reference (unseeded lottery, accuracy rule always
+armed, 11.19 digits).  A typical Fortran C_16 run does exactly the port's
+379.5k evaluations, in 89–118 ms over seven repeats — so at matched work the
+numpy path is ~1.5x and the compiled path ~1.9x faster there too.
 One porting trap recorded for the next reader: scipy's raw ``getrf`` wrapper
 already returns 0-based pivot indices (LAPACK's are 1-based); subtracting 1
 again corrupts the swaps.
