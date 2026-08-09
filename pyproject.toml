@@ -1,6 +1,6 @@
 [project]
 name = "ttpy"
-version = "2.0.0rc1"
+version = "2.0.0rc2"
 description = "Tensor Train toolbox: TT/QTT decompositions, cross approximation, AMEn solvers — pure Python, numpy/torch backends"
 readme = "README.md"
 requires-python = ">=3.10"

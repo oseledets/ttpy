@@ -23,7 +23,7 @@ from .core.tools import (IpaS, Toeplitz, col, concatenate, cos, delta, diag,
                          zkronv, zmeshgrid)
 from .core.vector import tensor, vector
 
-__version__ = "2.0.0rc1"
+__version__ = "2.0.0rc2"
 
 __all__ = [
     "vector", "tensor", "matrix", "set_backend", "get_backend",
