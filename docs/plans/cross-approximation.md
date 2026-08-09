@@ -502,25 +502,47 @@ With the example's integrand numba-compiled (the Fortran driver's integrand
 is compiled too — equal footing; the numpy fallback computes identical values
 to 1 ulp), best of 5 against the Fortran's best of 3:
 
-| problem, rank 20 | Fortran wall | port, numpy path | port, compiled path |
-|---|---|---|---|
-| C_6 | 15.3 ms (5.82M ev/s) | 13.6 ms (6.54M) | **10.8 ms (8.25M)** |
-| E_6 | 17.2 ms (5.07M) | 15.1 ms (5.77M) | **11.7 ms (7.44M)** |
-| C_16 | 89–118 ms (≈4.0M) | **62.4 ms (6.08M)** | **50.3 ms (7.55M)** |
+Medians over 7 runs (Fortran: 7 repeats, unseeded lottery) / 7 lottery seeds
+(port), **identical stopping rules on both sides** (rank cap 20, accuracy
+``500*eps_machine`` with three strikes -- the port run with exactly the
+driver's configuration; every one of the port's 21 runs stopped at the rank
+cap, as did 20 of the Fortran's 21):
 
-The numpy path alone is 8–14% faster than the compiled original per
-evaluation; the **compiled path** (`tt/algs/_dmrg_fast.py`, engages
-automatically when ``fun`` is a numba dispatcher — one jitted kernel per bond
-visit, hand-written LAPACK-convention triangular solves, identical lottery
-draws to the numpy path) is **30–42% faster than the Fortran** end to end
-where the schedules match, at identical evaluation counts.  The C_16 row was
-first published here with a Fortran wall of 15.6 ms and a story about a "4.3x
-smaller evaluation count of a different pivot walk" — **both wrong**, caught
-when the per-sweep logs were compared: that timing came from a rare
-early-strike-out run of the reference (unseeded lottery, accuracy rule always
-armed, 11.19 digits).  A typical Fortran C_16 run does exactly the port's
-379.5k evaluations, in 89–118 ms over seven repeats — so at matched work the
-numpy path is ~1.5x and the compiled path ~1.9x faster there too.
+| rank 20, medians [min..max] | evaluations | digits | wall |
+|---|---|---|---|
+| C_6 Fortran | 88 935 [88 869..89 067] | 11.14 [10.21..11.83] | 26.2 ms [22.7..31.3] |
+| C_6 port, numpy | 89 001 [88 803..89 199] | 10.80 [10.29..11.17] | 22.6 ms [20.6..29.1] |
+| C_6 port, compiled | same | same | **13.1 ms** [11.2..] |
+| E_6 Fortran | 87 087 [86 955..87 285] | 11.86 [11.02..12.40] | 22.8 ms [21.9..26.2] |
+| E_6 port, numpy | 87 219 [86 955..87 483] | 11.59 [10.94..12.43] | 24.2 ms [21.9..25.7] |
+| E_6 port, compiled | same | same | **13.0 ms** [11.6..] |
+| C_16 Fortran | 379 473 [..379 671] | 11.69 [11.43..12.12] | ≈94 ms [89..118] |
+| C_16 port, numpy | 379 473 [379 209..379 605] | 11.68 [11.43..14.06] | 96.8 ms [87.1..123.1] |
+| C_16 port, compiled | same | same | **59.2 ms** [53.6..] |
+
+What the medians say: the evaluation schedules are **statistically
+identical** (medians differ by under 0.15%, well inside each side's own
+lottery spread), the delivered digits are statistically identical too, the
+numpy engine runs at wall-clock parity with the compiled Fortran, and the
+**compiled path** (`tt/algs/_dmrg_fast.py`, engages automatically when
+``fun`` is a numba dispatcher — one jitted kernel per bond visit,
+hand-written LAPACK-convention triangular solves, identical lottery draws to
+the numpy path) is **1.6–2.0x faster than the Fortran**.
+
+Three earlier single-shot claims died on the way to these medians and are
+recorded as dead: the C_16 row was first published with a Fortran wall of
+15.6 ms and a "4.3x smaller evaluation count" story — that was a rare
+early-strike-out of the reference's always-armed accuracy rule under its
+unseeded lottery (11.19 digits), not its typical cost; the port's "+2.9
+digits on C_16" was one lucky seed of ours (the [11.43..14.06] spread above);
+and "the numpy path is 8–14% faster per evaluation" from best-of timings is
+inside session noise — parity is what the medians support.  The eps-driven
+regime is a different story: at the driver's own ``500*eps_machine`` constant
+*without* a rank cap the reference strikes out at ~89k evaluations / 10.9
+digits even with rank headroom (rank cap 40), while the port continues to
+rank 33+ and 14.7 digits — its residuals, computed through pivoted LAPACK
+solves, stay meaningful below the reference build's ~1e-11 floor.  More
+digits for more evaluations, priced explicitly.
 One porting trap recorded for the next reader: scipy's raw ``getrf`` wrapper
 already returns 0-based pivot indices (LAPACK's are 1-based); subtracting 1
 again corrupts the swaps.
