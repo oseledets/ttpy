@@ -33,7 +33,8 @@ __all__ = [
     "level_major_order", "xfun", "linspace", "sin", "cos",
     "delta", "stepfun", "qshift", "shift", "unit", "IpaS", "reshape", "permute",
     "multifuncrs", "multifuncrs2", "GMRES", "amen_solve", "amen_mv",
-    "cross", "rect_cross", "maxvol", "eigb", "ksl", "__version__",
+    "cross", "rect_cross", "dmrg_cross", "greedy_cross", "maxvol",
+    "eigb", "ksl", "__version__",
 ]
 
 
@@ -51,6 +52,8 @@ _FUNCTIONS = {
     "eigb_solve": ("tt.algs.eigb", "eigb"),
     "ksl_step": ("tt.algs.ksl", "ksl"),
     "rect_cross": ("tt.algs.cross", "rect_cross"),
+    "dmrg_cross": ("tt.algs.dmrg_cross", "dmrg_cross"),
+    "greedy_cross": ("tt.algs.dmrg_cross", "dmrg_cross"),
     "rect_maxvol": ("tt.algs.maxvol", "rect_maxvol"),
     "min_tens": ("tt.algs.optimize", "min_tens"),
     "min_func": ("tt.algs.optimize", "min_func"),

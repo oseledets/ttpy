@@ -13,7 +13,7 @@ R4/R7.
 | what | where | state |
 |---|---|---|
 | ttpy2 | `tt/algs/cross.py` (583 lines), `tt/algs/maxvol.py` (644), `tt/algs/_indexing.py` (220), `tt/algs/multifuncrs.py` (644) | read in full, run |
-| ttcross | `github.com/savostyanov/ttcross` @ `9254e82` (2024-02-10): `dmrgg.f90` (936), `lr.f90`, `ttind.f90`, `rnd.f90`, `main.f90`, `README.md` | **read in full; not built** — b300 has no `gfortran`, no `mpif90`, no system LAPACK/BLAS (§9.4). No ttcross timing appears anywhere in this document. |
+| ttcross | `github.com/savostyanov/ttcross` @ `9254e82` (2024-02-10): `dmrgg.f90` (936), `lr.f90`, `ttind.f90`, `rnd.f90`, `main.f90`, `README.md` | **read in full; built and run** on an M-series Mac (gfortran 15 + Accelerate + a single-process MPI stub; §2.1a) — b300 still has no toolchain. Measured numbers in §2.1a. |
 | teneva | `github.com/AndreiChertkov/teneva` @ `5be12bc` (v0.14.11): `maxvol.py` (137), `cross.py` (287), `cross_act.py` (277), `utils.py`, `core.py` | read in full; **installed and run** on b300 (`uv pip install teneva`, 0.14.11, numpy 2.5.1) |
 | legacy ttpy | `~/work/ttpy-modern/ttpy-src/tt/cross/rectcross/rect_cross.py` | read and run (micromamba `ttlegacy`, numpy 1.24.4) |
 
@@ -386,6 +386,103 @@ considered further.
 `-fdefault-real-8/16` and ships an MPFUN/MPFR multiple-precision variant
 (`dmrggmp.f90`, `mpblas.f90`). We are float64/float32 and out of scope here.
 
+### 2.1a Built and measured (2026-08-09, Apple M-series)
+
+The "not built" above stopped being true on a machine with a Fortran toolchain.
+Build: gfortran 15 (brew) + Accelerate as LAPACK/BLAS + a ~100-line
+single-process MPI stub (`mpif.h` with size-encoding datatype constants and a C
+file implementing init/rank/size/barrier as no-ops, allreduce/reduce/bcast as
+memcpy honouring `MPI_IN_PLACE`, send/recv as loud aborts — with one process the
+neighbour exchanges are never reached, and the stub proves it by construction).
+Three fixes to our stub header along the way (`MPI_2DOUBLE_PRECISION`,
+`MPI_MAXLOC`, `MPI_PROD`); the ttcross sources themselves compiled untouched
+with `-fallow-argument-mismatch`.
+
+**Protocol.** `test_crs_ising.exe KIND m 65 RANK 1` against ttpy2 `rect_cross`
+on the **identical discretized tensor**: `m−1` variables, 65 Gauss–Legendre
+nodes on `[0,1]`, weights halved to a measure, scaled by `n/2` and baked into
+the tensor entries exactly as the Fortran driver does; the integral is the
+contraction with the rank-1 tensor of `(2/n)`'s, and the reference is Bailey's
+constant embedded in `test_crs_ising.f90`. Both at `OMP_NUM_THREADS=4`, ttcross
+single-process, ttpy2 at default `kickrank=1, rf=2`, numpy/Accelerate float64.
+
+| problem | engine | knob | digits | evaluations | wall |
+|---|---|---|---|---|---|
+| C_6 | ttcross | rank 5 | 5.55 | 8 205 | 5 ms |
+| C_6 | ttpy2 | eps 1e-5 | 7.13 | 71 110 | 40 ms |
+| C_6 | ttcross | rank 10 | 7.54 | 26 315 | 8 ms |
+| C_6 | ttpy2 | eps 1e-7 | 9.22 | 454 935 | 183 ms |
+| C_6 | ttcross | rank 20 | 10.75 | 89 001 | 20 ms |
+| C_6 | ttcross | rank 40 | 10.90 | 89 133 | 33 ms |
+| C_6 | ttpy2 | eps 1e-11 | 13.63 | 1 092 000 | 415 ms |
+| C_16 | ttcross | rank 20 | 11.19 | 88 671 | 25 ms |
+| C_16 | ttpy2 | eps 1e-11 | 13.55 | 3 649 490 | 1.8 s |
+| D_6 | ttcross | rank 25 | 10.39 | 88 275 | 20 ms |
+| D_6 | ttpy2 | eps 1e-11 | 13.19 | 1 232 140 | 519 ms |
+| E_6 | ttcross | rank 20 | 11.25 | 87 087 | 23 ms |
+| E_6 | ttpy2 | eps 1e-11 | 12.62 | 1 111 565 | 400 ms |
+
+**What the numbers say, in both directions.**
+
+1. **At equal accuracy ttcross spends 5–10x fewer function evaluations** on
+   these integrands, and its Fortran core is another order of magnitude faster
+   per evaluation — 20 ms against 415 ms end-to-end at the ~11-digit level.
+   This settles §4.2's "neither is uniformly cheaper in evaluations" for the
+   Ising family: here the greedy +1-per-bond growth with rook pivoting on the
+   residual **is** uniformly cheaper. The mechanism is visible in the counts:
+   its evaluations saturate near 89k (the pivot-value stopping rule fires)
+   while ours keep scaling with the requested `eps`.
+2. **ttcross saturates at ~11 digits regardless of rank** (rank 40 buys 0.15
+   digits over rank 20; its `accuracy = 500*eps_machine` and the three-strike
+   pivot rule stop it there), while `rect_cross` pushed the same tensors to
+   12.6–13.6 digits. The ceiling is the stopping rule's, not the method's —
+   but as shipped, the last two digits belong to us.
+3. **Dimension scaling favours the greedy growth**: C_16 cost ttcross the same
+   ~89k evaluations as C_6, while our count grew ~3.3x (linearly in `d`) to
+   3.6M. At `d = 15` that is a 40x gap in evaluations.
+4. The §5 verdict — port the indicator, not the engine — was overtaken by
+   this table: the 5–40x evaluation gap on smooth integrands was judged worth
+   a second engine, and the port was ordered and done the same day
+   (`tt/algs/dmrg_cross.py`, 2026-08-09). The three-strike rule (P4), the
+   two-norm held-out check (P5) and the pivot rejection (P6) ship inside it.
+
+### 2.1b The port, measured against the table above
+
+`tt.dmrg_cross` (`tt/algs/dmrg_cross.py`), same protocol, same machine, same
+`OMP_NUM_THREADS=4`:
+
+| problem | knob | Fortran ttcross | ttpy2 port |
+|---|---|---|---|
+| C_6 | rank 5 | 5.55 digits @ 8 205 | 4.94 @ **8 205** |
+| C_6 | rank 10 | 7.54 @ 26 315 | 7.93 @ **26 315** |
+| C_6 | rank 20 | 10.75 @ 89 001 | 11.17 @ 89 199 |
+| C_6 | acc 1.1e-13 | 10.90 @ 89 133 (saturated) | **14.68** @ 288 631 |
+| C_16 | rank 20 | 11.19 @ 88 671 | 14.05 @ 379 605 |
+| D_6 | rank 25 | 10.39 @ 88 275 | 11.80 @ 130 079 |
+| E_6 | rank 20 | 11.25 @ 87 087 | 12.02 @ 86 955 |
+
+The evaluation counts at matched rank caps agree with the Fortran **to the
+evaluation** on C_6 (8 205 and 26 315 exactly): the port reproduces the
+original's evaluation schedule, not merely its idea. Two deliberate
+differences show in the other rows. The ~11-digit ceiling of §2.1a turns out
+to belong to the reference *build*, not the algorithm: with the same stopping
+constant (their hard-coded `500*eps_machine`) the port reaches 14.7 digits,
+because the cross matrix is factorised by LAPACK LU with partial pivoting
+instead of the original's unpivoted bordered LU. And on C_16 the port spends
+4.3x more evaluations for 2.9 more digits — a different point on the same
+frontier, traceable to argmax tie-breaking in the rook search. Wall time is
+37–350 ms against the Fortran's 20–30 ms: pure Python overhead, same ratio as
+everywhere else in the package.
+
+Acceptance tests live in `tests/test_dmrg_cross.py` (18, dense-truth and
+closed-form oracles); `tt.greedy_cross` now resolves to this engine — the
+alias stopped lying (P2).
+
+Artifacts: build recipe and stub in the session scratchpad
+(`ttcross/mpif.h`, `ttcross/mpi_stub.c`); the ttpy2 side is
+`cross_vs_ttcross.py` / `accept_dmrg.py` there, runnable against any
+checkout.
+
 ### 2.2 teneva — read and run
 
 `teneva.cross` (`cross.py:13-205`) is the same family as ours: one-site
@@ -462,7 +559,7 @@ ttcross is the *pivot rejection idea*, and it belongs in `cross.py`, not in
 | axis | ttcross (`dmrgg.f90`) | teneva (`cross.py`) | ttpy2 (`cross.py`) | better, and why |
 |---|---|---|---|---|
 | block | two-site (DMRG) superblock `r n n r` | one-site `r n r` | one-site `r n r` | **teneva/ttpy2** on cost per micro-step; **ttcross** sees `n²` pivot candidates at once, which is what makes rank +1 per sweep enough |
-| rank adaptation | +1 per bond per sweep, pivot = argmax residual | `dr_min … dr_max` per micro-step (default 1..1), driven by `maxvol_rect` | `kickrank … kickrank + rf` per micro-step, driven by `rect_maxvol` | **ttcross** is the most parsimonious in rank; **ttpy2** reaches the target rank in the fewest sweeps; neither is uniformly cheaper in evaluations (§4.2) |
+| rank adaptation | +1 per bond per sweep, pivot = argmax residual | `dr_min … dr_max` per micro-step (default 1..1), driven by `maxvol_rect` | `kickrank … kickrank + rf` per micro-step, driven by `rect_maxvol` | **ttcross** is the most parsimonious in rank; **ttpy2** reaches the target rank in the fewest sweeps; on the Ising family ttcross is uniformly cheaper in evaluations, 5–40x (measured, §2.1a) — §4.2's "neither is uniformly cheaper" survives only as a statement about worst cases |
 | pivot choice | max of the **residual** `A − col·row`, by full / lottery / rook search | max 2-volume of an orthonormal basis (`maxvol_rect`) | same as teneva | **ttcross** — the residual is the quantity the error depends on; volume is a proxy for it. But rook pivoting needs `2p` extra fibers per bond per sweep and is only affordable because the rank grows by 1 |
 | exploration beyond the pivots | the lottery is a uniform random sample of unselected entries — **random exploration is built into every pivot search** | none in `cross`; `dr2` exists in `cross_act` | none | **ttcross**, decisively. This is the same gap §1.3 measures |
 | basis factorisation | none (bordered LU of the cross submatrix) | QR | SVD, untruncated | ttcross avoids it entirely; QR vs SVD is a wash in practice (§4.5) |

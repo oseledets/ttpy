@@ -61,7 +61,7 @@ from ..core import _ops
 from ..core.vector import vector
 from .maxvol import maxvol, rect_maxvol
 
-__all__ = ["rect_cross", "cross", "greedy_cross", "CrossHistory", "element"]
+__all__ = ["rect_cross", "cross", "CrossHistory", "element"]
 
 _EMPTY = np.empty((1, 0), dtype=np.int64)
 
@@ -599,7 +599,7 @@ def cross(fun, n=None, d=None, eps=1e-6, r=2, seed=0, **kwargs):
     return rect_cross(fun, x0, eps=eps, **kwargs)
 
 
-#: The rank adaptation here *is* the greedy one (rectangular maxvol adds the
-#: rows with the largest interpolation residual), so ``tt.greedy_cross`` is the
-#: same routine under the name used in the AMEn/greedy-cross literature.
-greedy_cross = rect_cross
+# ``greedy_cross`` used to be an alias of ``rect_cross`` -- a projection of the
+# concept onto the engine we had.  The literature's greedy cross (rank +1 per
+# bond, residual rook pivoting) now exists for real in
+# :mod:`tt.algs.dmrg_cross`, and the name lives there.
