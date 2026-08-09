@@ -560,6 +560,39 @@ Acceptance tests live in `tests/test_dmrg_cross.py` (18, dense-truth and
 closed-form oracles); `tt.greedy_cross` now resolves to this engine — the
 alias stopped lying (P2).
 
+### 2.1c The two in-package engines on the same integrals
+
+The pre-port section 2.1a compared `rect_cross` with the Fortran; here are the
+package's own two engines head to head, medians over 5 seeds, the same
+numba-jitted integrand handed to both (the compiled bond kernel engages for
+`dmrg_cross`; `rect_cross` calls the same dispatcher as a plain black box),
+kernel compile off the clock:
+
+| C_6 | digits | evaluations | wall |
+|---|---|---|---|
+| dmrg eps 1e-5 / rect eps 1e-5 | 8.16 / 7.00 | 31k / 72k | 11 / 48 ms |
+| dmrg 1e-7 / rect 1e-7 | 10.30 / 9.23 | 67k / 373k | 14 / 162 ms |
+| dmrg 1e-9 / rect 1e-9 | 11.95 / 11.47 | 114k / 686k | 23 / 323 ms |
+| dmrg 1e-11 / rect 1e-11 | 14.21 / 13.60 | 192k / 1 111k | 42 / 523 ms |
+
+| C_16 | digits | evaluations | wall |
+|---|---|---|---|
+| dmrg 1e-5 / rect 1e-5 | 8.00 / 6.86 | 86k / 307k | 33 / 223 ms |
+| dmrg 1e-7 / rect 1e-7 | 9.34 / 8.72 | 169k / 1 137k | 60 / 601 ms |
+| dmrg 1e-9 / rect 1e-9 | 11.27 / 11.40 | 345k / 2 177k | 112 / 985 ms |
+| dmrg 1e-11 / rect 1e-11 | 13.81 / 13.49 | 623k / 3 717k | 168 / 1 354 ms |
+
+At matched digits the greedy needs **3–7x fewer evaluations** (typically ~6x)
+and **8–13x less wall time**, and at every eps it lands a fraction of a digit
+to a digit *above* `rect_cross` for its budget.  Both engines top out near
+14.5 digits on these tensors.  This corrects the "5–40x fewer evaluations"
+claim first drawn from 2.1a: the 40x end of that range came from the same
+lucky Fortran C_16 row that section 2.1b withdrew; the measured spread against
+`rect_cross` at equal accuracy is 3–7x.  `rect_cross` keeps its own ground —
+kickrank-sized rank jumps reach a target rank in far fewer sweeps, which is
+what AMEn-style consumers want — but for quadrature-style smooth black boxes
+the greedy is now the engine to reach for.
+
 Artifacts: build recipe and stub in the session scratchpad
 (`ttcross/mpif.h`, `ttcross/mpi_stub.c`); the ttpy2 side is
 `cross_vs_ttcross.py` / `accept_dmrg.py` there, runnable against any

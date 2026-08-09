@@ -138,8 +138,9 @@ ordered milestones and 43 benchmark problems split by what is runnable today.
 
 Shipped from that list already: `tt.dmrg_cross`, a from-scratch port of
 Savostyanov's greedy DMRG cross (`ttcross`) — rank +1 per bond per sweep, rook
-pivoting on the residual, 5–40x fewer function evaluations than `rect_cross`
-on smooth integrands.  Faster than the Fortran original: 8–14% per evaluation
+pivoting on the residual; at equal digits on smooth integrands it needs 3–7x
+fewer function evaluations and ~10x less wall time than `rect_cross`
+(medians over seeds).  Faster than the Fortran original: 8–14% per evaluation
 on the numpy path, 30–42% end to end when `fun` is numba-jitted (the bond
 visit then runs as one compiled kernel).  Measured parity and the race in
 [docs/plans/cross-approximation.md](docs/plans/cross-approximation.md) §2.1b.
