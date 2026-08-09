@@ -474,6 +474,23 @@ frontier, traceable to argmax tie-breaking in the rook search. Wall time is
 37–350 ms against the Fortran's 20–30 ms: pure Python overhead, same ratio as
 everywhere else in the package.
 
+**Wall-clock parity, after vectorising the two profiled hotspots** (the
+lottery draw and the point-index assembly; both were Python loops): C_6 at
+rank 20 runs at 3.39M evaluations/s end to end against the Fortran's 4.37M/s,
+C_16 at 3.12M/s against 3.52M/s — a 1.1–1.3x gap, i.e. at parity for an
+interpreted engine (the KSL story did not repeat here; the batches are big
+enough that numpy is the arithmetic, not the overhead). Engine overhead net
+of the integrand is 21 ms of C_6's 26 ms and 75 ms of C_16's 122 ms.
+
+**The Fortran package's other two drivers** (`test_mc_ising`,
+`test_qmc_ising`) also build and run on the same machine and reproduce the
+paper's core claim on C_6: plain MC reaches 3.6 digits and lattice QMC 7.5
+digits at 4.19M evaluations each, where the greedy cross has 7.9 digits at
+26k — two orders of magnitude fewer calls at equal accuracy.
+`examples/ising_integrals.py` is the ported driver; at `eps=1e-12`, n=65 it
+delivers 13.7–14.7 digits on C_6/C_16/D_6/E_6 in 50–230 ms, and the
+31-dimensional C_32 at 14.3 digits in 355 ms / 820k evaluations.
+
 Acceptance tests live in `tests/test_dmrg_cross.py` (18, dense-truth and
 closed-form oracles); `tt.greedy_cross` now resolves to this engine — the
 alias stopped lying (P2).

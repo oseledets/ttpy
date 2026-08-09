@@ -253,14 +253,12 @@ def _row_indices(st, p, ii, jj):
 
 def _point_indices(st, p, pts):
     """Multi-indices for arbitrary superblock points ``(i, j, k, q)``."""
-    left = st.left_prefixes(p)
-    right = st.right_suffixes(p)
+    pts = np.asarray(pts, dtype=np.int64)
     out = np.empty((len(pts), len(st.n)), dtype=np.int64)
-    for row, (i, j, k, q) in enumerate(pts):
-        out[row, :p] = left[i]
-        out[row, p] = j
-        out[row, p + 1] = k
-        out[row, p + 2:] = right[q]
+    out[:, :p] = st.left_prefixes(p)[pts[:, 0]]
+    out[:, p] = pts[:, 1]
+    out[:, p + 1] = pts[:, 2]
+    out[:, p + 2:] = st.right_suffixes(p)[pts[:, 3]]
     return out
 
 
@@ -276,9 +274,11 @@ def _lottery(rng, wcol, wrow, npnt):
     scol, srow = wcol.sum(), wrow.sum()
     if scol == 0.0 or srow == 0.0:
         return None
-    ij = rng.choice(len(wcol), size=npnt, p=wcol / scol)
-    kq = rng.choice(len(wrow), size=npnt, p=wrow / srow)
-    return ij, kq
+    # Inverse-CDF draw, as the original's ``lottery2`` (cumsum + bisection);
+    # ``rng.choice(p=...)`` does the same thing an order of magnitude slower.
+    ij = np.searchsorted(np.cumsum(wcol), rng.random(npnt) * scol, side="right")
+    kq = np.searchsorted(np.cumsum(wrow), rng.random(npnt) * srow, side="right")
+    return (np.minimum(ij, len(wcol) - 1), np.minimum(kq, len(wrow) - 1))
 
 
 def _bond_pivot(fun, st, p, opts, counter, hist, start_with_row):
@@ -303,8 +303,9 @@ def _bond_pivot(fun, st, p, opts, counter, hist, start_with_row):
         hist.amax = max(hist.amax, float(np.abs(vals).max()))
 
     if piv == -1:                                # full search over the superblock
-        pts = [(i, j, k, q) for i in range(r1) for j in range(n1)
-               for k in range(n2) for q in range(r2)]
+        pts = np.stack(np.meshgrid(
+            np.arange(r1), np.arange(n1), np.arange(n2), np.arange(r2),
+            indexing="ij"), axis=-1).reshape(-1, 4)
         a = _evaluate(fun, _point_indices(st, p, pts), counter)
         _amax(a)
         a = a.reshape(r1 * n1, n2 * r2)
@@ -329,13 +330,12 @@ def _bond_pivot(fun, st, p, opts, counter, hist, start_with_row):
     if drawn is None:                            # every position is a pivot
         return None
     ijpos, kqpos = drawn
-    pts = [(ij // n1, ij % n1, kq // r2, kq % r2)
-           for ij, kq in zip(ijpos, kqpos)]
+    pts = np.stack([ijpos // n1, ijpos % n1, kqpos // r2, kqpos % r2], axis=1)
     b = _evaluate(fun, _point_indices(st, p, pts), counter)
     _amax(b)
     res = b - np.einsum("ls,ls->l", Cm[ijpos], W[:, kqpos].T)
     best = int(np.argmax(np.abs(res)))
-    ii, jj, kk, qq = pts[best]
+    ii, jj, kk, qq = (int(v) for v in pts[best])
     pivot = res[best]
 
     # -- fibers / rook alternation -------------------------------------------
