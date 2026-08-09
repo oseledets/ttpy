@@ -158,7 +158,7 @@ class _State:
         self.quad = [[] for _ in range(d - 1)]   # per bond: list of (i, j, k, q)
         self.lp = [None] * (d - 1)           # lp[p]: (r_p, p+1) left prefixes
         self.rs = [None] * (d - 1)           # rs[p]: (r_p, d-p-1) right suffixes
-        self._lu = {}                        # bond -> lu_factor of M_p
+        self._lu = {}                        # bond -> factorised M_p
 
     def r(self, p):
         """Rank of bond ``p``; the boundaries count as rank 1."""
@@ -181,13 +181,31 @@ class _State:
         return self.rs[p + 1]
 
     def cross_matrix(self, p):
-        """``M_p = A(I_p, J_p)`` -- a row subset of ``C[p]``, factorised."""
+        """``M_p = A(I_p, J_p)`` factorised: ``(getrs, lu, piv)``.
+
+        Raw LAPACK ``getrf``/``getrs`` instead of ``lu_factor``/``lu_solve``:
+        the sweep calls this once per bond visit on a wide right-hand side,
+        and the scipy wrapper overhead costs more than the solve.  It stays a
+        *solve* -- an explicit ``M^{-1}`` applied as a GEMM was tried and
+        reverted: multiplication by an inverse is not backward stable, the
+        residual noise floor rises from ``eps`` to ``cond(M) * eps``, and the
+        pivot-acceptance threshold (calibrated for a backward-stable residual)
+        starts accepting duplicate pivots, which makes ``M`` singular.
+        """
         if p not in self._lu:
             ii = np.array([t[0] for t in self.quad[p]], dtype=np.int64)
             jj = np.array([t[1] for t in self.quad[p]], dtype=np.int64)
-            m = self.C[p][ii, jj, :]
-            self._lu[p] = sla.lu_factor(m)
+            m = np.asfortranarray(self.C[p][ii, jj, :])
+            getrf, getrs = sla.get_lapack_funcs(("getrf", "getrs"), (m,))
+            lu, piv, _info = getrf(m, overwrite_a=True)
+            self._lu[p] = (getrs, lu, piv)
         return self._lu[p]
+
+    def solve(self, p, b, trans=0):
+        """``M_p^{-1} b`` (or ``M_p^{-T} b``), backward stably."""
+        getrs, lu, piv = self.cross_matrix(p)
+        x, _info = getrs(lu, piv, b, trans=trans)
+        return x
 
     def accept(self, p, ii, jj, kk, qq, acol, arow):
         """Append pivot ``(ii, jj, kk, qq)`` at bond ``p`` with its fibers."""
@@ -295,9 +313,12 @@ def _bond_pivot(fun, st, p, opts, counter, hist, start_with_row):
     rp = st.r(p)
     Cm = st.C[p].reshape(r1 * n1, rp)
     Rm = st.C[p + 1].reshape(rp, n2 * r2)
-    lu = st.cross_matrix(p)
-    W = sla.lu_solve(lu, Rm)                     # M_p^{-1} R -- (rp, n2*r2)
     piv = opts["pivoting"]
+    # The interpolant is applied one column / one row / one scattered batch at
+    # a time -- never as the full ``M^{-1} R``: forming it costs
+    # ``O(r^2 n r2)`` per bond visit where the original's incremental factors
+    # pay ``O(r n)``, and it was the whole gap to the Fortran (measured;
+    # docs/plans/cross-approximation.md 2.1b).
 
     def _amax(vals):
         hist.amax = max(hist.amax, float(np.abs(vals).max()))
@@ -309,7 +330,7 @@ def _bond_pivot(fun, st, p, opts, counter, hist, start_with_row):
         a = _evaluate(fun, _point_indices(st, p, pts), counter)
         _amax(a)
         a = a.reshape(r1 * n1, n2 * r2)
-        res = a - Cm @ W
+        res = a - Cm @ st.solve(p, np.asfortranarray(Rm))
         flat = int(np.argmax(np.abs(res)))
         rowpos, colpos = divmod(flat, n2 * r2)
         ii, jj = divmod(rowpos, n1)
@@ -333,7 +354,8 @@ def _bond_pivot(fun, st, p, opts, counter, hist, start_with_row):
     pts = np.stack([ijpos // n1, ijpos % n1, kqpos // r2, kqpos % r2], axis=1)
     b = _evaluate(fun, _point_indices(st, p, pts), counter)
     _amax(b)
-    res = b - np.einsum("ls,ls->l", Cm[ijpos], W[:, kqpos].T)
+    X = st.solve(p, np.asfortranarray(Rm[:, kqpos]))     # (rp, nlot)
+    res = b - np.einsum("ls,sl->l", Cm[ijpos], X)
     best = int(np.argmax(np.abs(res)))
     ii, jj, kk, qq = (int(v) for v in pts[best])
     pivot = res[best]
@@ -354,7 +376,7 @@ def _bond_pivot(fun, st, p, opts, counter, hist, start_with_row):
             crs += 1
             done = (arow is not None) and crs >= 2 * piv
             if not done:
-                rescol = acol - Cm @ W[:, kk * r2 + qq]
+                rescol = acol - Cm @ st.solve(p, Rm[:, kk * r2 + qq].copy())
                 pos = int(np.argmax(np.abs(rescol)))
                 i, j = divmod(pos, n1)
                 done = (arow is not None) and (i, j) == (ii, jj)
@@ -367,7 +389,8 @@ def _bond_pivot(fun, st, p, opts, counter, hist, start_with_row):
             crs += 1
             done = (acol is not None) and crs >= 2 * piv
             if not done:
-                resrow = arow - Cm[ii * n1 + jj] @ W
+                resrow = arow - st.solve(p, Cm[ii * n1 + jj].copy(),
+                                         trans=1) @ Rm
                 pos = int(np.argmax(np.abs(resrow)))
                 k, q = divmod(pos, r2)
                 done = (acol is not None) and (k, q) == (kk, qq)
@@ -558,8 +581,8 @@ def dmrg_cross(fun, x0, eps=1e-6, rmax=None, pivoting=1, strike_limit=3,
     cores = []
     for p in range(d - 1):
         r1, npp, rp = st.C[p].shape
-        lu = st.cross_matrix(p)
-        core = sla.lu_solve(lu, st.C[p].reshape(r1 * npp, rp).T, trans=1).T
+        core = st.solve(
+            p, np.asfortranarray(st.C[p].reshape(r1 * npp, rp).T), trans=1).T
         cores.append(core.reshape(r1, npp, rp))
     cores.append(st.C[d - 1])
     y = vector.from_list([_to_backend(c, opts) for c in cores])

@@ -42,8 +42,7 @@ TRUE = {
 }
 
 
-def integrand(kind, m, nodes, wscaled):
-    """The discretized C/D/E integrand, weights included -- ttcross's tensor."""
+def _integrand_numpy(kind, m, nodes, wscaled):
     d = m - 1
 
     def fun(idx):
@@ -68,6 +67,63 @@ def integrand(kind, m, nodes, wscaled):
     return fun
 
 
+def integrand(kind, m, nodes, wscaled):
+    """The discretized C/D/E integrand, weights included -- ttcross's tensor.
+
+    Compiled with numba when it is installed (the ``[fast]`` extra), because
+    the Fortran driver's integrand is compiled too and the comparison in
+    ``docs/plans/cross-approximation.md`` 2.1b is only fair on equal footing;
+    without numba the numpy version below computes the identical values.
+    """
+    try:
+        import numba
+    except ImportError:
+        return _integrand_numpy(kind, m, nodes, wscaled)
+
+    kid = {"c": 1, "d": 2, "e": 3}[kind]
+
+    @numba.njit(cache=True)
+    def kernel(idx, nodes, ws, kid):
+        batch, d = idx.shape
+        out = np.empty(batch)
+        for row in range(batch):
+            b = 1.0
+            if kid != 3:
+                v = 1.0
+                u = 1.0
+                pv = 1.0
+                pu = 1.0
+                for s in range(d):
+                    pv *= nodes[idx[row, d - 1 - s]]
+                    pu *= nodes[idx[row, s]]
+                    v += pv
+                    u += pu
+                b = 1.0 / (v * u)
+            a = 1.0
+            if kid != 1:
+                for i in range(0, d + 1):
+                    uij = 1.0
+                    for j in range(i + 1, d + 1):
+                        if j - 1 < d:
+                            uij *= nodes[idx[row, j - 1]]
+                        a *= ((uij - 1.0) / (uij + 1.0)) ** 2
+            if kid == 1:
+                f = 2.0 * b
+            elif kid == 2:
+                f = 2.0 * a * b
+            else:
+                f = 2.0 * a
+            for s in range(d):
+                f *= ws[idx[row, s]]
+            out[row] = f
+        return out
+
+    def fun(idx):
+        return kernel(np.asarray(idx, dtype=np.int64), nodes, wscaled, kid)
+
+    return fun
+
+
 def run(kind, m, n=65, eps=1e-12):
     d = m - 1
     x, w = np.polynomial.legendre.leggauss(n)
@@ -85,8 +141,10 @@ def run(kind, m, n=65, eps=1e-12):
             f"evals {h.fun_eval:9d}  {dt * 1e3:8.1f} ms")
     tru = TRUE.get((kind, m))
     if tru is not None:
-        digits = -np.log10(abs(1.0 - val / tru))
-        line += f"  digits {digits:6.2f}"
+        err = abs(1.0 - val / tru)
+        # err == 0 means every float64 digit matched; say so instead of inf
+        digits = -np.log10(max(err, np.finfo(float).eps / 4))
+        line += f"  digits {digits:6.2f}" + ("+" if err == 0.0 else " ")
     line += f"  value {val:.15e}"
     print(line)
     return val

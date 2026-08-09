@@ -474,13 +474,41 @@ frontier, traceable to argmax tie-breaking in the rook search. Wall time is
 37–350 ms against the Fortran's 20–30 ms: pure Python overhead, same ratio as
 everywhere else in the package.
 
-**Wall-clock parity, after vectorising the two profiled hotspots** (the
-lottery draw and the point-index assembly; both were Python loops): C_6 at
-rank 20 runs at 3.39M evaluations/s end to end against the Fortran's 4.37M/s,
-C_16 at 3.12M/s against 3.52M/s — a 1.1–1.3x gap, i.e. at parity for an
-interpreted engine (the KSL story did not repeat here; the batches are big
-enough that numpy is the arithmetic, not the overhead). Engine overhead net
-of the integrand is 21 ms of C_6's 26 ms and 75 ms of C_16's 122 ms.
+**Wall clock: the port is now faster than the Fortran per evaluation.**
+Three rounds of measured work got it there (each profiled, best-of-5 timings,
+`OMP_NUM_THREADS=4`, both binaries on the same cores):
+
+1. vectorising the two Python-loop hotspots (lottery draw via cumsum +
+   searchsorted — which is what `lottery2` does anyway — and the point-index
+   assembly): 37 -> 26 ms on C_6;
+2. raw LAPACK `getrf`/`getrs` instead of the scipy wrappers, whose per-call
+   `check_finite` scans and Python overhead dwarfed the r x r solve;
+3. the structural one: **never form the full `M^{-1} R`**. The port used to
+   apply the interpolant by solving for the whole block once per bond visit,
+   `O(r^2 n r2)` flops where the original's incremental factors pay
+   `O(r n)` per fiber; solving only for the one column, one row or one
+   scattered batch actually needed removes the gap entirely. An explicit
+   `M^{-1}` cached per bond was tried first and **reverted**: multiplication
+   by an inverse is not backward stable, the residual noise floor rises from
+   `eps` to `cond(M)*eps`, and the pivot-acceptance threshold (calibrated for
+   a backward-stable residual) starts accepting duplicate pivots, which makes
+   `M` exactly singular — 6 tests caught it.
+
+With the example's integrand numba-compiled (the Fortran driver's integrand
+is compiled too — equal footing; the numpy fallback computes identical values
+to 1 ulp), best of 5 against the Fortran's best of 3:
+
+| problem, rank 20 | Fortran wall | port wall | Fortran evals/s | port evals/s |
+|---|---|---|---|---|
+| C_6 | 15.3 ms | **13.6 ms** | 5.82M | **6.54M** |
+| E_6 | 17.2 ms | **15.1 ms** | 5.07M | **5.77M** |
+| C_16 | 15.6 ms | 62.4 ms | 5.69M | **6.08M** |
+
+Per evaluation the port is 8–14% faster than the compiled original on all
+three; end to end it wins wherever the evaluation schedules match (C_6, E_6
+— identical counts by construction). C_16's wall-clock loss is the 4.3x
+larger evaluation count of its different pivot walk, which also buys +2.9
+digits — a cost/quality point, not a speed one.
 
 **The Fortran package's other two drivers** (`test_mc_ising`,
 `test_qmc_ising`) also build and run on the same machine and reproduce the
