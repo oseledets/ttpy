@@ -112,7 +112,7 @@ carry themselves.
 
 ## Where it stands
 
-837 tests, all against dense ground truth or a mathematical invariant — never
+844 tests, all against dense ground truth or a mathematical invariant — never
 against the old implementation. Measured against the Fortran ttpy on one host
 (details and raw data in [docs/PERFORMANCE.md](docs/PERFORMANCE.md)): faster on
 rounding (1.2-1.5x), on `dot` (2x), on `tt_svd` (11.9x) and on `amen_solve`
@@ -139,7 +139,9 @@ ordered milestones and 43 benchmark problems split by what is runnable today.
 Shipped from that list already: `tt.dmrg_cross`, a from-scratch port of
 Savostyanov's greedy DMRG cross (`ttcross`) — rank +1 per bond per sweep, rook
 pivoting on the residual, 5–40x fewer function evaluations than `rect_cross`
-on smooth integrands, with the measured parity against the Fortran original in
+on smooth integrands.  Faster than the Fortran original: 8–14% per evaluation
+on the numpy path, 30–42% end to end when `fun` is numba-jitted (the bond
+visit then runs as one compiled kernel).  Measured parity and the race in
 [docs/plans/cross-approximation.md](docs/plans/cross-approximation.md) §2.1b.
 
 One known limitation with a workaround: `amen_solve` takes a matrix, so using

@@ -113,6 +113,9 @@ class DmrgCrossHistory:
         err_check_inf: Same sample, infinity norm -- the norm the pivot
             criterion actually speaks (this is ``dtt_accchk``'s pair of norms).
         err_check_worst: Multi-index of the worst held-out error.
+        compiled: The numba fast path ran (``fun`` was a jitted dispatcher and
+            the ``[fast]`` extra is installed); the numpy path computes the
+            same thing, at interpreter speed.
         time: Wall-clock seconds.
     """
 
@@ -129,6 +132,7 @@ class DmrgCrossHistory:
     err_check: float | None = None
     err_check_inf: float | None = None
     err_check_worst: list | None = None
+    compiled: bool = False
     time: float = 0.0
 
     def __repr__(self):
@@ -159,6 +163,7 @@ class _State:
         self.lp = [None] * (d - 1)           # lp[p]: (r_p, p+1) left prefixes
         self.rs = [None] * (d - 1)           # rs[p]: (r_p, d-p-1) right suffixes
         self._lu = {}                        # bond -> factorised M_p
+        self._luarr = {}                     # bond -> (lu, piv0) for the kernel
 
     def r(self, p):
         """Rank of bond ``p``; the boundaries count as rank 1."""
@@ -207,6 +212,18 @@ class _State:
         x, _info = getrs(lu, piv, b, trans=trans)
         return x
 
+    def lu_arrays(self, p):
+        """The factors as plain arrays for the compiled kernel.
+
+        scipy's raw ``getrf`` wrapper already converts LAPACK's 1-based pivot
+        indices to 0-based (verified against ``lu_factor``, which documents
+        the convention) -- do not subtract 1 again.
+        """
+        if p not in self._luarr:
+            _getrs, lu, piv = self.cross_matrix(p)
+            self._luarr[p] = (np.ascontiguousarray(lu), piv.astype(np.int64))
+        return self._luarr[p]
+
     def accept(self, p, ii, jj, kk, qq, acol, arow):
         """Append pivot ``(ii, jj, kk, qq)`` at bond ``p`` with its fibers."""
         r1, npp, _ = self.C[p].shape
@@ -230,6 +247,7 @@ class _State:
 
     def pop_lu(self, p):
         self._lu.pop(p, None)
+        self._luarr.pop(p, None)
 
 
 # --- index assembly ----------------------------------------------------------
@@ -282,20 +300,19 @@ def _point_indices(st, p, pts):
 
 # --- the sweep ---------------------------------------------------------------
 
-def _lottery(rng, wcol, wrow, npnt):
-    """``npnt`` superblock points drawn by the original's index lottery.
+def _lottery(u1, u2, wcol, wrow):
+    """Superblock points from uniform draws, by the original's index lottery.
 
     ``wcol``/``wrow`` are non-negative weights over the flattened row and
     column positions; positions already holding a pivot carry weight zero.
-    Returns ``None`` when a side has no admissible position left.
+    The uniforms are drawn by the caller so that the numpy and the compiled
+    path consume identical randomness.  Inverse-CDF, as the original's
+    ``lottery2`` (cumsum + bisection); ``rng.choice(p=...)`` does the same
+    thing an order of magnitude slower.
     """
     scol, srow = wcol.sum(), wrow.sum()
-    if scol == 0.0 or srow == 0.0:
-        return None
-    # Inverse-CDF draw, as the original's ``lottery2`` (cumsum + bisection);
-    # ``rng.choice(p=...)`` does the same thing an order of magnitude slower.
-    ij = np.searchsorted(np.cumsum(wcol), rng.random(npnt) * scol, side="right")
-    kq = np.searchsorted(np.cumsum(wrow), rng.random(npnt) * srow, side="right")
+    ij = np.searchsorted(np.cumsum(wcol), u1 * scol, side="right")
+    kq = np.searchsorted(np.cumsum(wrow), u2 * srow, side="right")
     return (np.minimum(ij, len(wcol) - 1), np.minimum(kq, len(wrow) - 1))
 
 
@@ -347,10 +364,36 @@ def _bond_pivot(fun, st, p, opts, counter, hist, start_with_row):
         wcol[i * n1 + j] = 0.0
         wrow[k * r2 + q] = 0.0
     nlot = r1 + n1 + n2 + r2
-    drawn = _lottery(opts["rng"], wcol, wrow, nlot)
-    if drawn is None:                            # every position is a pivot
+    u1 = opts["rng"].random(nlot)
+    u2 = opts["rng"].random(nlot)
+    if wcol.sum() == 0.0 or wrow.sum() == 0.0:   # every position is a pivot
         return None
-    ijpos, kqpos = drawn
+
+    if opts["fast"]:
+        from . import _dmrg_fast as df
+        lu, piv0 = st.lu_arrays(p)
+        (status, pivot, ii, jj, kk, qq, acol, arow, neval, amax, badval,
+         badidx) = df.bond_kernel(
+            fun, st.C[p], st.C[p + 1], lu, piv0,
+            np.ascontiguousarray(st.left_prefixes(p)),
+            np.ascontiguousarray(st.right_suffixes(p)),
+            u1, u2, wcol, wrow, piv, start_with_row, hist.amax)
+        counter.n += int(neval)
+        hist.amax = float(amax)
+        if status == 1:
+            return None
+        if status == 2:
+            raise ValueError(
+                f"fun returned a non-finite value {badval!r} at multi-index "
+                f"{[int(v) for v in badidx]}; cross cannot interpolate that")
+        if status == 3:
+            raise ValueError(
+                "fun returned the wrong number of values for a batch; it must "
+                "be vectorized over the first axis and return one value per "
+                "row")
+        return float(pivot), int(ii), int(jj), int(kk), int(qq), acol, arow
+
+    ijpos, kqpos = _lottery(u1, u2, wcol, wrow)
     pts = np.stack([ijpos // n1, ijpos % n1, kqpos // r2, kqpos % r2], axis=1)
     b = _evaluate(fun, _point_indices(st, p, pts), counter)
     _amax(b)
@@ -397,6 +440,34 @@ def _bond_pivot(fun, st, p, opts, counter, hist, start_with_row):
                 kk, qq = k, q
                 pivot = resrow[pos]
     return pivot, ii, jj, kk, qq, acol, arow
+
+
+def _pick_fast_path(fun, d, pivoting):
+    """Whether the compiled bond kernel can run this ``fun``.
+
+    It can when ``fun`` is a numba dispatcher (then the kernel calls it without
+    re-entering the interpreter), the ``[fast]`` extra is importable, the
+    search is lottery/rook (``pivoting >= 0``; the exhaustive ``-1`` is a
+    calibration path and stays numpy), and a one-batch probe from compiled
+    code returns float64 -- the kernel is real-valued, complex funs take the
+    numpy path.  A dispatcher the kernel cannot type falls back with a
+    warning rather than an error: the numpy path computes the same thing.
+    """
+    if pivoting < 0 or d < 2:
+        return False
+    from . import _dmrg_fast as df
+    if not (df.HAVE_NUMBA and df.is_jitted(fun)):
+        return False
+    try:
+        out = df.probe(fun, np.zeros((2, d), dtype=np.int64))
+    except Exception as exc:                     # numba typing errors vary
+        warnings.warn(
+            f"fun is numba-jitted but the compiled cross kernel cannot call "
+            f"it ({type(exc).__name__}); falling back to the numpy path",
+            RuntimeWarning, stacklevel=3)
+        return False
+    arr = np.asarray(out)
+    return arr.dtype == np.float64 and arr.ndim == 1 and arr.shape[0] == 2
 
 
 # --- entry point -------------------------------------------------------------
@@ -473,7 +544,8 @@ def dmrg_cross(fun, x0, eps=1e-6, rmax=None, pivoting=1, strike_limit=3,
         backend = bk.get_backend()
         dtype = backend.dtype
     opts = {"pivoting": int(pivoting), "backend": backend, "dtype": dtype,
-            "rng": np.random.default_rng(seed)}
+            "rng": np.random.default_rng(seed),
+            "fast": _pick_fast_path(fun, len(n), int(pivoting))}
     d = len(n)
     t0 = time.time()
     counter = _Counter()
@@ -576,6 +648,7 @@ def dmrg_cross(fun, x0, eps=1e-6, rmax=None, pivoting=1, strike_limit=3,
     hist.strikes = strikes
     hist.converged = stop_reason == "eps"
     hist.stop_reason = stop_reason
+    hist.compiled = bool(opts["fast"])
 
     # -- assemble the TT: fold M_p^{-1} into the last axis of C_p -------------
     cores = []

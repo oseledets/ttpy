@@ -82,8 +82,11 @@ def integrand(kind, m, nodes, wscaled):
 
     kid = {"c": 1, "d": 2, "e": 3}[kind]
 
+    # The returned callable is itself a numba dispatcher (nodes/wscaled/kid
+    # are closure constants), so dmrg_cross runs its compiled bond kernel and
+    # the whole sweep stays out of the interpreter.
     @numba.njit(cache=True)
-    def kernel(idx, nodes, ws, kid):
+    def fun(idx):
         batch, d = idx.shape
         out = np.empty(batch)
         for row in range(batch):
@@ -114,12 +117,9 @@ def integrand(kind, m, nodes, wscaled):
             else:
                 f = 2.0 * a
             for s in range(d):
-                f *= ws[idx[row, s]]
+                f *= wscaled[idx[row, s]]
             out[row] = f
         return out
-
-    def fun(idx):
-        return kernel(np.asarray(idx, dtype=np.int64), nodes, wscaled, kid)
 
     return fun
 

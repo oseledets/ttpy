@@ -249,3 +249,154 @@ def test_history_is_complete():
     assert len(h.err_check_worst) == len(n)
     # the per-sweep records carry the running evaluation total
     assert h.sweeps[-1]["fun_eval"] <= h.fun_eval
+
+
+# --- the compiled path -------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def njit_sum():
+    """One jitted ``sum_tensor``-equivalent, compiled once for the module."""
+    numba = pytest.importorskip("numba")
+    n = [7] * 5
+    rng = np.random.default_rng(21)
+    t = rng.uniform(0.2, 1.0, size=(5, 7))
+    dense = np.full(n, 2.0)
+    for k in range(5):
+        shape = [1] * 5
+        shape[k] = n[k]
+        dense = dense + t[k, :].reshape(shape)
+
+    @numba.njit(cache=True)
+    def fun(idx):
+        batch, d = idx.shape
+        out = np.empty(batch)
+        for row in range(batch):
+            s = 2.0
+            for k in range(d):
+                s += t[k, idx[row, k]]
+            out[row] = s
+        return out
+
+    return fun, n, dense
+
+
+def test_compiled_path_engages_and_agrees_with_numpy(njit_sum):
+    """A jitted ``fun`` takes the kernel; a plain one computes the same thing.
+
+    The two paths share the lottery draws, so with one seed they walk the same
+    pivots up to tie-breaking between LAPACK and the kernel's hand-written
+    triangular solves; the assertion is on both being right, not bitwise equal.
+    """
+    fun, n, dense = njit_sum
+    yc = dmrg_cross(fun, n, eps=1e-11, seed=5)
+    assert yc.history.compiled
+    assert max(yc.history.ranks) == 2
+    assert rel(yc.full(), dense) < 1e-12
+
+    ynp = dmrg_cross(lambda idx: fun(np.asarray(idx, dtype=np.int64)),
+                     n, eps=1e-11, seed=5)
+    assert not ynp.history.compiled
+    assert rel(ynp.full(), dense) < 1e-12
+    assert ynp.history.fun_eval == yc.history.fun_eval
+
+
+def test_compiled_path_is_deterministic(njit_sum):
+    fun, n, dense = njit_sum
+    a = dmrg_cross(fun, n, eps=1e-10, seed=3)
+    b = dmrg_cross(fun, n, eps=1e-10, seed=3)
+    assert a.history.compiled and b.history.compiled
+    assert rel(a.full(), b.full()) == 0.0
+
+
+def test_compiled_non_finite_names_the_index():
+    numba = pytest.importorskip("numba")
+
+    @numba.njit(cache=True)
+    def fun(idx):
+        batch, d = idx.shape
+        out = np.empty(batch)
+        for row in range(batch):
+            s = 2.0
+            for k in range(d):
+                s += idx[row, k]
+            if idx[row, 2] == 3:
+                out[row] = np.inf       # scalar x/0.0 raises under numba
+            else:
+                out[row] = 1.0 / s
+        return out
+
+    with pytest.raises(ValueError, match="non-finite value.*at multi-index") as e:
+        dmrg_cross(fun, [6] * 4, eps=1e-8)
+    import ast
+    index = ast.literal_eval(str(e.value).split("multi-index ")[1].split(";")[0])
+    assert index[2] == 3, "the guard must name an index on the pole hyperplane"
+
+
+def test_complex_jitted_fun_falls_back_to_numpy_path():
+    """The kernel is real-valued; a complex fun quietly takes the numpy path."""
+    numba = pytest.importorskip("numba")
+
+    @numba.njit(cache=True)
+    def fun(idx):
+        batch, d = idx.shape
+        out = np.empty(batch, dtype=np.complex128)
+        for row in range(batch):
+            s = 2.0
+            for k in range(d):
+                s += idx[row, k] * 0.1
+            out[row] = np.exp(1j * s)
+        return out
+
+    y = dmrg_cross(fun, [5] * 4, eps=1e-9)
+    assert not y.history.compiled
+    ref = np.exp(1j * (2.0 + 0.1 * sum(
+        np.arange(5).reshape([-1 if i == k else 1 for i in range(4)])
+        for k in range(4))))
+    assert rel(y.full(), ref) < 1e-7
+
+
+def test_kernel_getrs_matches_scipy():
+    pytest.importorskip("numba")
+    import scipy.linalg as sla
+    from tt.algs._dmrg_fast import getrs, getrs_t
+    rng = np.random.default_rng(0)
+    for r in (1, 2, 7, 25):
+        m = rng.standard_normal((r, r)) + 3 * np.eye(r)
+        (getrf,) = sla.get_lapack_funcs(("getrf",), (m,))
+        lu, piv, _info = getrf(np.asfortranarray(m))
+        lu = np.ascontiguousarray(lu)
+        piv = piv.astype(np.int64)
+        b = rng.standard_normal(r)
+        assert rel(getrs(lu, piv, b), np.linalg.solve(m, b)) < 1e-12
+        assert rel(getrs_t(lu, piv, b), np.linalg.solve(m.T, b)) < 1e-12
+
+
+# --- the torch backend -------------------------------------------------------
+
+def test_torch_backend_result_lands_on_torch():
+    pytest.importorskip("torch")
+    from conftest import TORCH_F64_DEVICE
+    n = [6] * 4
+    fun, dense = sum_tensor(n, seed=30)
+    x0 = tt.rand(n, r=1).to("torch", TORCH_F64_DEVICE, "float64")
+    y = dmrg_cross(fun, x0, eps=1e-11, n_check=100)
+    assert y.backend.name == "torch"
+    assert y.history.err_check < 1e-12
+    got = np.asarray(tt.backend.to_numpy(y.full()))
+    assert rel(got, dense) < 1e-12
+
+
+def test_gpu_backend_result():
+    from conftest import GPU_DEVICE, GPU_DTYPE, requires_gpu
+    reason_gate = requires_gpu()
+    if reason_gate.args[0]:
+        pytest.skip(reason_gate.kwargs.get("reason", "no GPU"))
+    n = [6] * 4
+    fun, dense = sum_tensor(n, seed=31)
+    x0 = tt.rand(n, r=1).to("torch", GPU_DEVICE, GPU_DTYPE)
+    y = dmrg_cross(fun, x0, eps=1e-10)
+    assert y.backend.name == "torch"
+    assert tt.backend.device_of(y.cores[0]).startswith(GPU_DEVICE)
+    got = np.asarray(tt.backend.to_numpy(y.full()))
+    tol = 1e-10 if GPU_DTYPE == "float64" else 5e-6
+    assert rel(got, dense) < tol

@@ -498,17 +498,23 @@ With the example's integrand numba-compiled (the Fortran driver's integrand
 is compiled too — equal footing; the numpy fallback computes identical values
 to 1 ulp), best of 5 against the Fortran's best of 3:
 
-| problem, rank 20 | Fortran wall | port wall | Fortran evals/s | port evals/s |
-|---|---|---|---|---|
-| C_6 | 15.3 ms | **13.6 ms** | 5.82M | **6.54M** |
-| E_6 | 17.2 ms | **15.1 ms** | 5.07M | **5.77M** |
-| C_16 | 15.6 ms | 62.4 ms | 5.69M | **6.08M** |
+| problem, rank 20 | Fortran wall | port, numpy path | port, compiled path |
+|---|---|---|---|
+| C_6 | 15.3 ms (5.82M ev/s) | 13.6 ms (6.54M) | **10.8 ms (8.25M)** |
+| E_6 | 17.2 ms (5.07M) | 15.1 ms (5.77M) | **11.7 ms (7.44M)** |
+| C_16 | 15.6 ms (5.69M) | 62.4 ms (6.08M) | 50.3 ms (**7.55M**) |
 
-Per evaluation the port is 8–14% faster than the compiled original on all
-three; end to end it wins wherever the evaluation schedules match (C_6, E_6
-— identical counts by construction). C_16's wall-clock loss is the 4.3x
-larger evaluation count of its different pivot walk, which also buys +2.9
-digits — a cost/quality point, not a speed one.
+The numpy path alone is 8–14% faster than the compiled original per
+evaluation; the **compiled path** (`tt/algs/_dmrg_fast.py`, engages
+automatically when ``fun`` is a numba dispatcher — one jitted kernel per bond
+visit, hand-written LAPACK-convention triangular solves, identical lottery
+draws to the numpy path) is **30–42% faster than the Fortran** end to end
+where the schedules match, at identical evaluation counts.  C_16's wall-clock
+loss is purely the 4.3x larger evaluation count of its different pivot walk,
+which also buys +2.9 digits — at matched counts its throughput leads too.
+One porting trap recorded for the next reader: scipy's raw ``getrf`` wrapper
+already returns 0-based pivot indices (LAPACK's are 1-based); subtracting 1
+again corrupts the swaps.
 
 **The Fortran package's other two drivers** (`test_mc_ising`,
 `test_qmc_ising`) also build and run on the same machine and reproduce the
