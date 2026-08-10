@@ -320,6 +320,10 @@ was).  A Schroedinger step `tau = 1j h` therefore stays compiled whenever the
 blocks fit; the parity with the interpreted path (2.8e-15 on a Henon-Heiles
 step) and the unitarity of the compiled flow are pinned by
 `tests/test_eigb_ksl.py::test_compiled_complex_step_matches_the_interpreted_path`.
+On the reference problem with `tau = 1j*0.05` (same contended machine, best-of):
+1.03 ms compiled against 2.25 ms interpreted; the 2.3x to the real path's
+0.44 ms is the price of complex arithmetic itself (a complex multiply is four
+real ones), not overhead.
 
 Measured on the reference problem (d=6, n=2, ranks [1,2,4,4,4,2,1], symmetric
 low-rank A): the sweep went from ~3.3 ms interpreted to **0.48-0.64 ms**

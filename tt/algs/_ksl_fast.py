@@ -103,7 +103,9 @@ if HAVE_NUMBA:
                 f = 2.0 * dot / vnorm2
                 for i in range(j, rows):
                     q[i, c] -= f * vs[j, i]
-        return q, r[:k, :]
+        # the slice r[:k, :] has layout 'A', and every `s @ core` downstream
+        # would then run off the BLAS path (numba warns about exactly this)
+        return q, np.ascontiguousarray(r[:k, :])
 
     @njit(cache=True)
     def _solve(a, b):
