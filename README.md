@@ -119,13 +119,15 @@ carry themselves.
 
 ## Where it stands
 
-864 tests, all against dense ground truth or a mathematical invariant — never
+888 tests, all against dense ground truth or a mathematical invariant — never
 against the old implementation. Measured against the Fortran ttpy on one host
 (details and raw data in [docs/PERFORMANCE.md](docs/PERFORMANCE.md)): faster on
 rounding (1.2-1.5x), on `dot` (2x), on `tt_svd` (11.9x) and on `amen_solve`
-(2.8x, and 60x more accurate on the same problem) -- and **9x slower on the
-KSL integrator**, which is the one place the Fortran is still ahead and an open
-optimization target.
+(2.8x, and 60x more accurate on the same problem).  The KSL integrator, once
+9x slower, now runs its sweeps as compiled numba kernels (float64 and
+complex128) and is within ~2-3x of the Fortran on the reference problem --
+measured on contended machines, so read `docs/PERFORMANCE.md` 3b before
+quoting the number.
 
 Testing against dense truth also turned up four defects in the old package
 (transposed `Toeplitz` and `qshift`, a plainly wrong `IpaS`, a broken K/S order
