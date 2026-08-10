@@ -147,3 +147,31 @@ def test_numpy_backend_norm_is_unchanged():
     assert np.ndim(n) == 0
     assert abs(float(n) - np.linalg.norm(a)) < 1e-15
     assert float(_ops.norm(tt.rand([2, 3, 2], r=2).cores)) > 0.0
+
+
+def test_torch_svd_falls_back_to_gesvd_when_gesdd_fails(monkeypatch):
+    """The torch backend must survive a gesdd non-convergence like numpy does.
+
+    torch's linalg.svd is gesdd-only; on a matrix with (near-)repeated tiny
+    singular values it can refuse where LAPACK's gesvd succeeds -- observed on
+    a Riemannian retraction step.  The fallback routes through scipy's gesvd
+    on the host; forced here by making the fast path raise.
+    """
+    import scipy.linalg
+    import tt.backend as bk
+
+    a_np = np.random.default_rng(0).standard_normal((12, 8))
+    g = bk.TorchBackend("cpu", "float64")
+    a = g.asarray(a_np)
+
+    def boom(*args, **kwargs):
+        raise torch.linalg.LinAlgError("forced gesdd failure")
+
+    monkeypatch.setattr(torch.linalg, "svd", boom)
+    u, s, vh = g.svd(a)
+    got = (u * s) @ vh
+    assert np.allclose(np.asarray(bk.to_numpy(got)), a_np, atol=1e-12)
+
+    bad = g.asarray(np.full((4, 4), np.nan))
+    with pytest.raises(ValueError, match="non-finite"):
+        g.svd(bad)

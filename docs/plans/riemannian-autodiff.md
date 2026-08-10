@@ -729,7 +729,21 @@ the deltas instead of assembling them), `assemble` is 12 lines, and
 fix of §1.4 — without it, every objective a user writes with `.norm()` is
 silently wrong.
 
-**Order:**
+**Order (status 2026-08-09: items 0-4 shipped):** items 0-4 landed in
+`tt/algs/riemannian.py` (Frames, `project_delta`, `tangent_to_tt`,
+`tangent_inner`, `tangent_gram`, `retract`, `transport`) and the new
+`tt/algs/autodiff.py` (`riemannian_grad`, `rgd`), verified by
+`tests/test_riemannian_autodiff.py` (15 tests: rebuild/gauge/inner-product
+contracts at the plan's measured levels, the AD-vs-dense-gradient pairing at
+1e-12, the minus-sign pin, the invariance check, non-quadratic recovery).
+The showcase is `examples/robust_completion.py` -- log-cosh completion under
+outliers, the loss ALS cannot have.  Remaining debt from this list: items 5-8,
+and the `ksl` migration onto `frames` (section 1.5's second owner still
+stands until then).  One addition beyond the plan: `TorchBackend.svd` gained
+the gesvd fallback numpy already had -- a retraction step hit gesdd
+non-convergence on near-repeated singular values, and `riemannian_grad` now
+refuses non-finite values loudly (an overflowing loss autodiffs to NaN
+deltas, measured the hard way with a naive log-cosh).
 
 | # | item | why here | measurement that supports it |
 |---|---|---|---|

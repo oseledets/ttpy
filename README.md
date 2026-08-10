@@ -34,6 +34,13 @@ AMEn linear solvers and matvecs, block eigensolvers, the KSL integrator,
 Riemannian tools, and completion -- plus a QTT toolkit for elliptic problems
 with BPX multilevel preconditioning (`tt.algs.qtt_ell`), which is new in 2.0.
 
+`tt.transport` also contains an experimental sample-only deep inverse
+Rosenblatt transport. Every residual density is a positive squared TT; its
+quadratic density-ratio loss uses an exact TT contraction and only the linear
+term is estimated from samples. The construction and the correlated Gaussian,
+predator--prey and Lorenz--96 examples are documented in
+[docs/SAMPLE_DIRT.md](docs/SAMPLE_DIRT.md).
+
 ## Backends
 
 The numerics run on numpy by default and on torch (CPU or GPU) on request:
@@ -112,7 +119,7 @@ carry themselves.
 
 ## Where it stands
 
-844 tests, all against dense ground truth or a mathematical invariant — never
+864 tests, all against dense ground truth or a mathematical invariant — never
 against the old implementation. Measured against the Fortran ttpy on one host
 (details and raw data in [docs/PERFORMANCE.md](docs/PERFORMANCE.md)): faster on
 rounding (1.2-1.5x), on `dot` (2x), on `tt_svd` (11.9x) and on `amen_solve`
@@ -131,8 +138,18 @@ is the failure mode this package tries hardest to make impossible.
 
 Designed and specified in [docs/plans/](docs/plans/), with the measurements
 behind each decision, but **not implemented**: the BUG / robust rank-adaptive
-integrator, a block AMEn eigensolver, Riemannian optimization and autodiff on
-TT manifolds, and the coefficient-dependent form of the BPX factors.
+integrator, a block AMEn eigensolver, the second-order/preconditioned half of
+the Riemannian roadmap (geomCG, trust region, rank adaptation), and the
+coefficient-dependent form of the BPX factors.
+
+Shipped from the Riemannian roadmap: the tangent-space machinery
+(`tt.algs.riemannian`: `project_delta`, `frames`, `retract`, `transport`, the
+cheap tangent inner product) and `tt.rgd` -- Riemannian gradient descent whose
+gradient comes from torch autodiff through the tangent parametrization
+(Novikov-Rakhuba-Oseledets, SISC 2022) without ever forming the Euclidean
+gradient.  Its niche is the loss ALS structurally cannot have: see
+`examples/robust_completion.py`, where 2% outliers send the square-loss fit
+five orders of magnitude off while log-cosh descent recovers the tensor.
 [docs/plans/ROADMAP.md](docs/plans/ROADMAP.md) has the dependency graph, the
 ordered milestones and 43 benchmark problems split by what is runnable today.
 

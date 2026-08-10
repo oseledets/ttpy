@@ -52,6 +52,8 @@ References
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 from einops import rearrange
 from ..backend import einsum   # BLAS-routed; einops' own skips optimize=True
@@ -62,7 +64,9 @@ from ..core.vector import vector
 from . import _localops as lo
 
 __all__ = ["project", "projector_splitting_add", "tt_qr",
-           "cores_orthogonalization_step"]
+           "cores_orthogonalization_step",
+           "Frames", "frames", "project_delta", "tangent_to_tt",
+           "tangent_inner", "tangent_gram", "retract", "transport"]
 
 
 def cores_orthogonalization_step(coresX, dim, left_to_right=True):
@@ -423,3 +427,267 @@ def tt_qr(X, left_to_right=True):
         rr, q = lo.right_orthogonalize(cores[0])
         cores[0] = q
     return vector.from_list(cores), rr
+
+
+# --- the tangent representation: one owner (plan riemannian-autodiff sec. 8) --
+
+@dataclass
+class Frames:
+    """The two orthogonal frame families of a full-rank point ``X``.
+
+    Attributes:
+        U: ``U[k]`` left-orthogonal for ``k < d-1``; ``U[d-1]`` is the
+            ``mu = d`` core ``S_d``.
+        V: ``V[k]`` right-orthogonal for ``k > 0``; ``V[0]`` is the ``mu = 1``
+            core ``S_1``.
+        S: The ``mu``-orthogonal core that was requested from :func:`frames`.
+        r: The TT ranks, as verified full.
+    """
+
+    U: list
+    V: list
+    S: object
+    r: list
+
+
+def frames(X, mu=1, *, check_rank=True):
+    """Left- and right-orthogonal frames of ``X`` and its ``mu``-orthogonal core.
+
+    This is the first half of :func:`project`, factored out as the single owner
+    every tangent-space routine shares (``project_delta``, ``tangent_to_tt``,
+    ``transport``, the Riemannian autodiff).
+
+    Args:
+        X: A :class:`tt.vector` of exactly the rank it claims.
+        mu: 1-based site of the non-orthogonal core in ``Frames.S``.
+        check_rank: Verify at every left step that the point really has full
+            rank (:func:`_left_step_checked`); a rank-deficient point has no
+            tangent space and is refused, exactly as in :func:`project`.
+
+    Raises:
+        ValueError: rank deficiency, a bad boundary rank, or ``mu`` outside
+            ``1..d``.
+    """
+    if not isinstance(X, vector):
+        raise TypeError(f"frames expects a tt.vector, got {type(X)!r}")
+    X = X.round(eps=0)
+    d = X.d
+    if not 1 <= int(mu) <= d:
+        raise ValueError(f"mu must be in 1..{d}, got {mu}")
+    cores = list(X.cores)
+    _check_boundary(cores, "frames")
+    rx = _ops.ranks(cores)
+    coresR = _ops.orthogonalize(cores, center=0)
+    if _ops.ranks(coresR) != rx:
+        raise ValueError(
+            "orthogonalization changed the TT ranks of X "
+            f"({rx} -> {_ops.ranks(coresR)}); X is rank deficient and the "
+            "tangent space is not defined there")
+    V = list(coresR)                       # V[0] = S_1, V[k>0] right-orthogonal
+    cur = list(coresR)
+    S = cur[0] if int(mu) == 1 else None
+    U = []
+    for k in range(d - 1):
+        if check_rank:
+            cur = _left_step_checked(cur, k, "frames")
+        else:
+            cores_orthogonalization_step(cur, k, left_to_right=True)
+        U.append(cur[k])
+        if int(mu) == k + 2:
+            S = cur[k + 1]
+    U.append(cur[d - 1])                   # the mu = d core S_d
+    return Frames(U=U, V=V, S=S, r=list(rx))
+
+
+def project_delta(X, Z, *, weights=None, frames_=None):
+    """Gauge cores of ``P_{T_X M} Z``, instead of the assembled rank-2r tensor.
+
+    Args:
+        X: The point of the manifold (full rank, verified).
+        Z: A :class:`tt.vector` or a list of them; for a list the deltas of
+            ``P_X(sum_j w_j Z_j)`` are computed without forming the sum -- the
+            form the rank-1-sum preconditioner needs.
+        weights: Scalars ``w_j`` for the list form; default all ones.
+        frames_: Precomputed :class:`Frames` of ``X``, to skip the two
+            orthogonalization sweeps.
+
+    Returns:
+        ``(deltas, frames)``: ``deltas[k]`` of shape ``(r_{k-1}, n_k, r_k)``
+        satisfying the gauge ``ML(deltas[k])^H ML(U_k) = 0`` for ``k < d``, and
+        the :class:`Frames` of ``X`` so the caller need not rebuild them.
+        ``tangent_to_tt(X, deltas)`` equals :func:`project` ``(X, Z)`` to
+        roundoff, and :func:`tangent_inner` on the deltas is the tangent inner
+        product of [RNO19] eq. (22); both are pinned by tests.
+    """
+    z_list = [Z] if isinstance(Z, vector) else list(Z)
+    if not z_list:
+        raise ValueError("project_delta got an empty list of tensors")
+    for z in z_list:
+        if not isinstance(z, vector):
+            raise TypeError(f"project_delta expects tt.vectors, got {type(z)!r}")
+    fr = frames_ if frames_ is not None else frames(X)
+    d = len(fr.U)
+    _check_same_modes(X, z_list, "project_delta")
+    if weights is None:
+        w = [1.0] * len(z_list)
+    else:
+        w = [complex(v) if np.iscomplexobj(np.asarray(v)) else float(v)
+             for v in weights]
+        if len(w) != len(z_list):
+            raise ValueError(f"{len(w)} weights for {len(z_list)} tensors")
+    dtype = bk.result_dtype(bk.dtype_of(fr.V[0]),
+                            *[bk.dtype_of(z.cores[0]) for z in z_list])
+    coresZ = [_ops.to_dtype(list(z.cores), dtype) for z in z_list]
+    U = _ops.to_dtype(fr.U, dtype)
+    V = _ops.to_dtype(fr.V, dtype)
+    n = [int(v) for v in X.n]
+
+    if d == 1:
+        out = w[0] * coresZ[0][0]
+        for wj, cz in zip(w[1:], coresZ[1:]):
+            out = out + wj * cz[0]
+        return [out], fr
+
+    # right interfaces against the conjugated right-orthogonal frames
+    rhs = [[None] * (d + 1) for _ in z_list]
+    for j, cz in enumerate(coresZ):
+        rhs[j][d] = bk.eye(1, 1, dtype=dtype, like=V[0])
+        for k in range(d - 1, 0, -1):
+            tmp = einsum(V[k].conj(), rhs[j][k + 1], "a i b, c b -> a i c")
+            rhs[j][k] = einsum(cz[k], tmp, "p i c, a i c -> p a")
+
+    deltas = []
+    lhs = [bk.eye(1, 1, dtype=dtype, like=V[0]) for _ in z_list]
+    for k in range(d):
+        acc = None
+        for j, cz in enumerate(coresZ):
+            proj = einsum(lhs[j], cz[k], "a p, p i s -> a i s")
+            if k < d - 1:
+                q = U[k]
+                lhs_new = einsum(q.conj(), proj, "a i b, a i s -> b s")
+                delta = proj - einsum(q, lhs_new, "a i b, b s -> a i s")
+                delta = einsum(delta, rhs[j][k + 1], "a i s, s b -> a i b")
+                lhs[j] = lhs_new
+            else:
+                delta = proj
+            acc = w[j] * delta if acc is None else acc + w[j] * delta
+        deltas.append(acc)
+    return deltas, fr
+
+
+def tangent_to_tt(X, deltas, *, frames_=None):
+    """Assemble the rank-2r tangent tensor from its gauge cores.
+
+    The inverse of :func:`project_delta`: the block ``S_k`` stack of [RNO19]
+    section 4.1, identical to what :func:`project` returns.  No gauge check --
+    any delta cores of the right shapes assemble.
+    """
+    fr = frames_ if frames_ is not None else frames(X)
+    d = len(fr.U)
+    if len(deltas) != d:
+        raise ValueError(f"{len(deltas)} delta cores for a {d}-core point")
+    if d == 1:
+        return vector.from_list([deltas[0]])
+    dtype = bk.result_dtype(bk.dtype_of(fr.V[0]),
+                            *[bk.dtype_of(dl) for dl in deltas])
+    U = _ops.to_dtype(fr.U, dtype)
+    V = _ops.to_dtype(fr.V, dtype)
+    dl = _ops.to_dtype(list(deltas), dtype)
+    rx = fr.r
+    n = [int(v) for v in X.n]
+    cores = []
+    for k in range(d):
+        r1 = 1 if k == 0 else 2 * rx[k]
+        r2 = 1 if k == d - 1 else 2 * rx[k + 1]
+        core = bk.zeros((r1, n[k], r2), dtype=dtype, like=V[0])
+        if k == 0:
+            core[:, :, :rx[1]] = dl[0]
+            core[:, :, rx[1]:] = U[0]
+        elif k < d - 1:
+            core[:rx[k], :, :rx[k + 1]] = V[k]
+            core[rx[k]:, :, :rx[k + 1]] = dl[k]
+            core[rx[k]:, :, rx[k + 1]:] = U[k]
+        else:
+            core[:rx[k], :, :] = V[k]
+            core[rx[k]:, :, :] = dl[k]
+        cores.append(core)
+    return vector.from_list(cores)
+
+
+def tangent_inner(deltas_a, deltas_b):
+    """``<xi, eta>`` of two tangent vectors AT THE SAME POINT.
+
+    The gauge makes it ``sum_k <dG_k^a, dG_k^b>_F`` ([RNO19] eq. (22)):
+    ``O(d n r^2)`` instead of the ``O(d n r^3)`` TT contraction, and without
+    its cancellation.  Silently wrong if the two lists come from different
+    points -- that is the contract, not a check this function can make.
+    """
+    if len(deltas_a) != len(deltas_b):
+        raise ValueError("tangent vectors of different lengths")
+    out = None
+    for a, b in zip(deltas_a, deltas_b):
+        term = einsum(a.conj(), b, "a i b, a i b ->")
+        out = term if out is None else out + term
+    return out
+
+
+def tangent_gram(delta_lists):
+    """``(b, b)`` Gram matrix of ``b`` tangent vectors at one point."""
+    b = len(delta_lists)
+    g = np.empty((b, b), dtype=complex)
+    for i in range(b):
+        for j in range(i, b):
+            v = complex(tangent_inner(delta_lists[i], delta_lists[j]))
+            g[i, j] = v
+            g[j, i] = np.conj(v)
+    if np.allclose(g.imag, 0.0):
+        g = g.real
+    return g
+
+
+def retract(X, xi, *, method="svd", rmax=None, return_discarded=False):
+    """A point of ``M_{r(X)}`` near ``X + xi``.
+
+    Args:
+        X: The base point.
+        xi: The increment, a :class:`tt.vector` (assemble delta cores with
+            :func:`tangent_to_tt` first).
+        method: ``'svd'`` -- TT rounding of ``X + xi`` to the ranks of ``X``
+            ([RNO19] section 4.4), quasi-optimal, the default.  ``'psa'`` --
+            :func:`projector_splitting_add`: one sweep, no SVD, exact when
+            ``X + xi`` already has rank ``r(X)``, first-order otherwise.
+        rmax: Target ranks for ``'svd'``; default the ranks of ``X``.
+        return_discarded: Also return ``||X + xi - result||`` -- the local
+            retraction error, the quantity a rank-adaptive wrapper needs.
+            Costs one rank-4r norm.
+
+    Returns:
+        The retracted :class:`tt.vector`, or ``(vector, discarded)``.
+    """
+    if method == "svd":
+        cap = int(rmax) if rmax is not None else int(max(int(v) for v in X.r))
+        y = (X + xi).round(eps=0.0, rmax=cap)
+    elif method == "psa":
+        y = projector_splitting_add(X, xi)
+    else:
+        raise ValueError(f"unknown retraction method {method!r}")
+    if not return_discarded:
+        return y
+    discarded = float(((X + xi) - y).norm())
+    return y, discarded
+
+
+def transport(deltas, X_old, X_new, *, frames_new=None):
+    """Vector transport by re-projection: the deltas of ``P_{T_new} xi``.
+
+    The deltas at ``X_old`` mean nothing at ``X_new``, so there is no shortcut:
+    assemble, then :func:`project_delta` at the new point.  Skipping this and
+    adding old-point deltas at the new point is the single easiest way to get
+    a Riemannian method wrong -- the direction's rank then grows without
+    bound (a measured 60x cost; ``docs/plans/riemannian-autodiff.md`` 2.4).
+
+    Returns:
+        ``(deltas_new, frames_new)``.
+    """
+    xi = tangent_to_tt(X_old, deltas)
+    return project_delta(X_new, xi, frames_=frames_new)

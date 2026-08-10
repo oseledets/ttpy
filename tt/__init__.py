@@ -34,7 +34,8 @@ __all__ = [
     "delta", "stepfun", "qshift", "shift", "unit", "IpaS", "reshape", "permute",
     "multifuncrs", "multifuncrs2", "GMRES", "amen_solve", "amen_mv",
     "cross", "rect_cross", "dmrg_cross", "greedy_cross", "maxvol",
-    "eigb", "ksl", "__version__",
+    "eigb", "ksl", "SampleDIRT", "SquaredTTDensity",
+    "fit_squared_tt_density", "__version__",
 ]
 
 
@@ -53,10 +54,17 @@ _FUNCTIONS = {
     "ksl_step": ("tt.algs.ksl", "ksl"),
     "rect_cross": ("tt.algs.cross", "rect_cross"),
     "dmrg_cross": ("tt.algs.dmrg_cross", "dmrg_cross"),
+    "riemannian_grad": ("tt.algs.autodiff", "riemannian_grad"),
+    "rgd": ("tt.algs.autodiff", "rgd"),
     "greedy_cross": ("tt.algs.dmrg_cross", "dmrg_cross"),
     "rect_maxvol": ("tt.algs.maxvol", "rect_maxvol"),
     "min_tens": ("tt.algs.optimize", "min_tens"),
     "min_func": ("tt.algs.optimize", "min_func"),
+    "SampleDIRT": ("tt.transport.sample_dirt", "SampleDIRT"),
+    "SquaredTTDensity": ("tt.transport.sample_dirt", "SquaredTTDensity"),
+    "fit_squared_tt_density": (
+        "tt.transport.sample_dirt", "fit_squared_tt_density"
+    ),
 }
 
 

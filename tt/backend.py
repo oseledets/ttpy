@@ -341,7 +341,30 @@ class TorchBackend(Backend):
         return self.torch.linalg.eig(a)
 
     def svd(self, a, full_matrices=False):
-        return self.torch.linalg.svd(a, full_matrices=full_matrices)
+        t = self.torch
+        try:
+            return t.linalg.svd(a, full_matrices=full_matrices)
+        except Exception as exc:
+            # Mirror of NumpyBackend.svd: separate a genuinely hard matrix
+            # (gesdd fails to converge where the slower gesvd succeeds --
+            # near-repeated singular values do this) from garbage input, and
+            # name the real cause for the latter.
+            if not bool(t.isfinite(a).all()):
+                n_bad = int((~t.isfinite(a)).sum())
+                raise ValueError(
+                    f"SVD input contains {n_bad} non-finite entries "
+                    f"(inf/NaN) out of {a.numel()}; the data is broken "
+                    "upstream, check for overflow (float32 overflows around "
+                    "3.4e38)") from exc
+            import scipy.linalg as sla
+            u, sv, vh = sla.svd(a.detach().cpu().numpy(),
+                                full_matrices=full_matrices,
+                                lapack_driver="gesvd")
+            # the fallback goes through the host and does not carry autograd;
+            # every consumer of bk.svd (rounding, tt_svd) is outside any tape
+            return (t.as_tensor(u, device=a.device, dtype=a.dtype),
+                    t.as_tensor(sv, device=a.device),
+                    t.as_tensor(vh, device=a.device, dtype=a.dtype))
 
     def qr(self, a):
         return self.torch.linalg.qr(a, mode="reduced")
