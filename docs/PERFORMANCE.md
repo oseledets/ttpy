@@ -301,6 +301,30 @@ overhead 12 %. What remains is compiling the whole sweep (as `_fast.gmres_local`
 does for AMEn), because every individual numpy call on a block of 32 numbers
 costs about as much as all of its arithmetic.
 
+**The sweep is now compiled** (`tt/algs/_ksl_fast.py`, 2026-08-09): the whole
+real-float64 exact-exponential path -- init orthogonalization, K/S steps,
+interfaces, the stiffness guard -- runs as one numba kernel with a hand-written
+Pade-ladder `expm` (degree 3/5/7/9/13 by norm, parity with scipy to 2e-15),
+Householder QR and scalar-loop LU (numba's LAPACK envelopes cost tens of
+microseconds per call at these sizes, which was the sweep).  `tangent_defect`
+is compiled the same way.  Everything outside that regime -- complex, Krylov
+substepping, oversized blocks, non-minimal ranks -- takes the interpreted path,
+and both paths are pinned to agree to 1e-12 by tests.
+
+Measured on the reference problem (d=6, n=2, ranks [1,2,4,4,4,2,1], symmetric
+low-rank A): the sweep went from ~3.3 ms interpreted to **0.48-0.64 ms**
+compiled and `tangent_defect` from ~3.1 ms to **0.18 ms** -- a 5-10x step
+overall.  A caveat the earlier tables did not need: both machines available
+for this round were heavily shared (load averages 28 and 155 during
+measurement), so these are best-of-runs, not medians on quiet hardware, and
+the remaining ~2-3x to the Fortran's 0.22 ms is measured across different,
+contended machines.  Three traps recorded for the next kernel: numba's
+`np.linalg` envelopes dwarf small-matrix arithmetic; a slice operation in a
+jitted loop allocates a temporary per iteration (a thousand 30-element
+temporaries cost more than the LU they implement); and an argmax-hot loop
+indexing a `numba.typed.List` pays a refcount per access -- hoist the array
+out first.
+
 ## 3c. What changed after the first wave of measurements
 
 The numbers in sections 1–3 were taken before these changes and describe the

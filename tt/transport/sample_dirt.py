@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import time
 from typing import Iterable, Sequence
 
 import numpy as np
@@ -106,8 +107,12 @@ class FitHistory:
     l2_norm_sq: list[float] = field(default_factory=list)
     normalization: list[float] = field(default_factory=list)
     chi2_to_reference: list[float] = field(default_factory=list)
+    gradient_norm: list[float] = field(default_factory=list)
     epochs: int = 0
     converged: bool = False
+    optimizer: str = ""
+    function_calls: int = 0
+    wall_time: float = 0.0
 
 
 class SquaredTTDensity:
@@ -174,22 +179,42 @@ class SquaredTTDensity:
             raise FloatingPointError("invalid conditional mass in squared TT density")
         return weights / total
 
+    def _conditional_probabilities_batch(
+        self, left: np.ndarray, k: int
+    ) -> np.ndarray:
+        """Conditional cell masses for every point in one TT contraction."""
+        core = self._cores[k]
+        extended = np.einsum("pa,aib->pib", left, core, optimize=True)
+        projected = np.einsum(
+            "pia,ab->pib", extended, self._right[k + 1], optimize=True
+        )
+        square_mass = np.einsum(
+            "pib,pib->pi", projected, extended, optimize=True
+        )
+        weights = self.gamma + np.maximum(square_mass, 0.0)
+        totals = weights.sum(axis=1, keepdims=True)
+        if not np.all(np.isfinite(totals)) or np.any(totals <= 0.0):
+            raise FloatingPointError("invalid conditional mass in squared TT density")
+        return weights / totals
+
     def inverse_rosenblatt(self, uniform) -> np.ndarray:
         """Map uniform samples to this density (the incremental SIRT)."""
         uniform = _validate_points(uniform, self.d, name="uniform")
         out = np.empty_like(uniform)
-        for p in range(uniform.shape[0]):
-            left = np.ones(1, dtype=np.float64)
-            for k, n in enumerate(self.modes):
-                probs = self._conditional_probabilities(left, k)
-                cdf = np.cumsum(probs)
-                uk = min(float(uniform[p, k]), np.nextafter(1.0, 0.0))
-                cell = min(int(np.searchsorted(cdf, uk, side="right")), int(n) - 1)
-                lower = 0.0 if cell == 0 else float(cdf[cell - 1])
-                fraction = (uk - lower) / max(float(probs[cell]), np.finfo(float).tiny)
-                fraction = min(max(fraction, 0.0), 1.0)
-                out[p, k] = (cell + fraction) / n
-                left = left @ self._cores[k][:, cell, :]
+        count = uniform.shape[0]
+        left = np.ones((count, 1), dtype=np.float64)
+        rows = np.arange(count)
+        for k, n in enumerate(self.modes):
+            probs = self._conditional_probabilities_batch(left, k)
+            cdf = np.cumsum(probs, axis=1)
+            uk = np.minimum(uniform[:, k], np.nextafter(1.0, 0.0))
+            cell = np.minimum(np.sum(cdf <= uk[:, None], axis=1), int(n) - 1)
+            lower = np.where(cell == 0, 0.0, cdf[rows, np.maximum(cell - 1, 0)])
+            mass = np.maximum(probs[rows, cell], np.finfo(float).tiny)
+            fraction = np.clip((uk - lower) / mass, 0.0, 1.0)
+            out[:, k] = (cell + fraction) / n
+            selected = np.moveaxis(self._cores[k][:, cell, :], 1, 0)
+            left = np.einsum("pa,pab->pb", left, selected, optimize=True)
         return out
 
     def rosenblatt(self, points) -> np.ndarray:
@@ -197,15 +222,18 @@ class SquaredTTDensity:
         points = _validate_points(points, self.d)
         out = np.empty_like(points)
         indices = _cell_indices(points, self.modes)
-        for p in range(points.shape[0]):
-            left = np.ones(1, dtype=np.float64)
-            for k, n in enumerate(self.modes):
-                probs = self._conditional_probabilities(left, k)
-                cell = int(indices[p, k])
-                lower = float(probs[:cell].sum())
-                fraction = points[p, k] * n - cell
-                out[p, k] = lower + float(probs[cell]) * fraction
-                left = left @ self._cores[k][:, cell, :]
+        count = points.shape[0]
+        left = np.ones((count, 1), dtype=np.float64)
+        rows = np.arange(count)
+        for k, n in enumerate(self.modes):
+            probs = self._conditional_probabilities_batch(left, k)
+            cdf = np.cumsum(probs, axis=1)
+            cell = indices[:, k]
+            lower = np.where(cell == 0, 0.0, cdf[rows, np.maximum(cell - 1, 0)])
+            fraction = points[:, k] * n - cell
+            out[:, k] = lower + probs[rows, cell] * fraction
+            selected = np.moveaxis(self._cores[k][:, cell, :], 1, 0)
+            left = np.einsum("pa,pab->pb", left, selected, optimize=True)
         return np.clip(out, 0.0, 1.0)
 
     def sample(self, count: int, seed=None) -> np.ndarray:
@@ -262,6 +290,414 @@ def _torch_sample_root(cores, indices):
     return left[:, 0]
 
 
+def _torch_root_moments(cores):
+    """Exact uniform second and fourth moments without Hadamard TT ranks.
+
+    Contracting four copies of every core directly avoids materialising
+    ``root * root`` (whose ranks are squared) and works unchanged under
+    autograd, including on the rank-doubled tangent stack used by RGD.
+    """
+    import torch
+
+    env2 = torch.ones((), dtype=cores[0].dtype, device=cores[0].device).reshape(1, 1)
+    env4 = torch.ones((), dtype=cores[0].dtype, device=cores[0].device).reshape(
+        1, 1, 1, 1
+    )
+    for core in cores:
+        projected = torch.einsum("ac,aib->cib", env2, core)
+        env2 = torch.einsum("cib,cid->bd", projected, core) / core.shape[1]
+        env4 = _torch_fourth_left_step(env4, core) / core.shape[1]
+    return env2.reshape(()), env4.reshape(())
+
+
+def _torch_fourth_left_step(environment, core):
+    """Contract one core into a fourth-order left environment, pairwise."""
+    import torch
+
+    work = torch.einsum("aceg,aib->cegib", environment, core)
+    work = torch.einsum("cegib,cid->egibd", work, core)
+    work = torch.einsum("egibd,eif->gibdf", work, core)
+    return torch.einsum("gibdf,gih->bdfh", work, core)
+
+
+def _torch_fourth_right_step(core, environment):
+    """Contract one core into a fourth-order right environment, pairwise."""
+    import torch
+
+    work = torch.einsum("bdfh,gih->bdfgi", environment, core)
+    work = torch.einsum("bdfgi,eif->bdgie", work, core)
+    work = torch.einsum("bdgie,cid->bgiec", work, core)
+    return torch.einsum("bgiec,aib->aceg", work, core)
+
+
+def _torch_density_objective(cores, indices, weights, gamma: float):
+    """Exact-contraction L2 ratio objective for a list of torch TT cores."""
+    m2, m4 = _torch_root_moments(cores)
+    z = gamma + m2
+    h2 = (gamma * gamma + 2.0 * gamma * m2 + m4) / (z * z)
+    values = _torch_sample_root(cores, indices)
+    target_mean = (weights * (gamma + values * values) / z).sum()
+    return 0.5 * h2 - target_mean, h2, z
+
+
+def _compress_empirical_cells(indices: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Coalesce repeated cells; exact because the basis is cellwise constant."""
+    unique, counts = np.unique(indices, axis=0, return_counts=True)
+    return unique, counts.astype(np.float64) / counts.sum()
+
+
+def _torch_right_orthogonalize(cores) -> None:
+    """Put a torch TT into mixed canonical form with centre zero, in place."""
+    import torch
+
+    for k in range(len(cores) - 1, 0, -1):
+        r1, n, r2 = cores[k].shape
+        q, r = torch.linalg.qr(cores[k].reshape(r1, n * r2).T, mode="reduced")
+        if q.shape[1] != r1:
+            raise ValueError(
+                f"TT rank {r1} at bond {k} is not attainable for mode {n}; "
+                "ALS orthogonalization would lower the requested fixed rank"
+            )
+        cores[k] = q.T.reshape(r1, n, r2).detach()
+        cores[k - 1] = torch.einsum("aib,bc->aic", cores[k - 1], r.T).detach()
+
+
+def _torch_move_center_right(cores, k: int) -> None:
+    import torch
+
+    r1, n, r2 = cores[k].shape
+    q, r = torch.linalg.qr(cores[k].reshape(r1 * n, r2), mode="reduced")
+    if q.shape[1] != r2:
+        raise ValueError("left orthogonalization lowered the requested TT rank")
+    cores[k] = q.reshape(r1, n, r2).detach()
+    cores[k + 1] = torch.einsum("ab,bic->aic", r, cores[k + 1]).detach()
+
+
+def _torch_move_center_left(cores, k: int) -> None:
+    import torch
+
+    r1, n, r2 = cores[k].shape
+    q, r = torch.linalg.qr(cores[k].reshape(r1, n * r2).T, mode="reduced")
+    if q.shape[1] != r1:
+        raise ValueError("right orthogonalization lowered the requested TT rank")
+    cores[k] = q.T.reshape(r1, n, r2).detach()
+    cores[k - 1] = torch.einsum("aib,bc->aic", cores[k - 1], r.T).detach()
+
+
+def _torch_sample_interfaces(cores, indices, centre: int):
+    """Cached sample contractions on both sides of one ALS centre."""
+    import torch
+
+    count = indices.shape[0]
+    left = torch.ones((count, 1), dtype=cores[0].dtype, device=cores[0].device)
+    for k in range(centre):
+        selected = cores[k][:, indices[:, k], :].permute(1, 0, 2)
+        left = torch.einsum("pa,pab->pb", left, selected)
+    right = torch.ones((count, 1), dtype=cores[0].dtype, device=cores[0].device)
+    for k in range(len(cores) - 1, centre, -1):
+        selected = cores[k][:, indices[:, k], :].permute(1, 0, 2)
+        right = torch.einsum("pab,pb->pa", selected, right)
+    return left, right
+
+
+def _torch_fourth_interfaces(cores, centre: int):
+    """Exact fourth-order uniform interfaces around an ALS centre."""
+    import torch
+
+    left = torch.ones((1, 1, 1, 1), dtype=cores[0].dtype, device=cores[0].device)
+    for k in range(centre):
+        core = cores[k]
+        left = _torch_fourth_left_step(left, core) / core.shape[1]
+    right = torch.ones((1, 1, 1, 1), dtype=cores[0].dtype, device=cores[0].device)
+    for k in range(len(cores) - 1, centre, -1):
+        core = cores[k]
+        right = _torch_fourth_right_step(core, right) / core.shape[1]
+    return left, right
+
+
+def _torch_als_local_objective(
+    core, *, centre, modes, total_cells, indices, weights, gamma,
+    sample_left, sample_right, fourth_left, fourth_right,
+):
+    """Nonlinear ALS objective with every fixed-side contraction cached."""
+    import torch
+
+    # Mixed canonical form makes the global Frobenius norm a local norm.
+    m2 = (core * core).sum() / total_cells
+    local_fourth = _torch_fourth_left_step(fourth_left, core)
+    m4 = torch.einsum("bdfh,bdfh->", local_fourth, fourth_right) / modes[centre]
+    z = gamma + m2
+    h2 = (gamma * gamma + 2.0 * gamma * m2 + m4) / (z * z)
+    selected = core[:, indices[:, centre], :].permute(1, 0, 2)
+    partial = torch.einsum("pa,pab->pb", sample_left, selected)
+    values = (partial * sample_right).sum(dim=1)
+    target_mean = (weights * (gamma + values * values) / z).sum()
+    return 0.5 * h2 - target_mean
+
+
+def _fit_tt_als(
+    initial_cores,
+    *,
+    modes,
+    indices,
+    weights,
+    gamma,
+    sweeps,
+    inner_steps,
+    learning_rate,
+    tolerance,
+    verbose,
+):
+    """Orthogonal nonlinear ALS for the squared-density objective.
+
+    The outer objective is rational-quartic, so the local problem is not a
+    linear least-squares solve.  It is nevertheless a genuine alternating
+    optimization: one core is minimized by L-BFGS while every fixed-side
+    sample and fourth-moment contraction is cached.  QR moves the mixed
+    canonical centre between sites and reduces the second moment to a local
+    Frobenius norm.
+    """
+    import torch
+
+    cores = [core.detach().clone() for core in initial_cores]
+    _torch_right_orthogonalize(cores)
+    total_cells = int(np.prod(modes, dtype=np.int64))
+    history = FitHistory(optimizer="als")
+    started = time.perf_counter()
+
+    def global_record() -> float:
+        with torch.no_grad():
+            loss, h2, z = _torch_density_objective(
+                cores, indices, weights, gamma
+            )
+        lv, h2v, zv = float(loss), float(h2), float(z)
+        history.loss.append(lv)
+        history.l2_norm_sq.append(h2v)
+        history.normalization.append(zv)
+        history.chi2_to_reference.append(max(0.0, h2v - 1.0))
+        return lv
+
+    previous = global_record()
+    for sweep in range(int(sweeps)):
+        # Left-to-right: optimize the current centre, then move it by QR.
+        centres = list(range(len(cores)))
+        # Right-to-left: QR the old centre first, then optimize the new one.
+        reverse_centres = list(range(len(cores) - 1, 0, -1))
+
+        for centre in centres:
+            sample_left, sample_right = _torch_sample_interfaces(
+                cores, indices, centre
+            )
+            fourth_left, fourth_right = _torch_fourth_interfaces(cores, centre)
+            parameter = torch.nn.Parameter(cores[centre].detach().clone())
+            local = torch.optim.LBFGS(
+                [parameter],
+                lr=learning_rate,
+                max_iter=int(inner_steps),
+                tolerance_grad=tolerance,
+                tolerance_change=tolerance,
+                line_search_fn="strong_wolfe",
+            )
+
+            def closure():
+                local.zero_grad(set_to_none=True)
+                value = _torch_als_local_objective(
+                    parameter,
+                    centre=centre,
+                    modes=modes,
+                    total_cells=total_cells,
+                    indices=indices,
+                    weights=weights,
+                    gamma=gamma,
+                    sample_left=sample_left,
+                    sample_right=sample_right,
+                    fourth_left=fourth_left,
+                    fourth_right=fourth_right,
+                )
+                value.backward()
+                history.function_calls += 1
+                return value
+
+            local.step(closure)
+            if not bool(torch.isfinite(parameter).all()):
+                raise FloatingPointError("ALS produced a non-finite TT core")
+            cores[centre] = parameter.detach()
+            if centre < len(cores) - 1:
+                _torch_move_center_right(cores, centre)
+
+        for old_centre in reverse_centres:
+            _torch_move_center_left(cores, old_centre)
+            centre = old_centre - 1
+            sample_left, sample_right = _torch_sample_interfaces(
+                cores, indices, centre
+            )
+            fourth_left, fourth_right = _torch_fourth_interfaces(cores, centre)
+            parameter = torch.nn.Parameter(cores[centre].detach().clone())
+            local = torch.optim.LBFGS(
+                [parameter],
+                lr=learning_rate,
+                max_iter=int(inner_steps),
+                tolerance_grad=tolerance,
+                tolerance_change=tolerance,
+                line_search_fn="strong_wolfe",
+            )
+
+            def closure_reverse():
+                local.zero_grad(set_to_none=True)
+                value = _torch_als_local_objective(
+                    parameter,
+                    centre=centre,
+                    modes=modes,
+                    total_cells=total_cells,
+                    indices=indices,
+                    weights=weights,
+                    gamma=gamma,
+                    sample_left=sample_left,
+                    sample_right=sample_right,
+                    fourth_left=fourth_left,
+                    fourth_right=fourth_right,
+                )
+                value.backward()
+                history.function_calls += 1
+                return value
+
+            local.step(closure_reverse)
+            if not bool(torch.isfinite(parameter).all()):
+                raise FloatingPointError("ALS produced a non-finite TT core")
+            cores[centre] = parameter.detach()
+
+        current = global_record()
+        history.epochs = sweep + 1
+        if verbose:
+            print(
+                f"sweep {sweep + 1:4d}: loss={current:.7e}, "
+                f"chi2={history.chi2_to_reference[-1]:.3e}, "
+                f"Z={history.normalization[-1]:.3e}"
+            )
+        scale = max(1.0, abs(previous), abs(current))
+        if abs(current - previous) <= tolerance * scale:
+            history.converged = True
+            break
+        previous = current
+
+    history.wall_time = time.perf_counter() - started
+    return cores, history
+
+
+def _fit_tt_riemannian_stochastic(
+    initial_root,
+    *,
+    all_indices_np,
+    full_indices,
+    full_weights,
+    gamma,
+    iterations,
+    batch_size,
+    learning_rate,
+    momentum_decay,
+    second_moment_decay,
+    retraction_method,
+    seed,
+    verbose,
+):
+    """Minibatch Riemannian momentum with vector transport.
+
+    The stochasticity occurs only in ``-E[h(V)]``.  The normalization and
+    fourth-moment terms remain exact TT contractions on every iteration.  The
+    first moment is a tangent vector and is transported after every retraction;
+    the second moment is a gauge-invariant scalar tangent norm.
+    """
+    import torch
+
+    from ..algs.autodiff import riemannian_grad
+    from ..algs.riemannian import (retract, tangent_inner, tangent_to_tt,
+                                   transport)
+
+    x = initial_root
+    rng = np.random.default_rng(seed + 1)
+    history = FitHistory(optimizer="riemannian-sgd")
+    velocity = None
+    squared_norm_average = 0.0
+    checked = False
+    started = time.perf_counter()
+    count = all_indices_np.shape[0]
+    batch_size = min(int(batch_size), count)
+
+    for iteration in range(int(iterations)):
+        chosen = rng.choice(count, size=batch_size, replace=False)
+        batch_np, batch_weights_np = _compress_empirical_cells(
+            all_indices_np[chosen]
+        )
+        batch_indices = torch.as_tensor(
+            batch_np, dtype=torch.long, device=x.cores[0].device
+        )
+        batch_weights = torch.as_tensor(
+            batch_weights_np, dtype=x.cores[0].dtype, device=x.cores[0].device
+        )
+
+        def minibatch_objective(cores):
+            return _torch_density_objective(
+                cores, batch_indices, batch_weights, gamma
+            )[0]
+
+        value, gradient, frames_ = riemannian_grad(
+            minibatch_objective, x, runtime_check=not checked
+        )
+        checked = True
+        history.function_calls += 1
+        gradient_norm_sq = float(abs(tangent_inner(gradient, gradient)))
+        gradient_norm = gradient_norm_sq ** 0.5
+        history.loss.append(value)
+        history.gradient_norm.append(gradient_norm)
+
+        if velocity is None:
+            velocity = [(1.0 - momentum_decay) * core for core in gradient]
+        else:
+            velocity = [
+                momentum_decay * old + (1.0 - momentum_decay) * new
+                for old, new in zip(velocity, gradient)
+            ]
+        squared_norm_average = (
+            second_moment_decay * squared_norm_average
+            + (1.0 - second_moment_decay) * gradient_norm_sq
+        )
+        step_number = iteration + 1
+        velocity_correction = 1.0 - momentum_decay ** step_number
+        norm_correction = 1.0 - second_moment_decay ** step_number
+        rms = (squared_norm_average / norm_correction) ** 0.5
+        scale = learning_rate / max(rms, 1e-12) / velocity_correction
+        direction = tangent_to_tt(
+            x, [-scale * core for core in velocity], frames_=frames_
+        )
+        x_new = retract(x, direction, method=retraction_method)
+        if momentum_decay > 0.0:
+            velocity, _ = transport(velocity, x, x_new)
+        else:
+            # With no momentum the next gradient replaces the state entirely;
+            # transporting it would be mathematically redundant.
+            velocity = None
+        x = x_new
+
+        if verbose and (iteration == 0 or (iteration + 1) % 25 == 0):
+            print(
+                f"iteration {iteration + 1:4d}: batch_loss={value:.7e}, "
+                f"|grad|={gradient_norm:.3e}, step={scale:.3e}"
+            )
+
+    with torch.no_grad():
+        final_loss, final_h2, final_z = _torch_density_objective(
+            list(x.cores), full_indices, full_weights, gamma
+        )
+    history.loss.append(float(final_loss))
+    history.l2_norm_sq.append(float(final_h2))
+    history.normalization.append(float(final_z))
+    history.chi2_to_reference.append(max(0.0, float(final_h2) - 1.0))
+    history.function_calls += 1
+    history.epochs = int(iterations)
+    history.wall_time = time.perf_counter() - started
+    return x, history
+
+
 def fit_squared_tt_density(
     samples,
     modes: int | Sequence[int] = 16,
@@ -274,6 +710,11 @@ def fit_squared_tt_density(
     device: str = "cpu",
     dtype: str = "float64",
     tolerance: float = 1e-8,
+    optimizer: str = "adam",
+    als_inner_steps: int = 8,
+    riemannian_retraction: str = "svd",
+    riemannian_momentum: float = 0.9,
+    riemannian_second_moment: float = 0.99,
     verbose: bool = False,
 ) -> tuple[SquaredTTDensity, FitHistory]:
     """Fit a positive TT density from samples by the exact-L2 ratio loss.
@@ -284,13 +725,26 @@ def fit_squared_tt_density(
         modes: Number of equal-width cells in each coordinate.
         rank: Fixed internal TT rank of the square root ``g``.
         gamma: Positive density floor before normalisation.
-        epochs: Number of Adam steps.
-        learning_rate: Adam learning rate.
+        epochs: Adam/RGD iterations or complete nonlinear ALS sweeps.
+        learning_rate: Adam rate, RGD initial Armijo step, or local ALS
+            L-BFGS rate.
         batch_size: Optional size of the empirical linear-term minibatch.  The
             quadratic L2 term remains an exact full TT contraction at every step.
         seed: Reproducible initialisation and minibatch seed.
         device, dtype: Torch training device and precision.
-        tolerance: Relative loss-change stopping threshold, checked over 25 steps.
+        tolerance: Relative loss/gradient stopping threshold. Adam compares
+            two 25-step windows; RGD uses the tangent-gradient norm and ALS
+            compares complete sweeps.
+        optimizer: ``"adam"``, deterministic ``"riemannian"``, stochastic
+            ``"riemannian-sgd"`` or orthogonal nonlinear ``"als"``.  The
+            latter is nonlinear because the normalized squared TT objective is
+            rational-quartic in one core.
+        als_inner_steps: L-BFGS iterations per core update and sweep direction.
+        riemannian_retraction: Fixed-rank retraction, ``"svd"`` or the
+            orthogonal projector-splitting ``"psa"`` sweep.
+        riemannian_momentum, riemannian_second_moment: Decays for transported
+            tangent momentum and its gauge-invariant scalar RMS in stochastic
+            Riemannian optimization.
 
     Returns:
         ``(density, history)``.  The returned TT is converted to numpy and does
@@ -324,6 +778,25 @@ def fit_squared_tt_density(
         raise ValueError("epochs must be positive")
     if dtype not in ("float32", "float64"):
         raise ValueError("dtype must be 'float32' or 'float64'")
+    optimizer = str(optimizer).lower().replace("_", "-")
+    allowed_optimizers = ("adam", "riemannian", "riemannian-sgd", "als")
+    if optimizer not in allowed_optimizers:
+        raise ValueError(
+            "optimizer must be 'adam', 'riemannian', 'riemannian-sgd' or 'als'"
+        )
+    if als_inner_steps < 1:
+        raise ValueError("als_inner_steps must be positive")
+    if riemannian_retraction not in ("svd", "psa"):
+        raise ValueError("riemannian_retraction must be 'svd' or 'psa'")
+    if not 0.0 <= riemannian_momentum < 1.0:
+        raise ValueError("riemannian_momentum must lie in [0, 1)")
+    if not 0.0 <= riemannian_second_moment < 1.0:
+        raise ValueError("riemannian_second_moment must lie in [0, 1)")
+    if batch_size is not None and batch_size < 1:
+        raise ValueError("batch_size must be positive")
+    full_batch = batch_size is None or batch_size >= points.shape[0]
+    if optimizer in ("riemannian", "als") and not full_batch:
+        raise ValueError(f"{optimizer} requires a deterministic full-batch loss")
 
     torch_dtype = torch.float64 if dtype == "float64" else torch.float32
     generator = torch.Generator(device="cpu")
@@ -341,62 +814,147 @@ def fit_squared_tt_density(
         params.append(torch.nn.Parameter(noise.to(device)))
 
     indices_np = _cell_indices(points, modes_array)
-    indices = torch.as_tensor(indices_np, dtype=torch.long, device=device)
-    optimizer = torch.optim.Adam(params, lr=learning_rate)
+    full_indices_np, full_weights_np = _compress_empirical_cells(indices_np)
+    full_indices = torch.as_tensor(full_indices_np, dtype=torch.long, device=device)
+    full_weights = torch.as_tensor(
+        full_weights_np, dtype=torch_dtype, device=device
+    )
+    if full_batch:
+        fit_indices_np, fit_weights_np = full_indices_np, full_weights_np
+    else:
+        fit_indices_np = indices_np
+        fit_weights_np = np.full(indices_np.shape[0], 1.0 / indices_np.shape[0])
+    indices = torch.as_tensor(fit_indices_np, dtype=torch.long, device=device)
+    weights = torch.as_tensor(fit_weights_np, dtype=torch_dtype, device=device)
     rng = np.random.default_rng(seed + 1)
-    history = FitHistory()
-    total_cells = int(np.prod(modes_array, dtype=np.int64))
+    started = time.perf_counter()
 
-    # Import here so merely importing tt.transport does not require torch.
-    from ..core.tools import dot
-
-    def objective(batch_indices):
-        root = vector.from_list(params)
-        square = root * root
-        m2 = dot(root, root) / total_cells
-        m4 = dot(square, square) / total_cells
-        z = gamma + m2
-        h2 = (gamma * gamma + 2.0 * gamma * m2 + m4) / (z * z)
-        values = _torch_sample_root(params, batch_indices)
-        target_mean = ((gamma + values * values) / z).mean()
-        return 0.5 * h2 - target_mean, h2, z
-
-    window = 25
-    for epoch in range(epochs):
-        if batch_size is None or batch_size >= indices.shape[0]:
-            batch = indices
-        else:
-            chosen = rng.choice(indices.shape[0], size=batch_size, replace=False)
-            batch = indices[torch.as_tensor(chosen, dtype=torch.long, device=device)]
-        optimizer.zero_grad(set_to_none=True)
-        loss, h2, z = objective(batch)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(params, max_norm=100.0)
-        optimizer.step()
-
-        loss_value = float(loss.detach().cpu())
-        h2_value = float(h2.detach().cpu())
-        z_value = float(z.detach().cpu())
-        history.loss.append(loss_value)
-        history.l2_norm_sq.append(h2_value)
-        history.normalization.append(z_value)
-        history.chi2_to_reference.append(max(0.0, h2_value - 1.0))
-        if verbose and (epoch == 0 or (epoch + 1) % 50 == 0):
-            print(
-                f"epoch {epoch + 1:4d}: loss={loss_value:.7e}, "
-                f"chi2={max(0.0, h2_value - 1.0):.3e}, Z={z_value:.3e}"
+    if optimizer == "adam":
+        history = FitHistory(optimizer="adam")
+        adam = torch.optim.Adam(params, lr=learning_rate)
+        window = 25
+        for epoch in range(epochs):
+            if full_batch:
+                batch_indices, batch_weights = indices, weights
+            else:
+                chosen = rng.choice(points.shape[0], size=batch_size, replace=False)
+                batch_np, batch_weight_np = _compress_empirical_cells(
+                    indices_np[chosen]
+                )
+                batch_indices = torch.as_tensor(
+                    batch_np, dtype=torch.long, device=device
+                )
+                batch_weights = torch.as_tensor(
+                    batch_weight_np, dtype=torch_dtype, device=device
+                )
+            adam.zero_grad(set_to_none=True)
+            loss, h2, z = _torch_density_objective(
+                params, batch_indices, batch_weights, gamma
             )
-        if len(history.loss) >= 2 * window:
-            old = np.mean(history.loss[-2 * window:-window])
-            new = np.mean(history.loss[-window:])
-            scale = max(1.0, abs(old), abs(new))
-            if abs(new - old) <= tolerance * scale:
-                history.converged = True
-                break
+            loss.backward()
+            grad_norm = torch.nn.utils.clip_grad_norm_(params, max_norm=100.0)
+            adam.step()
+            history.function_calls += 1
 
-    history.epochs = len(history.loss)
+            loss_value = float(loss.detach().cpu())
+            h2_value = float(h2.detach().cpu())
+            z_value = float(z.detach().cpu())
+            history.loss.append(loss_value)
+            history.l2_norm_sq.append(h2_value)
+            history.normalization.append(z_value)
+            history.chi2_to_reference.append(max(0.0, h2_value - 1.0))
+            history.gradient_norm.append(float(grad_norm))
+            if verbose and (epoch == 0 or (epoch + 1) % 50 == 0):
+                print(
+                    f"epoch {epoch + 1:4d}: loss={loss_value:.7e}, "
+                    f"chi2={max(0.0, h2_value - 1.0):.3e}, Z={z_value:.3e}"
+                )
+            if len(history.loss) >= 2 * window:
+                old = np.mean(history.loss[-2 * window:-window])
+                new = np.mean(history.loss[-window:])
+                scale = max(1.0, abs(old), abs(new))
+                if abs(new - old) <= tolerance * scale:
+                    history.converged = True
+                    break
+        history.epochs = len(history.loss)
+        fitted_cores = [parameter.detach() for parameter in params]
+
+    elif optimizer == "riemannian":
+        from ..algs.autodiff import rgd
+
+        x0 = vector.from_list([parameter.detach().clone() for parameter in params])
+
+        def objective_riemannian(cores):
+            return _torch_density_objective(cores, indices, weights, gamma)[0]
+
+        fitted_root, rgd_history = rgd(
+            objective_riemannian,
+            x0,
+            maxit=epochs,
+            tol=tolerance,
+            step0=learning_rate,
+            method=riemannian_retraction,
+            verbose=verbose,
+        )
+        history = FitHistory(
+            optimizer="riemannian",
+            loss=[float(item["f"]) for item in rgd_history.iterations],
+            gradient_norm=[
+                float(item["gnorm"]) for item in rgd_history.iterations
+            ],
+            epochs=rgd_history.grad_calls,
+            converged=rgd_history.converged,
+            function_calls=rgd_history.fun_calls,
+        )
+        with torch.no_grad():
+            final_loss, final_h2, final_z = _torch_density_objective(
+                list(fitted_root.cores), indices, weights, gamma
+            )
+        if not history.loss or history.loss[-1] != float(final_loss):
+            history.loss.append(float(final_loss))
+        history.l2_norm_sq.append(float(final_h2))
+        history.normalization.append(float(final_z))
+        history.chi2_to_reference.append(max(0.0, float(final_h2) - 1.0))
+        fitted_cores = list(fitted_root.cores)
+
+    elif optimizer == "riemannian-sgd":
+        initial_root = vector.from_list(
+            [parameter.detach().clone() for parameter in params]
+        )
+        fitted_root, history = _fit_tt_riemannian_stochastic(
+            initial_root,
+            all_indices_np=indices_np,
+            full_indices=full_indices,
+            full_weights=full_weights,
+            gamma=gamma,
+            iterations=epochs,
+            batch_size=batch_size or min(512, points.shape[0]),
+            learning_rate=learning_rate,
+            momentum_decay=riemannian_momentum,
+            second_moment_decay=riemannian_second_moment,
+            retraction_method=riemannian_retraction,
+            seed=seed,
+            verbose=verbose,
+        )
+        fitted_cores = list(fitted_root.cores)
+
+    else:
+        fitted_cores, history = _fit_tt_als(
+            [parameter.detach() for parameter in params],
+            modes=modes_array,
+            indices=indices,
+            weights=weights,
+            gamma=gamma,
+            sweeps=epochs,
+            inner_steps=als_inner_steps,
+            learning_rate=learning_rate,
+            tolerance=tolerance,
+            verbose=verbose,
+        )
+
+    history.wall_time = time.perf_counter() - started
     fitted = vector.from_list([
-        core.detach().cpu().numpy().copy() for core in params
+        core.detach().cpu().numpy().copy() for core in fitted_cores
     ])
     return SquaredTTDensity(fitted, gamma=gamma), history
 
@@ -479,4 +1037,3 @@ class SampleDIRT:
             for k in range(count)
         ]
         return cls(dimension, layers)
-

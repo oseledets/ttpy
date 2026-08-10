@@ -670,3 +670,68 @@ def test_ksl_history_carries_the_amplification_whatever_the_threshold():
     assert hist.roundoff_floor == pytest.approx(
         np.finfo(float).eps * hist.max_growth ** 2.5, rel=1e-12)
     assert all("growth" in s for s in hist.steps)
+
+
+# --- the compiled KSL path ---------------------------------------------------
+
+def test_compiled_sweep_matches_the_interpreted_path(monkeypatch):
+    """Same problem, both paths, agreement to roundoff-of-expm.
+
+    The compiled path replaces scipy's expm with its own Pade ladder and
+    LAPACK's QR with Householder loops; the results may differ in the last
+    couple of ulps but nowhere else.
+    """
+    pytest.importorskip("numba")
+    from tt.algs import ksl as km
+    rng = np.random.default_rng(7)
+    d = 6
+    cores = [rng.standard_normal((1 if k == 0 else 2, 2, 2,
+                                  1 if k == d - 1 else 2)) for k in range(d)]
+    B = tt.matrix.from_list(cores)
+    A = (0.5 * (B + B.T)).round(1e-13)
+    rr = [1, 2, 4, 4, 4, 2, 1]
+    y0 = tt.vector.from_list(
+        [rng.standard_normal((rr[k], 2, rr[k + 1])) for k in range(d)])
+
+    y_fast, h_fast = km.ksl(A, y0, 0.05, verb=0, return_history=True)
+    assert any(s["exact"] for s in h_fast.steps)
+
+    monkeypatch.setattr(km, "_fast_path_ok", lambda cores, dt: False)
+    y_ref, h_ref = km.ksl(A, y0, 0.05, verb=0, return_history=True)
+    rel = float((y_fast - y_ref).norm() / y_ref.norm())
+    assert rel < 1e-12
+    assert len(h_fast.steps) == len(h_ref.steps)
+    # growth bookkeeping survives compilation
+    assert abs(h_fast.max_growth - h_ref.max_growth) < 1e-10 * h_ref.max_growth
+
+
+def test_compiled_defect_matches_the_interpreted_defect(monkeypatch):
+    pytest.importorskip("numba")
+    from tt.algs import ksl as km
+    from tt.algs import _ksl_fast
+    rng = np.random.default_rng(8)
+    d = 5
+    cores = [rng.standard_normal((1 if k == 0 else 2, 3, 3,
+                                  1 if k == d - 1 else 2)) for k in range(d)]
+    A = tt.matrix.from_list(cores)
+    y = tt.vector.from_list(
+        [rng.standard_normal(((1, 3, 4, 4, 3, 1)[k], 3,
+                              (1, 3, 4, 4, 3, 1)[k + 1])) for k in range(d)])
+    fast = km.tangent_defect(A, y)
+    monkeypatch.setattr(_ksl_fast, "HAVE_NUMBA", False)
+    ref = km.tangent_defect(A, y)
+    assert abs(fast[0] - ref[0]) < 1e-9 * ref[0]
+    assert abs(fast[1] - ref[1]) < 1e-11 * ref[1]
+
+
+def test_compiled_stiffness_guard_still_refuses(monkeypatch):
+    """The kernel's growth flag must raise exactly like the interpreted path."""
+    pytest.importorskip("numba")
+    from tt.algs import ksl as km
+    L = 6
+    n = 2 ** L
+    A = (-(n + 1) ** 2) * tt.qlaplace_dd([L])
+    y0 = tt.rand(2, L, r=2).round(0)
+    tau = 40.0 / float((n + 1) ** 2)
+    with pytest.raises(RuntimeError, match="amplified its argument"):
+        km.ksl(A, y0, tau, verb=0)

@@ -239,7 +239,11 @@ def main() -> None:
     parser.add_argument("--png", type=Path)
     args = parser.parse_args()
 
-    alphas = np.array([0.30, 0.55, 0.78, 1.0])
+    # The last two bridge points are deliberately close to the target.  Thin
+    # geometries (moons and spirals) emerge only near the end of the probit
+    # diffusion path, so a uniform alpha grid would leave the final layer with
+    # nearly all of the topological work.
+    alphas = np.array([0.30, 0.58, 0.80, 0.98, 1.0])
     rng = np.random.default_rng(args.seed)
     target_count = max(args.train_count, args.plot_count, 5000)
     targets = [

@@ -60,6 +60,43 @@ Piecewise-linear and Fourier functional bases are the next extension. They
 will replace cell lookup and cellwise CDF inversion while preserving the
 `SampleDIRT` interface and the sample loss.
 
+## Optimizers and contractions
+
+`fit_layer(..., optimizer=...)` supports three fixed-rank solvers:
+
+- `"adam"` differentiates all TT cores as ordinary parameters.
+- `"riemannian"` projects the autodiff gradient onto the fixed-rank TT
+  tangent space and retracts with TT-SVD or the orthogonal projector-splitting
+  sweep (`riemannian_retraction="psa"`).
+- `"riemannian-sgd"` keeps the normalization and fourth-moment contractions
+  exact but estimates the linear sample expectation from a minibatch. Its
+  momentum is a tangent vector and is reprojected by vector transport after
+  every retraction; the RMS accumulator is the gauge-invariant scalar tangent
+  norm. With zero momentum, the redundant transport is skipped exactly.
+- `"als"` performs mixed-canonical bidirectional sweeps. QR moves the
+  orthogonality centre, and L-BFGS solves the resulting one-core nonlinear
+  problem (`als_inner_steps` controls its budget).
+
+The ALS problem is not linear least squares: squaring and normalizing `g`
+makes it rational-quartic in the active core. Orthogonalization nevertheless
+removes most repeated work. At centre `k`,
+
+```text
+integral g^2 dmu = ||G_k||_F^2 / product_i n_i,
+```
+
+while the sample interfaces and the left/right fourth-order environments for
+`integral g^4 dmu` are contracted once and cached for the whole local solve.
+The global Adam and Riemannian losses also contract two and four copies of the
+cores directly, so the rank-squared TT `g * g` is never materialized. Repeated
+sample cells are coalesced exactly before optimization.
+
+For low-dimensional cellwise models, coalescing is already a strong full-batch
+optimization: in 2D with 40 cells per coordinate there are at most 1600 unique
+sample states, independent of the raw sample count. Stochastic Riemannian
+optimization is therefore intended primarily for higher-dimensional fits where
+almost every sample has a distinct multi-index.
+
 ## Minimal use
 
 Training uses Torch autograd while the returned transport is a numpy-backed TT:
@@ -76,6 +113,8 @@ history = model.fit_layer(
     rank=4,
     gamma=1e-4,
     epochs=400,
+    optimizer="als",
+    als_inner_steps=8,
 )
 
 generated = model.sample(10_000, seed=1)
@@ -89,18 +128,25 @@ fitting the next residual.
 
 ## Paper examples
 
-Three executable tests are provided:
+Five executable tests are provided:
 
 ```bash
+python examples/sample_dirt_2d_gallery.py --png sample_dirt_2d.png
+python examples/sample_dirt_optimizer_benchmark.py
 python examples/sample_dirt_correlated_gaussian.py
 python examples/sample_dirt_predator_prey.py
 python examples/sample_dirt_lorenz96.py
 ```
 
-The first is the correlated-Gaussian motivating example. The latter two use
+The 2D gallery fits banana, two-moons and spiral targets from samples alone and
+shows the accumulated transport after every diffusion bridge. The correlated
+Gaussian is the motivating example. The latter two use
 the models and parameter settings of Sections 6.1 and 6.2. A small Metropolis
 chain is used only to prepare an oracle target sample: neither `SampleDIRT` nor
 the TT optimizer receives the posterior log density.
+
+The optional PNG export in the gallery requires Matplotlib; `--json` writes the
+same stage samples and diagnostics without a plotting dependency.
 
 The Lorenz example defaults to dimension ten for a quick local run. Use
 `--dimension 40` for the dimension in the article. Every script exposes the
@@ -115,4 +161,3 @@ number of samples, cells, TT rank and optimizer epochs as command-line options.
   implemented.
 - The posterior examples are validation problems for density approximation
   from samples, not replacements for the oracle that produced those samples.
-

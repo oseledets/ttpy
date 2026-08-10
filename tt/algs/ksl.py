@@ -86,6 +86,7 @@ from .. import backend as bk
 from ..core import _ops
 from ..core.matrix import matrix
 from ..core.vector import vector
+from . import _ksl_fast
 from . import _localops as lo
 
 __all__ = ["ksl", "diag_ksl", "expmv_krylov", "tangent_defect", "KslHistory"]
@@ -381,9 +382,23 @@ def tangent_defect(A, y):
     Returns:
         ``(defect, ||A y||)``, both floats.
     """
-    yc = _ops.orthogonalize(y.cores, center=0)   # cores 1..d-1 right-orthogonal
-    d = len(yc)
+    d = len(y.cores)
     dt = bk.result_dtype(A.dtype, y.dtype)
+    if (_ksl_fast.HAVE_NUMBA and dt == "float64" and d > 1
+            and bk.backend_of(y.cores[0]).name == "numpy"):
+        yc = _ops.to_dtype(list(y.cores), dt)
+        from numba.typed import List as TypedList
+        tl_y = TypedList()
+        for c in yc:
+            tl_y.append(np.ascontiguousarray(c))
+        tl_a = TypedList()
+        for a in lo.operator_cores(A, yc[0], dt):
+            tl_a.append(np.ascontiguousarray(a))
+        proj2, znorm = _ksl_fast.tangent_defect_kernel(tl_y, tl_a)
+        gap = float(np.sqrt(max(znorm ** 2 - proj2, 0.0)))
+        floor = znorm * np.sqrt(bk.eps_of(dt))
+        return max(gap, floor), znorm
+    yc = _ops.orthogonalize(y.cores, center=0)   # cores 1..d-1 right-orthogonal
     yc = _ops.to_dtype(yc, dt)
     zc = _ops.matvec_cores(lo.operator_cores(A, yc[0], dt), yc)
 
@@ -443,6 +458,68 @@ that around.  Above the limit the contraction wins again and is used.
 #: truncation error and no substep control, so ``use_normest`` has nothing to
 #: estimate.  ``err_est`` is reported as 0 for these steps because it is 0.
 DENSE_EXPM_LIMIT = 40
+
+
+def _fast_path_ok(cores, dt):
+    """Whether the compiled sweep can run this problem.
+
+    Real float64 on numpy, structurally minimal ranks (so the kernel's QRs
+    keep every shape), and every local size inside the exact-exponential
+    regime -- the case the interpreted path itself would handle with dense
+    ``expm`` at every site.  Everything else takes the interpreted path,
+    which computes the same thing.
+    """
+    if not _ksl_fast.HAVE_NUMBA or dt != "float64":
+        return False
+    if bk.backend_of(cores[0]).name != "numpy":
+        return False
+    d = len(cores)
+    if d < 2:
+        return False
+    for k, c in enumerate(cores):
+        r0, n, r1 = c.shape
+        if r0 * n * r1 > DENSE_EXPM_LIMIT:
+            return False
+        if r1 > r0 * n or r0 > n * r1:
+            return False
+    return True
+
+
+def _run_compiled(cores, acores, tau0, symm, hist):
+    """The jitted sweeps, with the interpreted path's bookkeeping."""
+    from numba.typed import List as TypedList
+    tl_cores = TypedList()
+    for c in cores:
+        tl_cores.append(np.ascontiguousarray(c))
+    tl_acores = TypedList()
+    for a in acores:
+        tl_acores.append(np.ascontiguousarray(a))
+    out, rec, nrec, status, bad_site, bad_kind = _ksl_fast.run_sweeps(
+        tl_cores, tl_acores, float(tau0), bool(symm),
+        float(KSL_GROWTH_EXPONENT))
+    for i in range(nrec):
+        sweep, site, kind, size, growth = rec[i]
+        hist.steps.append(dict(
+            sweep=int(sweep), site=int(site), kind="K" if kind == 0 else "S",
+            size=int(size), substeps=1, krylov=0, err_est=0.0, exact=True,
+            growth=float(growth), time=0.0))
+        if growth > hist.max_growth:
+            hist.max_growth = float(growth)
+            hist.max_growth_kind = "K" if kind == 0 else "S"
+        hist.total_substeps += 1
+    if status != 0:
+        kind = "K" if bad_kind == 0 else "S"
+        growth = hist.max_growth
+        floor = float(np.finfo(np.float64).eps) * growth ** KSL_GROWTH_EXPONENT
+        raise RuntimeError(
+            f"ksl: the {kind}-step at site {bad_site} amplified its argument "
+            f"by {growth:.3E}, which leaves no correct digits (roundoff floor "
+            f"{floor:.3E}). The S-steps integrate backwards, so a dissipative "
+            f"A amplifies there by exp(tau |lambda_min|); the projector "
+            f"splitting is not stiff-stable and this step size is past what "
+            f"it can carry. Reduce tau, or use an integrator that never "
+            f"forms the growing factor -- see docs/plans/bug-integrator.md.")
+    return [np.asarray(c) for c in out]
 
 
 def _dense_or_contract_local(left, acore, right, block):
@@ -698,28 +775,31 @@ def ksl(A, y0, tau, verb=1, scheme="symm", space=8, rmax=2000, use_normest=1,
         hist.time = time.time() - t_start
         return (y, hist) if return_history else y
 
-    # left-orthogonalize everything but the last core; build the left interfaces
-    left = [None] * (d + 1)
-    right = [None] * (d + 1)
-    left[0] = lo.ones_interface(cores[0], dt)
-    right[d] = lo.ones_interface(cores[0], dt)
-    for k in range(d - 1):
-        q, s = lo.left_orthogonalize(cores[k])
-        cores[k] = q
-        _, nk, r2 = cores[k + 1].shape
-        cores[k + 1] = (s @ cores[k + 1].reshape((s.shape[1], nk * r2))).reshape(
-            (s.shape[0], nk, r2))
-        left[k + 1] = lo.phi_left(left[k], acores[k], q, q)
-
     symm = (scheme == "symm")
     tau0 = tau / 2.0 if symm else tau
-    cores = _sweep_backward(cores, acores, left, right, tau0, space, local_tol,
-                            use_normest, hist, 0)
-    if symm:
-        # the backward sweep left the frames right-orthogonal with the centre on
-        # core 0, which is exactly the entry state of the forward sweep
-        cores = _sweep_forward(cores, acores, left, right, tau0, space, local_tol,
-                               use_normest, hist, 1)
+    if not isinstance(tau0, complex) and _fast_path_ok(cores, dt):
+        cores = _run_compiled(cores, acores, tau0, symm, hist)
+    else:
+        # left-orthogonalize all but the last core; build the left interfaces
+        left = [None] * (d + 1)
+        right = [None] * (d + 1)
+        left[0] = lo.ones_interface(cores[0], dt)
+        right[d] = lo.ones_interface(cores[0], dt)
+        for k in range(d - 1):
+            q, s = lo.left_orthogonalize(cores[k])
+            cores[k] = q
+            _, nk, r2 = cores[k + 1].shape
+            cores[k + 1] = (s @ cores[k + 1].reshape(
+                (s.shape[1], nk * r2))).reshape((s.shape[0], nk, r2))
+            left[k + 1] = lo.phi_left(left[k], acores[k], q, q)
+
+        cores = _sweep_backward(cores, acores, left, right, tau0, space,
+                                local_tol, use_normest, hist, 0)
+        if symm:
+            # the backward sweep left the frames right-orthogonal with the
+            # centre on core 0 -- the entry state of the forward sweep
+            cores = _sweep_forward(cores, acores, left, right, tau0, space,
+                                   local_tol, use_normest, hist, 1)
 
     y = vector.from_list(cores)
     hist.ranks = [int(v) for v in y.r]

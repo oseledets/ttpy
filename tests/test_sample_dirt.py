@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 import numpy as np
 import pytest
 
 import tt
 from tt.transport import SampleDIRT, SquaredTTDensity
+from tt.transport import sample_dirt as sd
 
 
 def _nontrivial_root() -> tt.vector:
@@ -91,3 +94,75 @@ def test_sample_only_fit_moves_product_moments_toward_target():
     assert model.roundtrip_error(generated[:100]) < 3e-14
 
 
+def test_optimized_torch_contractions_equal_dense_cell_objective():
+    torch = pytest.importorskip("torch")
+    rng = np.random.default_rng(21)
+    cores_np = [rng.normal(size=(1, 5, 3)), rng.normal(size=(3, 6, 1))]
+    cores = [torch.tensor(core, dtype=torch.float64) for core in cores_np]
+    indices_np = np.stack(
+        [rng.integers(0, 5, 200), rng.integers(0, 6, 200)], axis=1
+    )
+    unique, weights_np = sd._compress_empirical_cells(indices_np)
+    indices = torch.tensor(unique, dtype=torch.long)
+    weights = torch.tensor(weights_np, dtype=torch.float64)
+    gamma = 2e-3
+
+    loss, h2, z = sd._torch_density_objective(
+        cores, indices, weights, gamma
+    )
+    root = tt.vector.from_list(cores_np)
+    density = SquaredTTDensity(root, gamma=gamma)
+    values = density.density((unique + 0.5) / np.array([5, 6]))
+    expected_loss = 0.5 * density.model_l2_norm_sq() - weights_np @ values
+
+    assert float(z) == pytest.approx(density.normalization, rel=2e-13)
+    assert float(h2) == pytest.approx(density.model_l2_norm_sq(), rel=2e-13)
+    assert float(loss) == pytest.approx(expected_loss, rel=2e-13)
+
+
+@pytest.mark.parametrize(
+    ("optimizer", "options"),
+    [
+        ("adam", {"epochs": 40, "learning_rate": 4e-2}),
+        ("riemannian", {"epochs": 15, "learning_rate": 1e-1}),
+        (
+            "riemannian-sgd",
+            {
+                "epochs": 60,
+                "batch_size": 128,
+                "learning_rate": 3e-2,
+                "riemannian_retraction": "psa",
+            },
+        ),
+        (
+            "als",
+            {
+                "epochs": 2,
+                "learning_rate": 1.0,
+                "als_inner_steps": 5,
+            },
+        ),
+    ],
+)
+def test_all_sample_density_optimizers_decrease_exact_loss(optimizer, options):
+    pytest.importorskip("torch")
+    rng = np.random.default_rng(22)
+    target = np.column_stack(
+        [rng.beta(2.0, 5.0, size=1000), rng.beta(5.0, 2.0, size=1000)]
+    )
+    with pytest.warns(RuntimeWarning) if optimizer == "riemannian" else nullcontext():
+        density, history = sd.fit_squared_tt_density(
+            target,
+            modes=7,
+            rank=2,
+            gamma=1e-3,
+            optimizer=optimizer,
+            tolerance=1e-8,
+            seed=4,
+            **options,
+        )
+
+    assert history.optimizer == optimizer
+    assert history.loss[-1] < history.loss[0] - 0.25
+    assert history.function_calls >= history.epochs
+    assert density.ranks.tolist() == [1, 2, 1]
