@@ -5,11 +5,20 @@ exponentials of matrices of 4..40 numbers plus as many QRs and interface
 updates: ~260k flops that the interpreted path spends almost entirely on call
 dispatch (measured; ``docs/PERFORMANCE.md`` 3b).  This module runs the whole
 sweep -- initial orthogonalization, K- and S-steps, interfaces, the stiffness
-guard -- as jitted code, for the case that actually occurs: real float64 on the
-numpy backend with every local size within ``DENSE_EXPM_LIMIT`` (the exact-
-exponential regime, where there is no Krylov machinery to reproduce).
-Everything else falls back to the interpreted path, which computes the same
-thing.
+guard -- as jitted code, for the case that actually occurs: float64 *or*
+complex128 on the numpy backend with every local size within
+``DENSE_EXPM_LIMIT`` (the exact-exponential regime, where there is no Krylov
+machinery to reproduce).  Everything else falls back to the interpreted path,
+which computes the same thing.
+
+The kernels are dtype-generic: numba specializes them per dtype, and every
+place where real and complex arithmetic differ is written once, in the form
+correct for both -- ``abs(x)**2`` for norms, ``np.conj`` on the bra side of
+every interface (the conjugate of a float is itself), the complex-sign
+Householder reflector (which reduces to the ``r >= 0`` branch on reals: for a
+nonzero real ``x``, ``x / |x|`` is exactly ``+-1.0``).  The complex path is
+what a Schroedinger step ``tau = 1j h`` runs on; parity with the interpreted
+path is pinned by tests for both dtypes.
 
 The local matrix exponential is scaling-and-squaring with the degree-13 Pade
 approximant (Higham 2005), the same algorithm scipy's ``expm`` uses for
@@ -41,47 +50,56 @@ if HAVE_NUMBA:
         tens of microseconds per call regardless of size; at the 8x4 blocks of
         a KSL sweep that envelope IS the sweep.  Householder by hand is the
         same algorithm LAPACK runs, backward stable, and nanoseconds here.
+
+        Complex input uses the standard complex reflector: ``alpha = -(x_1 /
+        |x_1|) ||x||`` (so ``v^H x`` is real and positive) and conjugated dot
+        products; ``R`` may then carry a complex diagonal, exactly as LAPACK's
+        ``zgeqrf`` does.
         """
         rows, cols = m.shape
         k = min(rows, cols)
         r = m.copy()
-        vs = np.zeros((k, rows))
+        vs = np.zeros((k, rows), m.dtype)
         for j in range(k):
             normx = 0.0
             for i in range(j, rows):
-                normx += r[i, j] * r[i, j]
+                normx += abs(r[i, j]) ** 2
             normx = np.sqrt(normx)
             if normx == 0.0:
                 continue
-            alpha = -normx if r[j, j] >= 0.0 else normx
-            v0 = r[j, j] - alpha
+            ajj = r[j, j]
+            aab = abs(ajj)
+            # -sign(x_1) ||x||; the complex sign is the phase, and for a real
+            # nonzero x_1 the division below is exactly +-1.0
+            alpha = -normx if aab == 0.0 else -(ajj / aab) * normx
+            v0 = ajj - alpha
             vs[j, j] = v0
-            vnorm2 = v0 * v0
+            vnorm2 = abs(v0) ** 2
             for i in range(j + 1, rows):
                 vs[j, i] = r[i, j]
-                vnorm2 += r[i, j] * r[i, j]
+                vnorm2 += abs(r[i, j]) ** 2
             if vnorm2 == 0.0:
                 continue
             for c in range(j, cols):
                 dot = 0.0
                 for i in range(j, rows):
-                    dot += vs[j, i] * r[i, c]
+                    dot += np.conj(vs[j, i]) * r[i, c]
                 f = 2.0 * dot / vnorm2
                 for i in range(j, rows):
                     r[i, c] -= f * vs[j, i]
-        q = np.zeros((rows, k))
+        q = np.zeros((rows, k), m.dtype)
         for j in range(k):
             q[j, j] = 1.0
         for j in range(k - 1, -1, -1):
             vnorm2 = 0.0
             for i in range(j, rows):
-                vnorm2 += vs[j, i] * vs[j, i]
+                vnorm2 += abs(vs[j, i]) ** 2
             if vnorm2 == 0.0:
                 continue
             for c in range(k):
                 dot = 0.0
                 for i in range(j, rows):
-                    dot += vs[j, i] * q[i, c]
+                    dot += np.conj(vs[j, i]) * q[i, c]
                 f = 2.0 * dot / vnorm2
                 for i in range(j, rows):
                     q[i, c] -= f * vs[j, i]
@@ -141,7 +159,9 @@ if HAVE_NUMBA:
                 s += abs(a[i, j])
             if s > norm:
                 norm = s
-        eye = np.eye(n)
+        eye = np.zeros((n, n), a.dtype)
+        for i in range(n):
+            eye[i, i] = 1.0
         # scipy's degree ladder: the cheapest Pade approximant whose backward
         # error at this norm is below eps -- a KSL step usually lands at
         # degree 3 or 5 (tau ||B|| is small), which is two matmuls, not eight
@@ -187,13 +207,17 @@ if HAVE_NUMBA:
 
     @njit(cache=True)
     def _local_matrix(left, acore, right):
-        """``(p i P, q j Q)`` dense local operator; loops, sizes are tiny."""
+        """``(p i P, q j Q)`` dense local operator; loops, sizes are tiny.
+
+        No conjugation here: the interfaces already carry the bra conjugation
+        (see :func:`_phi_left`), exactly as ``_localops.local_matrix``.
+        """
         p, ra, q = left.shape
         _, ni, nj, ra2 = acore.shape
         P, _, Q = right.shape
         rows = p * ni * P
         cols = q * nj * Q
-        m = np.zeros((rows, cols))
+        m = np.zeros((rows, cols), left.dtype)
         for ip in range(p):
             for ii in range(ni):
                 for iP in range(P):
@@ -215,7 +239,7 @@ if HAVE_NUMBA:
     def _interface_matrix(left, right):
         p, ra, q = left.shape
         P, _, Q = right.shape
-        m = np.zeros((p * P, q * Q))
+        m = np.zeros((p * P, q * Q), left.dtype)
         for ip in range(p):
             for iP in range(P):
                 for iq in range(q):
@@ -228,20 +252,20 @@ if HAVE_NUMBA:
 
     @njit(cache=True)
     def _phi_left(phi, acore, frame):
-        """L' = sum phi[p,a,q] frame[p,i,P] acore[a,i,j,A] frame[q,j,Q]."""
+        """L' = sum phi[p,a,q] conj(frame[p,i,P]) acore[a,i,j,A] frame[q,j,Q]."""
         p, ra, q = phi.shape
         _, ni, nj, ra2 = acore.shape
         P = frame.shape[2]
-        t1 = np.zeros((ra, q, P, ni))                 # phi * conj(bra)
+        t1 = np.zeros((ra, q, P, ni), frame.dtype)    # phi * conj(bra)
         for a in range(ra):
             for iq in range(q):
                 for iP in range(P):
                     for ii in range(ni):
                         s = 0.0
                         for ip in range(p):
-                            s += phi[ip, a, iq] * frame[ip, ii, iP]
+                            s += phi[ip, a, iq] * np.conj(frame[ip, ii, iP])
                         t1[a, iq, iP, ii] = s
-        t2 = np.zeros((q, P, ra2, nj))                # * acore
+        t2 = np.zeros((q, P, ra2, nj), frame.dtype)   # * acore
         for iq in range(q):
             for iP in range(P):
                 for A in range(ra2):
@@ -251,7 +275,7 @@ if HAVE_NUMBA:
                             for ii in range(ni):
                                 s += t1[a, iq, iP, ii] * acore[a, ii, ij, A]
                         t2[iq, iP, A, ij] = s
-        out = np.zeros((P, ra2, P))                   # * ket
+        out = np.zeros((P, ra2, P), frame.dtype)      # * ket
         for iP in range(P):
             for A in range(ra2):
                 for iQ in range(P):
@@ -264,20 +288,20 @@ if HAVE_NUMBA:
 
     @njit(cache=True)
     def _phi_right(phi, acore, frame):
-        """R = sum phi[P,A,Q] frame[p,i,P] acore[a,i,j,A] frame[q,j,Q]."""
+        """R = sum phi[P,A,Q] conj(frame[p,i,P]) acore[a,i,j,A] frame[q,j,Q]."""
         P, ra2, Q = phi.shape
         ra, ni, nj, _ = acore.shape
         p = frame.shape[0]
-        t1 = np.zeros((ra2, Q, p, ni))                # phi * conj(bra)
+        t1 = np.zeros((ra2, Q, p, ni), frame.dtype)   # phi * conj(bra)
         for A in range(ra2):
             for iQ in range(Q):
                 for ip in range(p):
                     for ii in range(ni):
                         s = 0.0
                         for iP in range(P):
-                            s += phi[iP, A, iQ] * frame[ip, ii, iP]
+                            s += phi[iP, A, iQ] * np.conj(frame[ip, ii, iP])
                         t1[A, iQ, ip, ii] = s
-        t2 = np.zeros((Q, p, ra, nj))                 # * acore
+        t2 = np.zeros((Q, p, ra, nj), frame.dtype)    # * acore
         for iQ in range(Q):
             for ip in range(p):
                 for a in range(ra):
@@ -287,7 +311,7 @@ if HAVE_NUMBA:
                             for ii in range(ni):
                                 s += t1[A, iQ, ip, ii] * acore[a, ii, ij, A]
                         t2[iQ, ip, a, ij] = s
-        out = np.zeros((p, ra, p))                    # * ket
+        out = np.zeros((p, ra, p), frame.dtype)       # * ket
         for ip in range(p):
             for a in range(ra):
                 for iq in range(p):
@@ -307,23 +331,24 @@ if HAVE_NUMBA:
     @njit(cache=True)
     def _right_orth(core):
         r0, n, r1 = core.shape
-        # LQ through QR of the transpose: core = S Q with Q Q^T = I
-        m = np.zeros((n * r1, r0))
+        # LQ through QR of the conjugate transpose: core = S Q, Q Q^H = I --
+        # the same three conjugations as ``_localops.right_orthogonalize``
+        m = np.zeros((n * r1, r0), core.dtype)
         for a in range(r0):
             for i in range(n):
                 for c in range(r1):
-                    m[i * r1 + c, a] = core[a, i, c]
+                    m[i * r1 + c, a] = np.conj(core[a, i, c])
         q, s = _qr(m)
         rnew = q.shape[1]
-        qq = np.zeros((rnew, n, r1))
+        qq = np.zeros((rnew, n, r1), core.dtype)
         for c in range(rnew):
             for i in range(n):
                 for b in range(r1):
-                    qq[c, i, b] = q[i * r1 + b, c]
-        st = np.zeros((r0, rnew))
+                    qq[c, i, b] = np.conj(q[i * r1 + b, c])
+        st = np.zeros((r0, rnew), core.dtype)
         for a in range(r0):
             for c in range(rnew):
-                st[a, c] = s[c, a]
+                st[a, c] = np.conj(s[c, a])
         return st, qq
 
     @njit(cache=True)
@@ -331,7 +356,7 @@ if HAVE_NUMBA:
         b = np.ascontiguousarray(a).reshape(a.size)
         s = 0.0
         for i in range(b.size):
-            s += b[i] * b[i]
+            s += abs(b[i]) ** 2
         return np.sqrt(s)
 
     @njit(cache=True)
@@ -342,7 +367,7 @@ if HAVE_NUMBA:
         nx = _fro(x)
         nw = 0.0
         for v in w:
-            nw += v * v
+            nw += abs(v) ** 2
         nw = np.sqrt(nw)
         growth = nw / nx if nx > 0.0 else 1.0
         floor = 2.220446049250313e-16 * growth ** growth_exponent
@@ -357,6 +382,10 @@ if HAVE_NUMBA:
         rows are ``(sweep, site, kind(0=K,1=S), size, growth)``, and a nonzero
         status means the stiffness guard fired at ``bad_site`` -- the wrapper
         raises the same error the interpreted path does.
+
+        ``tau0`` may be complex (a Schroedinger step); the caller matches its
+        type to the dtype of ``cores`` so numba compiles one specialization
+        per dtype, not the cross products.
         """
         d = len(cores)
         maxrec = 2 * (2 * d - 1) + 2
@@ -365,7 +394,7 @@ if HAVE_NUMBA:
 
         left = TypedList()
         right = TypedList()
-        one = np.ones((1, 1, 1))
+        one = np.ones((1, 1, 1), cores[0].dtype)
         for _k in range(d + 1):
             left.append(one)
             right.append(one)
@@ -434,7 +463,9 @@ if HAVE_NUMBA:
 
         Returns ``(proj2, znorm)`` with ``znorm`` computed exactly as
         ``_ops.norm`` computes it -- through an orthogonalization sweep of the
-        matvec cores, not through the cancelling contraction.
+        matvec cores, not through the cancelling contraction.  Conjugations
+        sit where the interpreted path has them: on the ``y`` side of the
+        ``<y|z>`` interfaces and on the frames of the projector.
         """
         d = len(ycores)
         # right-orthogonalize y (centre 0)
@@ -456,7 +487,7 @@ if HAVE_NUMBA:
             yk = yc[k]
             ra, ni, nj, ra2 = ak.shape
             p, _, q = yk.shape
-            z = np.zeros((ra * p, ni, ra2 * q))
+            z = np.zeros((ra * p, ni, ra2 * q), yk.dtype)
             for a in range(ra):
                 for ip in range(p):
                     for ii in range(ni):
@@ -471,7 +502,7 @@ if HAVE_NUMBA:
         # right interfaces of <y|z>
         mr = TypedList()
         for _k in range(d + 1):
-            mr.append(np.ones((1, 1)))
+            mr.append(np.ones((1, 1), ycores[0].dtype))
         for k in range(d - 1, -1, -1):
             yk = yc[k]
             zk_ = zc[k]
@@ -480,15 +511,15 @@ if HAVE_NUMBA:
             rz0 = zk_.shape[0]
             rz1 = zk_.shape[2]
             # two binary contractions, not one 5-deep loop
-            t = np.zeros((ry0, nk, rz1))
+            t = np.zeros((ry0, nk, rz1), yk.dtype)
             for a in range(ry0):
                 for i in range(nk):
                     for e in range(rz1):
                         s = 0.0
                         for b in range(ry1):
-                            s += yk[a, i, b] * mrk[b, e]
+                            s += np.conj(yk[a, i, b]) * mrk[b, e]
                         t[a, i, e] = s
-            out = np.zeros((ry0, rz0))
+            out = np.zeros((ry0, rz0), yk.dtype)
             for a in range(ry0):
                 for c in range(rz0):
                     s = 0.0
@@ -498,13 +529,13 @@ if HAVE_NUMBA:
                     out[a, c] = s
             mr[k] = out
 
-        ml = np.ones((1, 1))
+        ml = np.ones((1, 1), ycores[0].dtype)
         proj2 = 0.0
         for k in range(d):
             zck = zc[k]
             rz0, nk, rz1 = zck.shape
             ry0 = ml.shape[0]
-            zk = np.zeros((ry0, nk, rz1))
+            zk = np.zeros((ry0, nk, rz1), zck.dtype)
             for a in range(ry0):
                 for i in range(nk):
                     for e in range(rz1):
@@ -513,7 +544,7 @@ if HAVE_NUMBA:
                             s += ml[a, c] * zck[c, i, e]
                         zk[a, i, e] = s
             ry1 = mr[k + 1].shape[0]
-            zkr = np.zeros((ry0, nk, ry1))
+            zkr = np.zeros((ry0, nk, ry1), zck.dtype)
             for a in range(ry0):
                 for i in range(nk):
                     for b in range(ry1):
@@ -530,17 +561,17 @@ if HAVE_NUMBA:
                         r0, nk1 * r1)).reshape(s.shape[0], nk1, r1)
                 qm = np.ascontiguousarray(q).reshape(-1, q.shape[2])
                 zm = np.ascontiguousarray(zkr).reshape(-1, zkr.shape[2])
-                res = zm - qm @ (qm.T @ zm)
+                res = zm - qm @ (np.conj(qm).T @ zm)
                 proj2 += _fro(res) ** 2
                 # advance ml with the fresh frame (zk already is ml * z)
                 tmp = zk
-                mlnew = np.zeros((q.shape[2], zc[k].shape[2]))
+                mlnew = np.zeros((q.shape[2], zc[k].shape[2]), zck.dtype)
                 for b in range(q.shape[2]):
                     for e in range(zc[k].shape[2]):
                         s2 = 0.0
                         for a in range(ry0):
                             for i in range(nk):
-                                s2 += q[a, i, b] * tmp[a, i, e]
+                                s2 += np.conj(q[a, i, b]) * tmp[a, i, e]
                         mlnew[b, e] = s2
                 ml = mlnew
             else:

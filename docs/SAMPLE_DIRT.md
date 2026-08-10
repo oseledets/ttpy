@@ -128,7 +128,7 @@ fitting the next residual.
 
 ## Paper examples
 
-Five executable tests are provided:
+Six executable tests are provided:
 
 ```bash
 python examples/sample_dirt_2d_gallery.py --png sample_dirt_2d.png
@@ -136,6 +136,7 @@ python examples/sample_dirt_optimizer_benchmark.py
 python examples/sample_dirt_correlated_gaussian.py
 python examples/sample_dirt_predator_prey.py
 python examples/sample_dirt_lorenz96.py
+python examples/sample_dirt_corner_mixture.py
 ```
 
 The 2D gallery fits banana, two-moons and spiral targets from samples alone and
@@ -151,6 +152,13 @@ same stage samples and diagnostics without a plotting dependency.
 The Lorenz example defaults to dimension ten for a quick local run. Use
 `--dimension 40` for the dimension in the article. Every script exposes the
 number of samples, cells, TT rank and optimizer epochs as command-line options.
+
+The corner-mixture benchmark follows Section 5.2 of Novikov, Panov and
+Oseledets (UAI 2021): 128 equal-weight Gaussians at randomly selected corners
+of an eight-dimensional cube.  Since the paper does not publish the corner
+seed or component variance, the script fixes both explicitly.  It also reports
+nearest-corner total variation and recovered-mode coverage, which reveal
+higher-order dependence that is invisible in two-dimensional projections.
 
 ## Limitations
 

@@ -384,7 +384,7 @@ def tangent_defect(A, y):
     """
     d = len(y.cores)
     dt = bk.result_dtype(A.dtype, y.dtype)
-    if (_ksl_fast.HAVE_NUMBA and dt == "float64" and d > 1
+    if (_ksl_fast.HAVE_NUMBA and dt in ("float64", "complex128") and d > 1
             and bk.backend_of(y.cores[0]).name == "numpy"):
         yc = _ops.to_dtype(list(y.cores), dt)
         from numba.typed import List as TypedList
@@ -463,13 +463,14 @@ DENSE_EXPM_LIMIT = 40
 def _fast_path_ok(cores, dt):
     """Whether the compiled sweep can run this problem.
 
-    Real float64 on numpy, structurally minimal ranks (so the kernel's QRs
-    keep every shape), and every local size inside the exact-exponential
-    regime -- the case the interpreted path itself would handle with dense
-    ``expm`` at every site.  Everything else takes the interpreted path,
-    which computes the same thing.
+    float64 or complex128 on numpy (a Schroedinger step ``tau = 1j h``
+    promotes to the latter and stays compiled), structurally minimal ranks
+    (so the kernel's QRs keep every shape), and every local size inside the
+    exact-exponential regime -- the case the interpreted path itself would
+    handle with dense ``expm`` at every site.  Everything else takes the
+    interpreted path, which computes the same thing.
     """
-    if not _ksl_fast.HAVE_NUMBA or dt != "float64":
+    if not _ksl_fast.HAVE_NUMBA or dt not in ("float64", "complex128"):
         return False
     if bk.backend_of(cores[0]).name != "numpy":
         return False
@@ -494,8 +495,15 @@ def _run_compiled(cores, acores, tau0, symm, hist):
     tl_acores = TypedList()
     for a in acores:
         tl_acores.append(np.ascontiguousarray(a))
+    # match the step's type to the cores' dtype so numba compiles one
+    # specialization per dtype, not the float/complex cross products; a
+    # complex tau only reaches here after the dtype promotion in ksl()
+    if np.iscomplexobj(tl_cores[0]):
+        tau_arg = complex(tau0)
+    else:
+        tau_arg = float(tau0.real) if isinstance(tau0, complex) else float(tau0)
     out, rec, nrec, status, bad_site, bad_kind = _ksl_fast.run_sweeps(
-        tl_cores, tl_acores, float(tau0), bool(symm),
+        tl_cores, tl_acores, tau_arg, bool(symm),
         float(KSL_GROWTH_EXPONENT))
     for i in range(nrec):
         sweep, site, kind, size, growth = rec[i]
@@ -777,7 +785,11 @@ def ksl(A, y0, tau, verb=1, scheme="symm", space=8, rmax=2000, use_normest=1,
 
     symm = (scheme == "symm")
     tau0 = tau / 2.0 if symm else tau
-    if not isinstance(tau0, complex) and _fast_path_ok(cores, dt):
+    # a complex tau0 with real dt would mean tau.imag == 0 (no promotion
+    # happened); keep that corner on the interpreted path, which is the
+    # behaviour it always had
+    if _fast_path_ok(cores, dt) and (
+            not isinstance(tau0, complex) or dt == "complex128"):
         cores = _run_compiled(cores, acores, tau0, symm, hist)
     else:
         # left-orthogonalize all but the last core; build the left interfaces

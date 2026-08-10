@@ -307,9 +307,19 @@ interfaces, the stiffness guard -- runs as one numba kernel with a hand-written
 Pade-ladder `expm` (degree 3/5/7/9/13 by norm, parity with scipy to 2e-15),
 Householder QR and scalar-loop LU (numba's LAPACK envelopes cost tens of
 microseconds per call at these sizes, which was the sweep).  `tangent_defect`
-is compiled the same way.  Everything outside that regime -- complex, Krylov
+is compiled the same way.  Everything outside that regime -- Krylov
 substepping, oversized blocks, non-minimal ranks -- takes the interpreted path,
 and both paths are pinned to agree to 1e-12 by tests.
+
+**complex128 runs the same kernels** (2026-08-10): they are dtype-generic, so
+numba specializes them per dtype, and every real/complex divergence is written
+once in the form correct for both -- `abs()**2` norms, `np.conj` on the bra
+side of every interface, the complex-sign Householder reflector (`x/|x|` is
+exactly `+-1.0` on nonzero reals, so the float64 path is bit-for-bit what it
+was).  A Schroedinger step `tau = 1j h` therefore stays compiled whenever the
+blocks fit; the parity with the interpreted path (2.8e-15 on a Henon-Heiles
+step) and the unitarity of the compiled flow are pinned by
+`tests/test_eigb_ksl.py::test_compiled_complex_step_matches_the_interpreted_path`.
 
 Measured on the reference problem (d=6, n=2, ranks [1,2,4,4,4,2,1], symmetric
 low-rank A): the sweep went from ~3.3 ms interpreted to **0.48-0.64 ms**

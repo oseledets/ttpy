@@ -735,3 +735,59 @@ def test_compiled_stiffness_guard_still_refuses(monkeypatch):
     tau = 40.0 / float((n + 1) ** 2)
     with pytest.raises(RuntimeError, match="amplified its argument"):
         km.ksl(A, y0, tau, verb=0)
+
+
+def test_compiled_complex_step_matches_the_interpreted_path(monkeypatch):
+    """A Schroedinger step ``tau = 1j h`` on both paths, agreement to roundoff.
+
+    This is the path quantum dynamics runs on (``docs/plans/`` -- the
+    Henon-Heiles autocorrelation example): a real Hermitian ``H``, a complex
+    ``tau``, and a norm the exact flow preserves.  The compiled kernels do
+    complex Householder QR and complex Pade exponentials here; the conjugation
+    conventions are pinned by the parity, the unitarity by the norm.
+    """
+    pytest.importorskip("numba")
+    from tt.algs import ksl as km
+    rng = np.random.default_rng(11)
+    d = 4
+    A = ham.henon_heiles(d, n=3)
+    rr = [1, 2, 4, 2, 1]
+    y0 = tt.vector.from_list(
+        [rng.standard_normal((rr[k], 3, rr[k + 1])) for k in range(d)])
+    y0 = y0 * (1.0 / y0.norm())
+    tau = 1j * 0.01
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        y_fast, h_fast = km.ksl(A, y0, tau, verb=0, return_history=True)
+        monkeypatch.setattr(km, "_fast_path_ok", lambda cores, dt: False)
+        y_ref, h_ref = km.ksl(A, y0, tau, verb=0, return_history=True)
+    assert np.iscomplexobj(y_fast.cores[0])
+    assert any(s["exact"] for s in h_fast.steps)
+    rel = float((y_fast - y_ref).norm() / y_ref.norm())
+    assert rel < 1e-12
+    assert len(h_fast.steps) == len(h_ref.steps)
+    # H is Hermitian and tau imaginary: the projected flow is norm-preserving,
+    # and so must be its compiled discretization
+    assert abs(float(y_fast.norm()) - 1.0) < 1e-12
+
+
+def test_compiled_defect_matches_on_a_complex_vector(monkeypatch):
+    pytest.importorskip("numba")
+    from tt.algs import ksl as km
+    from tt.algs import _ksl_fast
+    rng = np.random.default_rng(12)
+    d = 4
+    cores = [rng.standard_normal((1 if k == 0 else 2, 3, 3,
+                                  1 if k == d - 1 else 2)) for k in range(d)]
+    A = tt.matrix.from_list(cores)
+    rr = [1, 3, 4, 3, 1]
+    y = tt.vector.from_list(
+        [(rng.standard_normal((rr[k], 3, rr[k + 1]))
+          + 1j * rng.standard_normal((rr[k], 3, rr[k + 1])))
+         for k in range(d)])
+    fast = km.tangent_defect(A, y)
+    monkeypatch.setattr(_ksl_fast, "HAVE_NUMBA", False)
+    ref = km.tangent_defect(A, y)
+    assert abs(fast[0] - ref[0]) < 1e-9 * ref[0]
+    assert abs(fast[1] - ref[1]) < 1e-11 * ref[1]
