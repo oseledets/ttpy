@@ -62,7 +62,7 @@ will replace cell lookup and cellwise CDF inversion while preserving the
 
 ## Optimizers and contractions
 
-`fit_layer(..., optimizer=...)` supports three fixed-rank solvers:
+`fit_layer(..., optimizer=...)` supports four fixed-rank solvers:
 
 - `"adam"` differentiates all TT cores as ordinary parameters.
 - `"riemannian"` projects the autodiff gradient onto the fixed-rank TT
@@ -90,6 +90,26 @@ while the sample interfaces and the left/right fourth-order environments for
 The global Adam and Riemannian losses also contract two and four copies of the
 cores directly, so the rank-squared TT `g * g` is never materialized. Repeated
 sample cells are coalesced exactly before optimization.
+
+For disconnected targets, `initialization="coarse"` first estimates a small
+joint histogram with `initialization_coarse_bins` cells per coordinate,
+compresses its square root by TT-SVD, and lifts it to the fine grid using
+empirical conditional one-dimensional shapes. Unlike a product-of-marginals
+start, this preserves coarse global dependence and prevents mode collapse on
+separated mixtures. The default remains the perturbed uniform start.
+
+The coarse estimator can already be close to the best density representable on
+the selected grid. Further minimisation of the training empirical expectation
+can then overfit occupied cells even while the reported training loss keeps
+decreasing. For sharply separated mixtures, select the number of refinement
+steps using independent validation samples. The 8D corner-mixture example
+therefore defaults to one small Adam refinement step.
+
+For a genuinely deep bridge, the residual densities should stay near the
+uniform reference. In that regime use the perturbed uniform start with a small
+`initialization_noise`; the larger historical perturbation is intended to open
+fixed-rank directions in a difficult one-shot fit and can itself dominate a
+near-identity residual.
 
 For low-dimensional cellwise models, coalescing is already a strong full-batch
 optimization: in 2D with 40 cells per coordinate there are at most 1600 unique
@@ -126,6 +146,18 @@ For a sequence of bridge samples, call `fit_layer` in bridge order. It maps the
 new samples through the complete inverse of the current composition before
 fitting the next residual.
 
+The 8D corner benchmark exposes two sample-only paths.  The probit path mixes
+the Gaussianized samples with normal noise.  The reflected path uses
+
+```text
+X_tau = reflect_mod_2(X_target + tau * epsilon),   epsilon ~ N(0, I),
+```
+
+which is the fixed-time Neumann heat flow on the cube: large `tau` approaches
+the uniform reference and `tau=0` is the target.  Use `--png-dir` to save both
+the final coordinate projections and a layer-by-layer plot comparing the
+learned composition with the prescribed bridge law.
+
 ## Paper examples
 
 Six executable tests are provided:
@@ -159,6 +191,11 @@ of an eight-dimensional cube.  Since the paper does not publish the corner
 seed or component variance, the script fixes both explicitly.  It also reports
 nearest-corner total variation and recovered-mode coverage, which reveal
 higher-order dependence that is invisible in two-dimensional projections.
+Its validated default is a genuine two-layer chain with probit strengths
+`(0.6, 1.0)`.  Longer paths are available from the command line, but on this
+particular target they accumulate more conditional-CDF error: the final corner
+mixture already has TT rank 16, so it is an unusually favourable one-shot
+control problem rather than evidence that a deep path is always preferable.
 
 ## Limitations
 

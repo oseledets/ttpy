@@ -1,5 +1,7 @@
 """Sample-driven tensor-train transport maps."""
 
+from .gaussian_mixture import TruncatedGaussianMixture
+
 from .sample_dirt import (
     FitHistory,
     SampleDIRT,
@@ -11,6 +13,6 @@ __all__ = [
     "FitHistory",
     "SampleDIRT",
     "SquaredTTDensity",
+    "TruncatedGaussianMixture",
     "fit_squared_tt_density",
 ]
-

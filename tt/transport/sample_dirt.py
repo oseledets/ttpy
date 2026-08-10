@@ -346,6 +346,60 @@ def _compress_empirical_cells(indices: np.ndarray) -> tuple[np.ndarray, np.ndarr
     return unique, counts.astype(np.float64) / counts.sum()
 
 
+def _coarse_to_fine_initial_root(
+    points: np.ndarray,
+    modes: np.ndarray,
+    *,
+    rank: int,
+    coarse_bins: int,
+    pseudocount: float,
+) -> vector:
+    """Build a sample-only multiscale root retaining coarse joint dependence."""
+    d = points.shape[1]
+    coarse_bins = int(coarse_bins)
+    if coarse_bins < 2:
+        raise ValueError("coarse_bins must be at least two")
+    if np.any(modes % coarse_bins != 0):
+        raise ValueError("every mode size must be divisible by coarse_bins")
+    coarse_cells = coarse_bins ** d
+    if coarse_cells > 1_048_576:
+        raise ValueError(
+            "coarse initializer would contain more than 1,048,576 cells"
+        )
+    if pseudocount <= 0.0 or not np.isfinite(pseudocount):
+        raise ValueError("initialization_pseudocount must be positive")
+
+    coarse = np.floor(points * coarse_bins).astype(np.int64)
+    coarse = np.minimum(coarse, coarse_bins - 1)
+    strides = coarse_bins ** np.arange(d - 1, -1, -1, dtype=np.int64)
+    flat = coarse @ strides
+    counts = np.bincount(flat, minlength=coarse_cells).astype(np.float64)
+    counts += pseudocount
+    probabilities = counts / counts.sum()
+    coarse_density = (probabilities * coarse_cells).reshape(
+        [coarse_bins] * d
+    )
+    coarse_root = vector(np.sqrt(coarse_density), eps=1e-13, rmax=rank)
+
+    fine = _cell_indices(points, modes)
+    lifted = []
+    for k, (core, mode) in enumerate(zip(coarse_root.cores, modes)):
+        width = int(mode // coarse_bins)
+        basis = np.zeros((coarse_bins, int(mode)), dtype=np.float64)
+        for coarse_cell in range(coarse_bins):
+            start = coarse_cell * width
+            selected = fine[coarse[:, k] == coarse_cell, k] - start
+            local_counts = np.bincount(selected, minlength=width).astype(np.float64)
+            local_counts += pseudocount
+            local_probability = local_counts / local_counts.sum()
+            # Density relative to the uniform measure inside the coarse cell.
+            basis[coarse_cell, start:start + width] = np.sqrt(
+                width * local_probability
+            )
+        lifted.append(np.einsum("asb,si->aib", core, basis, optimize=True))
+    return vector.from_list(lifted)
+
+
 def _torch_right_orthogonalize(cores) -> None:
     """Put a torch TT into mixed canonical form with centre zero, in place."""
     import torch
@@ -715,6 +769,10 @@ def fit_squared_tt_density(
     riemannian_retraction: str = "svd",
     riemannian_momentum: float = 0.9,
     riemannian_second_moment: float = 0.99,
+    initialization: str = "uniform",
+    initialization_noise: float = 2e-2,
+    initialization_coarse_bins: int = 2,
+    initialization_pseudocount: float = 0.5,
     verbose: bool = False,
 ) -> tuple[SquaredTTDensity, FitHistory]:
     """Fit a positive TT density from samples by the exact-L2 ratio loss.
@@ -745,6 +803,14 @@ def fit_squared_tt_density(
         riemannian_momentum, riemannian_second_moment: Decays for transported
             tangent momentum and its gauge-invariant scalar RMS in stochastic
             Riemannian optimization.
+        initialization: ``"uniform"`` for the perturbed constant path or
+            ``"coarse"`` for a sample-only coarse-grid TT followed by a
+            one-dimensional empirical lift to the fine grid.
+        initialization_noise: Standard deviation of the dense perturbation of
+            the uniform path. Small residual-ratio layers generally need a
+            much smaller value than a one-shot fit.
+        initialization_coarse_bins, initialization_pseudocount: Resolution and
+            smoothing of the coarse-to-fine initialiser.
 
     Returns:
         ``(density, history)``.  The returned TT is converted to numpy and does
@@ -794,6 +860,11 @@ def fit_squared_tt_density(
         raise ValueError("riemannian_second_moment must lie in [0, 1)")
     if batch_size is not None and batch_size < 1:
         raise ValueError("batch_size must be positive")
+    initialization = str(initialization).lower().replace("_", "-")
+    if initialization not in ("uniform", "coarse"):
+        raise ValueError("initialization must be 'uniform' or 'coarse'")
+    if initialization_noise < 0.0 or not np.isfinite(initialization_noise):
+        raise ValueError("initialization_noise must be finite and non-negative")
     full_batch = batch_size is None or batch_size >= points.shape[0]
     if optimizer in ("riemannian", "als") and not full_batch:
         raise ValueError(f"{optimizer} requires a deterministic full-batch loss")
@@ -801,17 +872,32 @@ def fit_squared_tt_density(
     torch_dtype = torch.float64 if dtype == "float64" else torch.float32
     generator = torch.Generator(device="cpu")
     generator.manual_seed(seed)
-    ranks = [1] + [int(rank)] * (d - 1) + [1]
-    params = []
-    for k, n in enumerate(modes_array):
-        noise = 2e-2 * torch.randn(
-            (ranks[k], int(n), ranks[k + 1]), generator=generator,
-            dtype=torch_dtype,
+    if initialization == "coarse":
+        initial_root = _coarse_to_fine_initial_root(
+            points,
+            modes_array,
+            rank=rank,
+            coarse_bins=initialization_coarse_bins,
+            pseudocount=initialization_pseudocount,
         )
-        # A constant rank-one path gives h=1 at initialisation; the small dense
-        # perturbation lets all rank directions receive a gradient immediately.
-        noise[0, :, 0] += 1.0
-        params.append(torch.nn.Parameter(noise.to(device)))
+        params = [
+            torch.nn.Parameter(
+                torch.as_tensor(core, dtype=torch_dtype, device=device)
+            )
+            for core in initial_root.cores
+        ]
+    else:
+        ranks = [1] + [int(rank)] * (d - 1) + [1]
+        params = []
+        for k, n in enumerate(modes_array):
+            noise = initialization_noise * torch.randn(
+                (ranks[k], int(n), ranks[k + 1]), generator=generator,
+                dtype=torch_dtype,
+            )
+            # A constant rank-one path gives h=1 at initialisation; the small
+            # dense perturbation gives all rank directions a gradient.
+            noise[0, :, 0] += 1.0
+            params.append(torch.nn.Parameter(noise.to(device)))
 
     indices_np = _cell_indices(points, modes_array)
     full_indices_np, full_weights_np = _compress_empirical_cells(indices_np)
@@ -996,6 +1082,18 @@ class SampleDIRT:
     def sample(self, count: int, seed=None) -> np.ndarray:
         rng = np.random.default_rng(seed)
         return self.forward(rng.random((count, self.dimension)))
+
+    def log_density(self, points) -> np.ndarray:
+        """Evaluate the density induced by the complete transport composition."""
+        value = _validate_points(points, self.dimension).copy()
+        result = np.zeros(value.shape[0], dtype=np.float64)
+        for layer in self.layers:
+            result += layer.log_density(value)
+            value = layer.rosenblatt(value)
+        return result
+
+    def density(self, points) -> np.ndarray:
+        return np.exp(self.log_density(points))
 
     def fit_layer(self, samples_next, **fit_options) -> FitHistory:
         samples_next = _validate_points(samples_next, self.dimension,

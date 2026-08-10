@@ -188,3 +188,85 @@ def test_eigb_matches_a_dense_symmetric_eigensolver():
     y, lam = eigb_mod.eigb(A, tt.rand([2] * d, d, ranks), 1e-8, verb=0)
     lam = np.sort(np.asarray(lam).ravel())[:B]
     assert np.max(np.abs(lam - exact) / exact) < 1e-9, (lam, exact)
+
+
+# --- examples/henon_heiles_ksl_paper.py, examples/henon_heiles_spectrum.py ---
+
+def _examples_path():
+    import pathlib
+    import sys
+    p = str(pathlib.Path(__file__).resolve().parent.parent / "examples")
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+
+def test_ksl_paper_setup_matches_dense_propagation():
+    """The [LOV15] section 6.2 machinery at f=2 against a dense propagator.
+
+    Oracle: ``expm(-1j h H)`` on the full 1024-dimensional state -- the DVR
+    kinetic matrix, the CAP sign, the MPO assembly and the complex KSL step
+    all have to be right at once for the *state* (not just a summary number)
+    to track the dense flow.  The error at T=3 is the accumulated rank-12
+    modelling error, an order below the acceptance bound; the error after the
+    first 50 steps is the integrator's own, and is seven orders below it.
+    """
+    import warnings
+    import scipy.linalg as sla
+    ksl_mod = pytest.importorskip("tt.algs.ksl")
+    _examples_path()
+    from henon_heiles_ksl_paper import hamiltonian, packet
+
+    f, n, r = 2, 32, 12
+    A, x = hamiltonian(f, n)
+    psi0 = packet(f, x)
+    Hd = np.asarray(A.full())
+    yd = np.asarray(psi0.full()).flatten("F")
+
+    rng = np.random.default_rng(0)
+    noise = tt.rand([n] * f, r=r, samplefunc=rng.standard_normal)
+    noise = noise * (1e-8 / noise.norm())
+    y = (psi0 + noise).round(0.0, rmax=r)
+
+    h, nsteps = 0.01, 300
+    P = sla.expm(-1j * h * Hd)
+    early = None
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        for k in range(nsteps):
+            y = ksl_mod.ksl(A, y, -1j * h, verb=0, check_rank=False,
+                            use_normest=2)
+            yd = P @ yd
+            if k + 1 == 50:
+                got = np.asarray(y.full()).flatten("F")
+                early = np.linalg.norm(got - yd) / np.linalg.norm(yd)
+    got = np.asarray(y.full()).flatten("F")
+    late = np.linalg.norm(got - yd) / np.linalg.norm(yd)
+    assert early < 1e-5, f"integrator error after 50 steps: {early:.3e}"
+    assert late < 2e-3, f"accumulated rank-12 error at T=3: {late:.3e}"
+    # the CAP must have started absorbing by T=3 (at f=2 the packet barely
+    # reaches +-6 this early, so the drain is small but must be nonzero --
+    # a Hermitian-by-mistake H would conserve the norm to 1e-12)
+    assert float(y.norm()) < 1.0 - 1e-6
+
+
+def test_spectrum_transform_recovers_planted_frequencies():
+    """``spectrum`` + ``find_peaks`` of the autocorrelation example.
+
+    Oracle: a synthetic ``a(t) = sum w_l exp(-i lam_l t)`` with planted
+    frequencies; the windowed transform must peak at each ``lam_l`` to far
+    better than the grid resolution (parabolic refinement), and must find
+    nothing else above threshold.
+    """
+    _examples_path()
+    from henon_heiles_spectrum import find_peaks, spectrum
+
+    lam = np.array([1.0, 2.3, 4.7])
+    w = np.array([1.0, 0.6, 0.3])
+    h, nsteps = 0.05, 4096
+    t = np.arange(nsteps + 1) * h
+    acorr = (w[None, :] * np.exp(-1j * np.outer(t, lam))).sum(axis=1)
+    omega, S = spectrum(acorr, h)
+    peaks = find_peaks(omega, S, rel=0.05)
+    got = np.array(sorted(p[0] for p in peaks))
+    assert len(got) == 3, f"expected 3 peaks, found {len(got)}: {got}"
+    assert np.max(np.abs(got - lam)) < 1e-3, (got, lam)

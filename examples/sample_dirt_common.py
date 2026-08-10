@@ -88,6 +88,31 @@ def probit_bridge_samples(
     return ndtr(mixed)
 
 
+def reflected_gaussian_bridge_samples(
+    target_unit_samples: np.ndarray,
+    noise_std: float,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Neumann heat-flow bridge on the cube, available from samples only.
+
+    Reflection modulo two is the exact pathwise construction of reflected
+    Brownian motion at a fixed time. Large noise approaches the uniform law;
+    zero noise returns the target samples unchanged.
+    """
+    target = np.asarray(target_unit_samples, dtype=np.float64)
+    if target.ndim != 2 or np.any(target < 0.0) or np.any(target > 1.0):
+        raise ValueError("target_unit_samples must have shape (N, d) in the cube")
+    if noise_std < 0.0 or not np.isfinite(noise_std):
+        raise ValueError("noise_std must be finite and non-negative")
+    if noise_std == 0.0:
+        return target.copy()
+    value = np.mod(
+        target + noise_std * rng.standard_normal(target.shape),
+        2.0,
+    )
+    return np.where(value <= 1.0, value, 2.0 - value)
+
+
 def fit_diffusion_sample_dirt(
     target_unit_samples: np.ndarray,
     alphas,
@@ -142,4 +167,3 @@ def print_sample_report(generated: np.ndarray, target: np.ndarray) -> None:
     covariance_error = covariance_relative_error(generated, target)
     print(f"mean L2 error:          {mean_error:.4e}")
     print(f"covariance rel. error: {covariance_error:.4e}")
-

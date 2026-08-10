@@ -65,6 +65,10 @@ def test_deep_composition_roundtrip_and_serialization(tmp_path):
     loaded = SampleDIRT.load(tmp_path)
     assert loaded.stored_parameters == model.stored_parameters
     assert np.max(np.abs(loaded.forward(points) - model.forward(points))) < 1e-14
+    assert np.max(np.abs(loaded.log_density(points) - model.log_density(points))) < 1e-14
+    manual = first.log_density(points)
+    manual += second.log_density(first.rosenblatt(points))
+    assert np.max(np.abs(model.log_density(points) - manual)) < 1e-14
 
 
 def test_sample_only_fit_moves_product_moments_toward_target():
@@ -118,6 +122,28 @@ def test_optimized_torch_contractions_equal_dense_cell_objective():
     assert float(z) == pytest.approx(density.normalization, rel=2e-13)
     assert float(h2) == pytest.approx(density.model_l2_norm_sq(), rel=2e-13)
     assert float(loss) == pytest.approx(expected_loss, rel=2e-13)
+
+
+def test_coarse_initialization_preserves_disconnected_joint_modes():
+    rng = np.random.default_rng(31)
+    count = 8000
+    component = rng.integers(2, size=count)
+    means = np.where(component[:, None] == 0, 0.18, 0.82)
+    points = np.clip(means + 0.025 * rng.standard_normal((count, 4)), 0.0, 1.0)
+    root = sd._coarse_to_fine_initial_root(
+        points,
+        np.full(4, 8, dtype=np.int64),
+        rank=2,
+        coarse_bins=2,
+        pseudocount=0.5,
+    )
+    density = SquaredTTDensity(root, gamma=1e-8)
+    generated = density.inverse_rosenblatt(rng.random((10_000, 4)))
+    bits = generated >= 0.5
+    correct = np.all(bits == bits[:, :1], axis=1)
+
+    assert root.r.tolist() == [1, 2, 2, 2, 1]
+    assert np.mean(correct) > 0.995
 
 
 @pytest.mark.parametrize(

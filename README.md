@@ -162,6 +162,18 @@ on the numpy path, 30–42% end to end when `fun` is numba-jitted (the bond
 visit then runs as one compiled kernel).  Measured parity and the race in
 [docs/plans/cross-approximation.md](docs/plans/cross-approximation.md) §2.1b.
 
+Quantum dynamics runs at paper scale: the KSL projector-splitting integrator
+(compiled sweeps for float64 *and* complex128 -- a Schroedinger step
+`tau = 1j h` stays on the numba path) reproduces Fig. 3 of Lubich, Oseledets
+& Vandereycken, SINUM 53(2), 2015 end to end --
+`examples/henon_heiles_ksl_paper.py`: the 10-D Henon-Heiles spectrum with a
+sine-DVR discretization and a complex absorbing potential, 6000 steps at rank
+18 in ~15 minutes on 8 CPU cores (the paper reports 4425 s for its own code
+and 54354 s for MCTDH on 2015 hardware).  The pedagogical variant with an
+`eigb` cross-check of every peak is `examples/henon_heiles_spectrum.py`; the
+f=2 machinery is pinned against a dense `expm` propagator in
+`tests/test_examples.py`.
+
 One known limitation with a workaround: `amen_solve` takes a matrix, so using
 `bpx_theta` with it means assembling `B` at rank 161 in 2D instead of applying
 the rank-24 factors one at a time. The sweep algebra is linear in that rank and
