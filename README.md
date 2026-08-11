@@ -35,9 +35,10 @@ Riemannian tools, and completion -- plus a QTT toolkit for elliptic problems
 with BPX multilevel preconditioning (`tt.algs.qtt_ell`), which is new in 2.0.
 
 `tt.transport` also contains an experimental sample-only deep inverse
-Rosenblatt transport. Every residual density is a positive squared TT; its
-quadratic density-ratio loss uses an exact TT contraction and only the linear
-term is estimated from samples. The construction and the correlated Gaussian,
+Rosenblatt transport. Its default root-free estimator stores a centered direct
+TT correction; the quadratic density-ratio loss uses exact TT contractions and
+only the linear term is estimated from samples. Orthogonal ALS and stochastic
+Adam variants are included. The construction and the correlated Gaussian,
 predator--prey and Lorenz--96 examples are documented in
 [docs/SAMPLE_DIRT.md](docs/SAMPLE_DIRT.md).
 
