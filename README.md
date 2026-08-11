@@ -176,6 +176,20 @@ and 54354 s for MCTDH on 2015 hardware).  The pedagogical variant with an
 f=2 machinery is pinned against a dense `expm` propagator in
 `tests/test_examples.py`.
 
+Two more paper reproductions live in `examples/`, both propagated by
+Crank-Nicolson with a warm-started `amen_solve` per step and both checked
+against oracles the papers did not have: `fokker_planck_dumbbell.py` -- the
+polymer dumbbell in shear flow of Dolgov-Khoromskij-Oseledets, SISC 34(6),
+2012, reproducing its Table 3 viscometric functions (eta 1.03291 vs 1.03281)
+with the analytic beta=0 stationary state and an independent sparse
+propagator as cross-checks -- and `sir_network_cme.py` -- the SIR-epidemic
+master equation on a network of Dolgov-Savostyanov, AMC 460:128290, 2024,
+where the 3^N-state distribution stays in TT (rank 11 at N=32) and
+rare-event tails down to ~1e-12 are one dot product with an explicit
+indicator train, where SSA would need ~5e13 trajectories.  The planned
+integrator that conserves probability to machine precision on such problems
+is specified in [docs/plans/tamen.md](docs/plans/tamen.md).
+
 One known limitation with a workaround: `amen_solve` takes a matrix, so using
 `bpx_theta` with it means assembling `B` at rank 161 in 2D instead of applying
 the rank-24 factors one at a time. The sweep algebra is linear in that rank and
