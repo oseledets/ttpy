@@ -270,3 +270,74 @@ def test_spectrum_transform_recovers_planted_frequencies():
     got = np.array(sorted(p[0] for p in peaks))
     assert len(got) == 3, f"expected 3 peaks, found {len(got)}: {got}"
     assert np.max(np.abs(got - lam)) < 1e-3, (got, lam)
+
+
+# --- examples/fokker_planck_dumbbell.py --------------------------------------
+
+def test_fokker_planck_dumbbell_matches_a_sparse_propagator():
+    """The [DKO12] 4.2 machinery at n=32 against an independent sparse CN run.
+
+    Oracle: the same Crank-Nicolson scheme assembled from ``scipy.sparse``
+    Kronecker products with no tensor format anywhere, LU-factorized once.
+    The TT operator is exact (a short sum of Kronecker terms), so the state
+    parity is governed by the amen_solve tolerance, and the Kramers stress
+    -- the physical output -- must agree to the same accuracy.
+    """
+    import scipy.sparse as sp
+    import scipy.sparse.linalg as spla
+    amen = pytest.importorskip("tt.algs.amen")
+    _examples_path()
+    from fokker_planck_dumbbell import _vec3, grid, kramers_weights, operator
+
+    n, nsteps, beta, T = 32, 16, 1.0, 1.0
+    alpha, p = 0.1, 0.5
+    x, h = grid(n)
+    I = sp.identity(n, format="csr")
+    lap1 = sp.diags([1.0, -2.0, 1.0], [-1, 0, 1], (n, n)) / h ** 2
+    C = sp.diags([-0.5, 0.5], [-1, 1], (n, n)) / h
+    g = np.exp(-x ** 2 / (2 * p ** 2))
+    c = alpha / (2 * p ** 5)
+    dg, dx_ = sp.diags(g), sp.diags(x)
+
+    def k3(a, b, cm):
+        # mode 1 fastest, matching tt.full's Fortran order
+        return sp.kron(sp.kron(cm, b, "csr"), a, "csr")
+
+    Ad = (k3(-0.5 * lap1, I, I) + k3(I, -0.5 * lap1, I)
+          + k3(I, I, -0.5 * lap1)
+          + k3(C @ (-0.5 * dx_), I, I) + k3(I, C @ (-0.5 * dx_), I)
+          + k3(I, I, C @ (-0.5 * dx_))
+          + c * k3(C @ (dx_ @ dg), dg, dg) + c * k3(dg, C @ (dx_ @ dg), dg)
+          + c * k3(dg, dg, C @ (dx_ @ dg))
+          + beta * k3(C, dx_, I))
+
+    A, _, _ = operator(n, beta)
+    v = tt.rand([n] * 3, r=5)
+    parity = np.linalg.norm(
+        np.asarray(tt.matvec(A, v).full()).flatten("F")
+        - Ad @ np.asarray(v.full()).flatten("F"))
+    assert parity < 1e-10 * spla.norm(Ad) # the TT operator is exact
+
+    g0 = np.exp(-x ** 2 / 2)
+    psi = _vec3([g0] * 3)
+    psi = psi * (1.0 / (tt.sum(psi) * h ** 3))
+    pd = np.asarray(psi.full()).flatten("F")
+    tau = T / nsteps
+    lu = spla.splu((sp.identity(n ** 3, format="csc") + tau / 2 * Ad).tocsc())
+    Mm_d = sp.identity(n ** 3, format="csc") - tau / 2 * Ad
+    I3 = tt.eye(n, 3)
+    Mp = (I3 + (tau / 2) * A).round(1e-13)
+    Mm = (I3 - (tau / 2) * A).round(1e-13)
+    for _ in range(nsteps):
+        pd = lu.solve(Mm_d @ pd)
+        pd /= pd.sum() * h ** 3
+        rhs = tt.matvec(Mm, psi).round(1e-10)
+        psi = amen.amen_solve(Mp, rhs, psi, 1e-8, verb=0)
+        psi = psi * (1.0 / (tt.sum(psi) * h ** 3))
+    ptt = np.asarray(psi.full()).flatten("F")
+    assert np.linalg.norm(ptt - pd) / np.linalg.norm(pd) < 1e-6
+
+    w, _ = kramers_weights(n)
+    t12_tt = float(tt.dot(w[(1, 2)], psi)) * h ** 3
+    t12_d = float(np.asarray(w[(1, 2)].full()).flatten("F") @ pd) * h ** 3
+    assert abs(t12_tt - t12_d) < 1e-6 * abs(t12_d)
