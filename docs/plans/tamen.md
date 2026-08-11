@@ -1,4 +1,4 @@
-# tAMEn: the time-dependent AMEn integrator (planned, not shipped)
+# tAMEn: the time-dependent AMEn integrator (shipped -- see Status below)
 
 Source: S. V. Dolgov, "A tensor decomposition algorithm for large ODEs with
 conservation laws", CMAM 19(1):23-38, 2019 (arXiv:1403.8085), read in full;
