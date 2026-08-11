@@ -105,3 +105,39 @@ the measured invariant drift -- which the tests pin at `< 10 eps_machine`.
 * The restarted-interval bookkeeping (Alg. 1 of the paper) is where the
   MATLAB reference spends its subtlety; port it as data (a plain interval
   loop), not as cleverness.
+
+## Status: shipped 2026-08-12 (`tt/algs/tamen.py`, `tests/test_tamen.py`)
+
+Implemented as designed, with two deviations recorded here:
+
+1. **Post-hoc enrichment.** The co-kernel vectors enter the basis once,
+   before the final reduced solve, not inside every sweep (the conservation
+   argument of the paper's Sec. 3.4 only needs the span at the last step).
+2. **The Galerkin re-solve is residual-guarded.** The projection of a
+   nonnormal operator is not stability-preserving: on the SIR master
+   equation `X* A X` acquired right-half-plane eigenvalues and an unguarded
+   re-solve compounded to `||p|| ~ 1e19` over 6 intervals while the embedded
+   time-error estimate stayed quiet (both J and J/2 solves share the same
+   bad projection).  The re-solved iterate is therefore accepted only when
+   its residual in the *full* system is `<= 2 res(amen) + eps`; otherwise
+   the endpoint comes from the amen iterate and the invariants are restored
+   by an explicit Gram-solved shift along the `c_m` (O(eps) perturbation,
+   machine-exact conservation either way).  On the CME the guard rejects
+   the Galerkin path in every interval -- the conservation contract is
+   carried entirely by the correction path there, and holds: drift 3e-14
+   at eps = 1e-2 (`test_tamen_conserves_probability_at_crude_accuracy`).
+
+Measured niche (Mac, single run, dense-`expm` oracles):
+
+| problem | tamen | ksl |
+|---|---|---|
+| SIR CME, N=7 chain, T=30 | **0.8 s, err 9.2e-7, sum(p) drift 3.6e-14** | 1.8-19.5 s, err stuck at ~1e-3 (fixed-rank modelling error; more steps and rank 16 do not help), drift 2-5e-4 |
+| periodic 2D convection, n=64, T=20 | 8.5 s, err 3.3e-6 | **0.5 s, err 2.1e-6** (rank 12, 200 steps) |
+
+The two rows are the honest division of labour: tamen owns dissipative /
+conservation-critical dynamics (master equations), ksl owns smooth
+norm-preserving transport at moderate stiffness.  The paper's Table 2 shows
+tamen winning on convection too, but at a much finer grid where the
+splitting error of KSL forces tiny steps; at n=64 that regime is not
+reached.  Remaining from the original plan: time-dependent `A(t)`, the
+theta rescaling for 2-norm conservation, and the lambda-phage CME example.

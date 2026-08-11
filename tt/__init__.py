@@ -32,10 +32,14 @@ __all__ = [
     "eye", "Toeplitz", "qlaplace_dd", "qlaplace_dn", "qdiff", "qtri_ones",
     "level_major_order", "xfun", "linspace", "sin", "cos",
     "delta", "stepfun", "qshift", "shift", "unit", "IpaS", "reshape", "permute",
-    "multifuncrs", "multifuncrs2", "GMRES", "amen_solve", "amen_mv",
+    "multifuncrs", "multifuncrs2", "GMRES", "amen_solve", "amen_mv", "tamen",
     "cross", "rect_cross", "dmrg_cross", "greedy_cross", "maxvol",
-    "eigb", "ksl", "SampleDIRT", "SquaredTTDensity",
-    "fit_squared_tt_density", "__version__",
+    "eigb", "ksl", "DirectTTDensity", "PermutedTTDensity", "SampleDIRT",
+    "SquaredTTDensity", "LinearSquaredTTDensity", "QuadraticSquaredTTDensity",
+    "damp_tt_density",
+    "fit_centered_tt_density", "fit_centered_tt_ratio",
+    "fit_squared_tt_density", "fit_linear_squared_tt_density",
+    "fit_quadratic_squared_tt_density", "__version__",
 ]
 
 
@@ -49,6 +53,7 @@ _FUNCTIONS = {
     "multifuncrs2": ("tt.algs.multifuncrs", "multifuncrs2"),
     "GMRES": ("tt.algs.solvers", "GMRES"),
     "amen_solve": ("tt.algs.amen", "amen_solve"),
+    "tamen": ("tt.algs.tamen", "tamen"),
     "amen_mv": ("tt.algs.amen_mv", "amen_mv"),
     "eigb_solve": ("tt.algs.eigb", "eigb"),
     "ksl_step": ("tt.algs.ksl", "ksl"),
@@ -60,10 +65,31 @@ _FUNCTIONS = {
     "rect_maxvol": ("tt.algs.maxvol", "rect_maxvol"),
     "min_tens": ("tt.algs.optimize", "min_tens"),
     "min_func": ("tt.algs.optimize", "min_func"),
+    "DirectTTDensity": ("tt.transport.sample_dirt", "DirectTTDensity"),
+    "PermutedTTDensity": ("tt.transport.sample_dirt", "PermutedTTDensity"),
     "SampleDIRT": ("tt.transport.sample_dirt", "SampleDIRT"),
     "SquaredTTDensity": ("tt.transport.sample_dirt", "SquaredTTDensity"),
+    "damp_tt_density": ("tt.transport.sample_dirt", "damp_tt_density"),
+    "LinearSquaredTTDensity": (
+        "tt.transport.sample_dirt", "LinearSquaredTTDensity"
+    ),
+    "QuadraticSquaredTTDensity": (
+        "tt.transport.sample_dirt", "QuadraticSquaredTTDensity"
+    ),
+    "fit_centered_tt_density": (
+        "tt.transport.sample_dirt", "fit_centered_tt_density"
+    ),
+    "fit_centered_tt_ratio": (
+        "tt.transport.sample_dirt", "fit_centered_tt_ratio"
+    ),
     "fit_squared_tt_density": (
         "tt.transport.sample_dirt", "fit_squared_tt_density"
+    ),
+    "fit_linear_squared_tt_density": (
+        "tt.transport.sample_dirt", "fit_linear_squared_tt_density"
+    ),
+    "fit_quadratic_squared_tt_density": (
+        "tt.transport.sample_dirt", "fit_quadratic_squared_tt_density"
     ),
 }
 
