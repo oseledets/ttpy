@@ -341,3 +341,96 @@ def test_fokker_planck_dumbbell_matches_a_sparse_propagator():
     t12_tt = float(tt.dot(w[(1, 2)], psi)) * h ** 3
     t12_d = float(np.asarray(w[(1, 2)].full()).flatten("F") @ pd) * h ** 3
     assert abs(t12_tt - t12_d) < 1e-6 * abs(t12_d)
+
+
+# --- examples/sir_network_cme.py ---------------------------------------------
+
+def test_sir_cme_matches_brute_force_at_small_n():
+    """The [DS24] machinery at N=6 against brute force over all 3^6 states.
+
+    Oracles: the generator applied to a random vector against a
+    state-by-state loop over every transition of eq. (2); the explicit
+    indicator TTs against direct counting; the Crank-Nicolson TT run
+    against the same scheme on the scipy.sparse generator.
+    """
+    import itertools
+    import scipy.sparse as sp
+    import scipy.sparse.linalg as spla
+    amen = pytest.importorskip("tt.algs.amen")
+    _examples_path()
+    from sir_network_cme import (BETA, GAMMA, chain_edges, exceedance,
+                                 generator, infected_count, initial_state)
+
+    N, istar, T, nsteps = 6, 3, 10.0, 50
+    edges = chain_edges(N)
+    states = list(itertools.product([0, 1, 2], repeat=N))
+    index = {s: i for i, s in enumerate(states)}
+    nbr = [[] for _ in range(N)]
+    for (m, n) in edges:
+        nbr[m].append(n)
+        nbr[n].append(m)
+    rows, cols, vals = [], [], []
+    diag = np.zeros(len(states))
+    for s in states:
+        i0 = index[s]
+        for n_ in range(N):
+            if s[n_] == 0:
+                rate = BETA * sum(1 for m_ in nbr[n_] if s[m_] == 1)
+                if rate:
+                    s2 = list(s)
+                    s2[n_] = 1
+                    rows.append(index[tuple(s2)])
+                    cols.append(i0)
+                    vals.append(rate)
+                    diag[i0] -= rate
+            elif s[n_] == 1:
+                s2 = list(s)
+                s2[n_] = 2
+                rows.append(index[tuple(s2)])
+                cols.append(i0)
+                vals.append(GAMMA)
+                diag[i0] -= GAMMA
+    M = len(states)
+    Ad = sp.csr_matrix((vals, (rows, cols)), (M, M)) + sp.diags(diag)
+
+    def flat_f(s):                       # mode 1 fastest, as tt.full
+        r_ = 0
+        for k in reversed(range(N)):
+            r_ = r_ * 3 + s[k]
+        return r_
+
+    A = generator(N, edges)
+    v = tt.rand([3] * N, r=4)
+    vf = np.asarray(v.full()).flatten("F")
+    got = np.asarray(tt.matvec(A, v).full()).flatten("F")
+    ref = Ad @ np.array([vf[flat_f(s)] for s in states])
+    got_d = np.array([got[flat_f(s)] for s in states])
+    assert np.linalg.norm(got_d - ref) < 1e-12 * np.linalg.norm(ref)
+
+    If = np.asarray(infected_count(N).full()).flatten("F")
+    Xf = np.asarray(exceedance(N, istar).full()).flatten("F")
+    for s in states:
+        ninf = sum(1 for x in s if x == 1)
+        assert If[flat_f(s)] == ninf
+        assert Xf[flat_f(s)] == (1.0 if ninf > istar else 0.0)
+
+    # CN parity, TT vs sparse
+    p = initial_state(N)
+    pd = np.zeros(M)
+    pd[index[tuple([1] + [0] * (N - 1))]] = 1.0
+    tau = T / nsteps
+    lu = spla.splu((sp.identity(M, format="csc") - tau / 2 * Ad).tocsc())
+    Mm_d = sp.identity(M, format="csc") + tau / 2 * Ad
+    IN = tt.eye(3, N)
+    Mp = (IN - (tau / 2) * A).round(1e-13)
+    Mm = (IN + (tau / 2) * A).round(1e-13)
+    ones = tt.ones(3, N)
+    for _ in range(nsteps):
+        pd = lu.solve(Mm_d @ pd)
+        pd /= pd.sum()
+        rhs = tt.matvec(Mm, p).round(1e-12)
+        p = amen.amen_solve(Mp, rhs, p, 1e-8, verb=0)
+        p = p * (1.0 / float(tt.dot(ones, p)))
+    pf = np.asarray(p.full()).flatten("F")
+    pf_d = np.array([pf[flat_f(s)] for s in states])
+    assert np.linalg.norm(pf_d - pd) / np.linalg.norm(pd) < 1e-6
