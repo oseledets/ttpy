@@ -161,3 +161,32 @@ def test_seeded_randn_is_reproducible_and_matches_numpy():
     assert rel(g.randn(shape), g.randn(shape)) > 1e-3
     if GPU_CDTYPE is not None:
         assert bk.dtype_of(g.randn(shape, GPU_CDTYPE)) == GPU_CDTYPE
+
+
+def test_expm_falls_back_to_the_host_when_the_device_has_no_kernel(monkeypatch):
+    """The MPS gap, reproduced anywhere: matrix_exp raising NotImplementedError.
+
+    torch has no ``matrix_exp`` on MPS (pytorch#141287); the backend computes
+    on the host and moves back.  The test makes the native call raise once,
+    exactly as the MPS dispatcher does, and checks the fallback still returns
+    the exponential -- on any machine, not only an Apple one.
+    """
+    import scipy.linalg as sla
+    be = bk.TorchBackend("cpu", "float64")
+    native = torch.linalg.matrix_exp
+    calls = {"n": 0}
+
+    def flaky(a):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise NotImplementedError(
+                "The operator 'aten::linalg_matrix_exp' is not currently "
+                "implemented for the MPS device.")
+        return native(a)
+
+    monkeypatch.setattr(torch.linalg, "matrix_exp", flaky)
+    a = torch.tensor(np.random.default_rng(5).standard_normal((6, 6)))
+    got = be.expm(a).numpy()
+    ref = sla.expm(a.numpy())
+    assert calls["n"] == 2                      # raised once, then the host
+    assert np.linalg.norm(got - ref) / np.linalg.norm(ref) < 1e-14

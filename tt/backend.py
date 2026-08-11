@@ -373,7 +373,16 @@ class TorchBackend(Backend):
         return self.torch.linalg.lstsq(a, b, driver="gelsd").solution
 
     def expm(self, a):
-        return self.torch.linalg.matrix_exp(a)
+        t = self.torch
+        try:
+            return t.linalg.matrix_exp(a)
+        except NotImplementedError:
+            # torch has no matrix_exp kernel on MPS (pytorch#141287); without
+            # this fallback a KSL step on the MPS backend dies inside
+            # expmv_krylov.  The matrices this package exponentiates are the
+            # small Krylov/local blocks of a sweep, so the host round-trip
+            # costs microseconds, not the transfer it sounds like.
+            return t.linalg.matrix_exp(a.cpu()).to(a.device)
 
 
 _F64 = np.dtype("float64")

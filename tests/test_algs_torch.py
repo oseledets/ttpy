@@ -82,3 +82,35 @@ def test_multifuncrs2_runs_on_gpu(on_gpu):
 def test_the_default_backend_is_restored():
     """A leaked global backend would poison every later test in the session."""
     assert bk.get_backend().name == "numpy"
+
+
+def test_ksl_runs_on_the_gpu_device():
+    """One KSL step on the device, against the numpy float64 answer.
+
+    Exercises ``bk.expm`` on the device -- on MPS torch has no ``matrix_exp``
+    kernel (pytorch#141287) and the backend's host fallback is what keeps
+    this alive.  The tolerance follows the device dtype: float32 carries a
+    ~1e-7 floor, float64 matches to solver accuracy.
+    """
+    import warnings
+    from tt.algs.ksl import ksl
+
+    rng = np.random.default_rng(3)
+    d = 4
+    cores = [rng.standard_normal((1 if k == 0 else 2, 3, 3,
+                                  1 if k == d - 1 else 2)) for k in range(d)]
+    B = tt.matrix.from_list(cores)
+    A = (0.5 * (B + B.T)).round(1e-13)
+    rr = [1, 2, 4, 2, 1]
+    y0 = tt.vector.from_list(
+        [rng.standard_normal((rr[k], 3, rr[k + 1])) for k in range(d)])
+    y0 = y0 * (1.0 / y0.norm())
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        ref = ksl(A, y0, 0.01, verb=0)
+        got = ksl(A.to("torch", GPU_DEVICE, GPU_DTYPE),
+                  y0.to("torch", GPU_DEVICE, GPU_DTYPE), 0.01, verb=0)
+    err = float((got.to("numpy", None, "float64") - ref).norm())
+    tol = 1e-5 if GPU_DTYPE == "float32" else 1e-10
+    assert err < tol, f"KSL on {GPU_DEVICE}/{GPU_DTYPE}: {err:.2e}"
