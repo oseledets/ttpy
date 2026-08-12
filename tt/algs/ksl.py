@@ -918,9 +918,13 @@ def ksl_adaptive(A, y0, T, eps, tau0=None, scheme="symm", max_steps=100000,
     ``tau/2`` (Richardson): for the Strang scheme the local error is
     ``O(tau^3)``, so ``E = |y_tau - y_{tau/2,2}|`` estimates the error of
     the *coarse* step and the fine pair is what gets accepted.  The budget
-    is relative and per unit time -- a step is accepted when
-    ``E <= eps (tau/T) |y|`` -- so ``eps`` bounds the accumulated relative
-    error at ``T`` the way it does in :func:`tamen`.
+    is relative with the incoherent-accumulation model -- a step is accepted
+    when ``E <= eps sqrt(tau/T) |y|`` -- so ``eps`` is the accumulated
+    relative error at ``T`` under random-walk cancellation of the local
+    errors, which is what transport problems show (measured: the worst-case
+    L1 model over-delivered by 500x at 10x the cost).  When local errors
+    accumulate coherently the result may exceed ``eps`` by up to
+    ``sqrt(T/tau)``; treat ``eps`` as a target, not a certificate.
 
     Why this exists: a fixed-step KSL run whose ``tau`` is too large for
     the splitting error does not fail, it silently returns a wrong tensor
@@ -969,6 +973,7 @@ def ksl_adaptive(A, y0, T, eps, tau0=None, scheme="symm", max_steps=100000,
     tau = abs(tau0) if tau0 else tmag / 100.0
     done = 0.0
     attempts = 0
+    just_rejected = False
     while done < tmag * (1 - 1e-14):
         attempts += 1
         if attempts > max_steps:
@@ -978,12 +983,31 @@ def ksl_adaptive(A, y0, T, eps, tau0=None, scheme="symm", max_steps=100000,
                 f"error will not go below eps={eps:.1E} at this rank -- "
                 f"raise the rank of y0 or loosen eps")
         tau = min(tau, tmag - done)
-        coarse = ksl(A, y, sgn * tau, scheme=scheme, **ksl_kwargs)
-        half = ksl(A, y, sgn * tau / 2, scheme=scheme, **ksl_kwargs)
-        fine = ksl(A, half, sgn * tau / 2, scheme=scheme, **ksl_kwargs)
+        # incoherent-accumulation budget: local errors of the split transport
+        # largely cancel over steps, and the worst-case L1 model
+        # (budget = eps tau/T) over-resolves by 2-3 orders -- measured on 2D
+        # convection at n=1024: it delivered 2.1e-7 for eps=1e-4 with 1e4
+        # steps.  The sqrt model assumes random-walk accumulation
+        # (sum ~ sqrt(N) per-step), which matched the fixed-tau global-error
+        # scaling on the same problem; the price is that eps is a target,
+        # not an upper bound, when the errors do accumulate coherently.
+        budget = eps * np.sqrt(tau / tmag)
+        # the inner Krylov tolerance must live BELOW the step budget: with a
+        # fixed local_tol the coarse-vs-fine difference bottoms out at the
+        # accumulated local-solve noise (~ local_tol * sqrt(#exponentials)),
+        # the estimator stops seeing tau, and the controller chases an
+        # unreachable target ever downward (measured on n=4096 convection:
+        # tau driven 6x below the true equilibrium, 1000x over-resolution,
+        # 44% rejections).  Scaling the tolerance with the budget removes
+        # the floor; the user's own local_tol, if passed, is an upper bound.
+        kw = dict(ksl_kwargs)
+        kw["local_tol"] = min(kw.get("local_tol", 1e-8),
+                              max(0.02 * budget, 1e-13))
+        coarse = ksl(A, y, sgn * tau, scheme=scheme, **kw)
+        half = ksl(A, y, sgn * tau / 2, scheme=scheme, **kw)
+        fine = ksl(A, half, sgn * tau / 2, scheme=scheme, **kw)
         ynorm = float(fine.norm())
         err = float((coarse - fine).norm()) / max(ynorm, 1e-300)
-        budget = eps * tau / tmag
         accepted = err <= budget
         hist.steps.append(dict(t=sgn * done, tau=tau, err_est=err,
                                accepted=accepted))
@@ -994,10 +1018,18 @@ def ksl_adaptive(A, y0, T, eps, tau0=None, scheme="symm", max_steps=100000,
             y = fine
             done += tau
             grow = (0.9 * budget / max(err, 1e-300)) ** (1.0 / 3.0)
-            tau = tau * min(2.0, max(0.5, grow))
+            # no growth right after a rejection, and a modest cap: without
+            # the limiter the controller thrashes on the acceptance boundary
+            # (shrink x0.7 -> error falls ~3x -> grow x1.9 -> reject again;
+            # measured 19503 rejections out of 43852 attempts on the n=4096
+            # convection run, a 44% waste at 3 ksl calls per attempt)
+            cap = 1.0 if just_rejected else 1.5
+            tau = tau * min(cap, max(0.5, grow))
+            just_rejected = False
         else:
             hist.rejections += 1
             shrink = (0.9 * budget / err) ** (1.0 / 3.0)
             tau = tau * min(0.7, max(0.1, shrink))
+            just_rejected = True
     hist.time = time.time() - t_start
     return (y, hist) if return_history else y

@@ -152,7 +152,15 @@ fine grids the splitting error forces KSL into thousands of steps (and a
 fixed tau chosen too large returns garbage *with nothing to say so* --
 which is why `ksl_adaptive` now exists: step-doubling control finds the
 admissible tau and pays ~3x the matvec work for never being silently
-wrong about the time error).  At n = 4096 tamen reaches the same accuracy
+wrong about the time error).  The controller itself took three measured
+iterations to get right, all recorded in the code comments: a growth
+limiter after rejections (44% of attempts were wasted thrashing on the
+acceptance boundary), the inner Krylov tolerance scaled with the step
+budget, and -- the decisive one -- the incoherent-accumulation budget
+`eps sqrt(tau/T)` instead of the worst-case L1 `eps tau/T`, which
+over-delivered by 500x at 10x the cost (n=1024: 1074 s / err 2.1e-7 /
+10022 steps for eps=1e-4 under L1 against 84 s / err 1.4e-5 / 1144 steps
+under sqrt).  At n = 4096 tamen reaches the same accuracy
 2.6x faster than the equal-error fixed-tau KSL run.  In *plain* TT at
 n = 64 the balance flips (ksl 0.5 s vs tamen 8.5 s): amen sweeps pay for
 the large mode there, KSL does not -- in QTT all modes are 2 and the
