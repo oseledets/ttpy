@@ -791,3 +791,69 @@ def test_compiled_defect_matches_on_a_complex_vector(monkeypatch):
     ref = km.tangent_defect(A, y)
     assert abs(fast[0] - ref[0]) < 1e-9 * ref[0]
     assert abs(fast[1] - ref[1]) < 1e-11 * ref[1]
+
+
+# --- the adaptive-step driver ------------------------------------------------
+
+def test_ksl_adaptive_matches_dense_expm_and_recovers_from_a_huge_tau0():
+    """Step-doubling control on 2D convection, oracle = dense expm.
+
+    Started with ``tau0 = T`` (a step a fixed-tau run would silently botch
+    on finer grids), the controller must still land within the budget.
+    """
+    from tt.algs.ksl import ksl_adaptive
+    import scipy.linalg as sla2
+
+    n = 32
+    h = 20.0 / n
+    grad = np.zeros((n, n))
+    for i in range(n):
+        grad[i, (i + 1) % n] = 1.0
+        grad[i, (i - 1) % n] = -1.0
+    grad /= 2 * h
+    I = np.eye(n)
+    A = (tt.matrix.from_list([grad[None, :, :, None], I[None, :, :, None]])
+         + tt.matrix.from_list([I[None, :, :, None],
+                                grad[None, :, :, None]])).round(1e-13)
+    q = -10.0 + h * np.arange(n)
+    g = np.exp(-q ** 2)
+    x0 = tt.vector.from_list([g.reshape(1, n, 1)] * 2)
+    rng = np.random.default_rng(0)
+    noise = tt.rand([n] * 2, r=12, samplefunc=rng.standard_normal)
+    noise = noise * (1e-8 * float(x0.norm()) / float(noise.norm()))
+    y0 = (x0 + noise).round(0.0, rmax=12)
+    T = 5.0
+    ref = sla2.expm(T * np.asarray(A.full())) @ np.asarray(
+        x0.full()).flatten("F")
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        y, hist = ksl_adaptive(A, y0, T, 1e-6, tau0=T, use_normest=2,
+                               return_history=True)
+    err = np.linalg.norm(np.asarray(y.full()).flatten("F") - ref) \
+        / np.linalg.norm(ref)
+    assert err < 1e-5, f"budget 1e-6, got {err:.2e}"
+    assert all(s["err_est"] <= 1e-6 * s["tau"] / T
+               for s in hist.steps if s["accepted"])
+
+
+def test_ksl_adaptive_takes_fewer_steps_at_a_looser_budget():
+    from tt.algs.ksl import ksl_adaptive
+
+    d = 6
+    rng = np.random.default_rng(7)
+    cores = [rng.standard_normal((1 if k == 0 else 2, 2, 2,
+                                  1 if k == d - 1 else 2)) for k in range(d)]
+    B = tt.matrix.from_list(cores)
+    A = (0.5 * (B + B.T)).round(1e-13)
+    rr = [1, 2, 4, 4, 4, 2, 1]
+    y0 = tt.vector.from_list(
+        [rng.standard_normal((rr[k], 2, rr[k + 1])) for k in range(d)])
+    counts = []
+    for eps in (1e-3, 1e-7):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            _, hist = ksl_adaptive(A, y0, 1.0, eps, return_history=True,
+                                   use_normest=2)
+        counts.append(sum(1 for s in hist.steps if s["accepted"]))
+    assert counts[0] < counts[1], counts

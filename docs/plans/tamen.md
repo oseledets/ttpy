@@ -127,17 +127,46 @@ Implemented as designed, with two deviations recorded here:
    carried entirely by the correction path there, and holds: drift 3e-14
    at eps = 1e-2 (`test_tamen_conserves_probability_at_crude_accuracy`).
 
-Measured niche (Mac, single run, dense-`expm` oracles):
+Measured niche, part 1 -- dissipative dynamics (Mac, dense-`expm` oracle):
 
 | problem | tamen | ksl |
 |---|---|---|
 | SIR CME, N=7 chain, T=30 | **0.8 s, err 9.2e-7, sum(p) drift 3.6e-14** | 1.8-19.5 s, err stuck at ~1e-3 (fixed-rank modelling error; more steps and rank 16 do not help), drift 2-5e-4 |
-| periodic 2D convection, n=64, T=20 | 8.5 s, err 3.3e-6 | **0.5 s, err 2.1e-6** (rank 12, 200 steps) |
 
-The two rows are the honest division of labour: tamen owns dissipative /
-conservation-critical dynamics (master equations), ksl owns smooth
-norm-preserving transport at moderate stiffness.  The paper's Table 2 shows
-tamen winning on convection too, but at a much finer grid where the
-splitting error of KSL forces tiny steps; at n=64 that regime is not
-reached.  Remaining from the original plan: time-dependent `A(t)`, the
+Measured niche, part 2 -- the paper's Table 2 regime, reproduced across
+grids.  2D periodic convection on `[-10,10]^2`, T = 20, central differences
+in QTT; the oracle is the *FFT-exact* solution of the discrete system (the
+periodic difference operator is diagonal in Fourier), so the numbers are
+pure time-integration error at any grid with no dense matrix anywhere.
+ksl at fixed rank 30; n = 64 on a Mac, the rest on 8 cores of a loaded
+h200:
+
+| n per axis | tamen (eps=1e-6, J=12) | ksl, fixed tau |
+|---|---|---|
+| 64   | 4.3 s, err 1.9e-6 | 21.3 s, err 1.1e-6 (1600 steps) |
+| 1024 | **14.6 s, err 2.4e-6** | 54 s, err 2.3e-5 (1600 steps); 100 steps -> err 0.30 |
+| 4096 | **109 s, err 1.0e-5** | 282 s, err 7.7e-6 (6400 steps); **100 and 400 steps -> err 1.4 and 1.2, silently** |
+
+This is the paper's Table 2 shape, reproduced with our own solvers: on
+fine grids the splitting error forces KSL into thousands of steps (and a
+fixed tau chosen too large returns garbage *with nothing to say so* --
+which is why `ksl_adaptive` now exists: step-doubling control finds the
+admissible tau and pays ~3x the matvec work for never being silently
+wrong about the time error).  At n = 4096 tamen reaches the same accuracy
+2.6x faster than the equal-error fixed-tau KSL run.  In *plain* TT at
+n = 64 the balance flips (ksl 0.5 s vs tamen 8.5 s): amen sweeps pay for
+the large mode there, KSL does not -- in QTT all modes are 2 and the
+balance flips back.
+
+The division of labour, then: tamen owns dissipative /
+conservation-critical dynamics (master equations) and fine-grid stiff
+transport; ksl owns smooth norm-preserving dynamics at moderate stiffness
+(and everything complex/Schroedinger).  Identified while measuring, as
+the next optimization target: the per-step KSL cost at QTT block sizes
+(rank 30 -> local blocks of 1800) runs on the interpreted Krylov path --
+the compiled kernels of `_ksl_fast.py` cover only the exact-expm regime
+(blocks <= 40).  Compiling the Krylov path is the follow-up with the
+largest measured payoff.
+
+Remaining from the original plan: time-dependent `A(t)`, the
 theta rescaling for 2-norm conservation, and the lambda-phage CME example.

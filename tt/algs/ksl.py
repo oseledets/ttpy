@@ -89,7 +89,8 @@ from ..core.vector import vector
 from . import _ksl_fast
 from . import _localops as lo
 
-__all__ = ["ksl", "diag_ksl", "expmv_krylov", "tangent_defect", "KslHistory"]
+__all__ = ["ksl", "ksl_adaptive", "diag_ksl", "expmv_krylov",
+           "tangent_defect", "KslHistory", "KslAdaptiveHistory"]
 
 
 @dataclass
@@ -885,3 +886,118 @@ def diag_ksl(A, y0, tau, verb=1, scheme="symm", space=8, rmax=2000,
     amat = A if isinstance(A, matrix) else diag(A)
     return ksl(amat, y0, tau, verb=verb, scheme=scheme, space=space, rmax=rmax,
                use_normest=use_normest, **kwargs)
+
+
+@dataclass
+class KslAdaptiveHistory:
+    """Per-step bookkeeping of :func:`ksl_adaptive`.
+
+    Attributes:
+        steps: one dict per attempted step: ``t, tau, err_est, accepted``.
+        rejections: how many steps were redone with a smaller ``tau``.
+        time: wall-clock seconds.
+    """
+
+    steps: list = field(default_factory=list)
+    rejections: int = 0
+    time: float = 0.0
+
+    def __repr__(self):
+        acc = sum(1 for s in self.steps if s["accepted"])
+        taus = [s["tau"] for s in self.steps if s["accepted"]]
+        return (f"KslAdaptiveHistory({acc} steps + {self.rejections} "
+                f"rejected, tau in [{min(taus):.2E}, {max(taus):.2E}], "
+                f"time={self.time:.2f}s)")
+
+
+def ksl_adaptive(A, y0, T, eps, tau0=None, scheme="symm", max_steps=100000,
+                 verb=0, return_history=False, **ksl_kwargs):
+    """Integrate ``dy/dt = A y`` to time ``T`` with step-doubling control.
+
+    One :func:`ksl` step of ``tau`` is compared against two steps of
+    ``tau/2`` (Richardson): for the Strang scheme the local error is
+    ``O(tau^3)``, so ``E = |y_tau - y_{tau/2,2}|`` estimates the error of
+    the *coarse* step and the fine pair is what gets accepted.  The budget
+    is relative and per unit time -- a step is accepted when
+    ``E <= eps (tau/T) |y|`` -- so ``eps`` bounds the accumulated relative
+    error at ``T`` the way it does in :func:`tamen`.
+
+    Why this exists: a fixed-step KSL run whose ``tau`` is too large for
+    the splitting error does not fail, it silently returns a wrong tensor
+    (measured on 2D convection at ``n = 4096``: 100 and even 400 fixed
+    steps give a relative error above 1, with nothing to say so).  The
+    controller finds the admissible ``tau`` and pays the honest price --
+    about 3x the matvec work of a fixed run at the final ``tau`` -- for
+    never being silently wrong about the *time* error.
+
+    What it cannot see: the rank/modelling error.  Both the coarse and the
+    fine step live on the same fixed-rank manifold, so the part of the
+    dynamics the rank cannot represent largely cancels in their difference.
+    That error is measured by ``check_rank=True`` on a plain :func:`ksl`
+    call (the tangent defect); this controller owns ``tau``, not the rank.
+
+    Args:
+        A, y0: as in :func:`ksl`; the rank of ``y0`` is kept throughout.
+        T: Final time (may be negative; complex promotion as in ksl).
+        eps: Relative accuracy target for the whole trajectory.
+        tau0: Initial step; default ``T / 100``.
+        scheme: forwarded to :func:`ksl` (``'symm'`` is what the order-3
+            local-error exponent assumes).
+        max_steps: cap on attempts, rejections included.
+        verb: 0 silent, 1 one line per accepted step.
+        return_history: also return :class:`KslAdaptiveHistory`.
+        **ksl_kwargs: forwarded to every :func:`ksl` call
+            (``check_rank=False`` is set unless overridden -- three defect
+            sweeps per attempted step is the controller's cost, not the
+            caller's).
+
+    Returns:
+        ``y(T)`` (or ``(y, history)``).
+
+    Raises:
+        RuntimeError: if ``max_steps`` attempts do not reach ``T``, or a
+            local exponential trips the stiffness guard at the smallest
+            ``tau`` the controller is willing to take.
+    """
+    t_start = time.time()
+    hist = KslAdaptiveHistory()
+    ksl_kwargs.setdefault("check_rank", False)
+    ksl_kwargs.setdefault("verb", 0)
+    y = y0
+    tmag = abs(T)
+    sgn = T / tmag if tmag > 0 else 1.0
+    tau = abs(tau0) if tau0 else tmag / 100.0
+    done = 0.0
+    attempts = 0
+    while done < tmag * (1 - 1e-14):
+        attempts += 1
+        if attempts > max_steps:
+            raise RuntimeError(
+                f"ksl_adaptive: {max_steps} attempts did not reach T={T} "
+                f"(at t={sgn * done:.6g}, tau={tau:.3E}); the splitting "
+                f"error will not go below eps={eps:.1E} at this rank -- "
+                f"raise the rank of y0 or loosen eps")
+        tau = min(tau, tmag - done)
+        coarse = ksl(A, y, sgn * tau, scheme=scheme, **ksl_kwargs)
+        half = ksl(A, y, sgn * tau / 2, scheme=scheme, **ksl_kwargs)
+        fine = ksl(A, half, sgn * tau / 2, scheme=scheme, **ksl_kwargs)
+        ynorm = float(fine.norm())
+        err = float((coarse - fine).norm()) / max(ynorm, 1e-300)
+        budget = eps * tau / tmag
+        accepted = err <= budget
+        hist.steps.append(dict(t=sgn * done, tau=tau, err_est=err,
+                               accepted=accepted))
+        if verb and accepted:
+            print(f"  ksl_adaptive t={sgn * done:9.4g} tau={tau:9.3E} "
+                  f"E={err:9.3E}", flush=True)
+        if accepted:
+            y = fine
+            done += tau
+            grow = (0.9 * budget / max(err, 1e-300)) ** (1.0 / 3.0)
+            tau = tau * min(2.0, max(0.5, grow))
+        else:
+            hist.rejections += 1
+            shrink = (0.9 * budget / err) ** (1.0 / 3.0)
+            tau = tau * min(0.7, max(0.1, shrink))
+    hist.time = time.time() - t_start
+    return (y, hist) if return_history else y
