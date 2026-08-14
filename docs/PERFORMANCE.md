@@ -14,14 +14,14 @@ ratio", not as a record.
 
 ## 1. Rounding is LAPACK latency, not flops
 
-`round` for a TT tensor is a chain of `d` sequential QR and SVD calls on
-matrices of roughly `(n r) x r`. At `d = 60, n = 2, r = 200` that is 120 LAPACK
-calls on 400x200 matrices. Such calls can neither be fused (core `k+1` depends
-on `k`) nor parallelized internally.
+`round` for a TT tensor is a chain of $d$ sequential QR and SVD calls on
+matrices of roughly $(n r) \times r$. At $d = 60, n = 2, r = 200$ that is 120 LAPACK
+calls on 400x200 matrices. Such calls can neither be fused (core $k+1$ depends
+on $k$) nor parallelized internally.
 
 Two consequences follow that surprise many people.
 
-**Multithreaded BLAS hurts.** Regime: numpy, float64, `d=60, n=2, r=200`,
+**Multithreaded BLAS hurts.** Regime: numpy, float64, $d=60, n=2, r=200$,
 operation `round(1e-8)`:
 
 | threads | 1 | 2 | 4 | 8 | 16 | 64 |
@@ -48,7 +48,7 @@ numpy (4 threads) against torch/B300:
 The picture is exactly the one the analysis predicts: where a contraction is
 computed (`dot` — nothing but GEMMs, not a single factorization) the GPU is
 7–80x faster; where a chain of small factorizations is computed the CPU wins,
-and the gap narrows as the matrices grow (at `n=8, r=400` the GPU is already
+and the gap narrows as the matrices grow (at $n=8, r=400$ the GPU is already
 ahead).
 
 ## 2. What to do about it: change the algorithm, not the flags
@@ -64,8 +64,8 @@ y, err = x.round(rmax=100, method="randomized", return_error=True)
 ```
 
 `err` is an upper estimate of the error; it honestly saturates at
-`||x|| * sqrt(eps)`, because it is computed through the difference
-`||x||^2 - ||y||^2`, which loses every significant digit once the error is
+$\|x\| \sqrt{\varepsilon}$, because it is computed through the difference
+$\|x\|^2 - \|y\|^2$, which loses every significant digit once the error is
 small. Below that threshold the package says "I cannot tell you more precisely"
 instead of producing a confident small number.
 
@@ -76,7 +76,7 @@ rank (`tests/test_core.py::test_randomized_round_matches_svd_accuracy`).
 ### Measurement: deterministic versus randomized
 
 Regime: `bench/bench_round.py`, median of 3 runs, a random TT whose cores are
-normalized by 1/sqrt(r) (otherwise the norm of the product overflows float32),
+normalized by $1/\sqrt{r}$ (otherwise the norm of the product overflows float32),
 `OMP_NUM_THREADS=4`, one B300 as the GPU. `err` is the relative truncation
 error, measured identically for both methods.
 
@@ -151,22 +151,22 @@ How to read this:
   `gesdd` against the old code.
 * **`dot` used to be 4.2x slower and is now 2x faster**, after the hot path was
   moved from `einops.einsum` to two explicit GEMMs: on contractions of size
-  `r x n x r` parsing the pattern costs more than the arithmetic itself
-  (42.2 ms -> 5.1 ms). The block case (`r0 > 1`) still goes through einsum, and
+  $r \times n \times r$ parsing the pattern costs more than the arithmetic itself
+  (42.2 ms -> 5.1 ms). The block case ($r_0 > 1$) still goes through einsum, and
   both paths are covered by tests against a dense contraction.
 * **`amen_solve` used to be 30x slower — because of an inherited default.**
   `max_full_size=50` came from ttpy 1.x, where the local solver is compiled
   Fortran and the size at which a dense solve stops paying off is low. In an
   interpreted implementation that threshold is a completely different number. On
-  a 2^12 QTT Laplacian: 444 ms at 50 against 8 ms at 1000, and the dense path is
+  a $2^{12}$ QTT Laplacian: 444 ms at 50 against 8 ms at 1000, and the dense path is
   **more accurate** as well (residual 1.1e-9 against 1.8e-7) at lower ranks
   (7 against 12). The default was changed to 1000 and the difference is
   documented in COMPAT.md. After that the solver is 2.8x faster than Fortran and
   60x more accurate on the same problem. This is exactly the case where a
   constant outlived the mechanism that justified it.
 
-* **Both implementations fall apart at d >= 20, and only one of them says so.**
-  The QTT Laplacian on 2^30 points has a condition number of order 1e17, i.e.
+* **Both implementations fall apart at $d \ge 20$, and only one of them says so.**
+  The QTT Laplacian on $2^{30}$ points has a condition number of order 1e17, i.e.
   the problem is unsolvable in double precision without preconditioning.
   Measured (eps=1e-8):
 
@@ -225,7 +225,7 @@ Five things were measured and **rejected**, so that nobody tries them again:
   that cost convergence (d=14 stopped at 1.3e-08 instead of 1e-10). A linear
   scan from the top exits in a few steps and therefore costs 30 ms out of 200,
   not more.
-* **`sqrt(<x,x>)` instead of an orthogonalization for the norm** — 12x faster,
+* **$\sqrt{\langle x,x\rangle}$ instead of an orthogonalization for the norm** — 12x faster,
   but in the TT format that is a contraction whose intermediates cancel: 12
   tests failed, and on a convection problem it reported a residual of 1.25e-06
   where the true one was below 1e-06, i.e. it turned a converged run into a
@@ -235,18 +235,18 @@ Five things were measured and **rejected**, so that nobody tries them again:
 
 **Careful with the framing.** The first version of this section claimed that the
 legacy KSL "does not solve the problem": it gave a relative error of 1.10 at
-every `tau`, including `tau -> 0`, where an integrator is obliged to return
+every $\tau$, including $\tau \to 0$, where an integrator is obliged to return
 `y0`. That claim was **wrong**, and the cause was my input. `y0` had ranks
-`[1,4,4,4,4,4,1]` at `n = 2`, while a boundary bond of a TT tensor cannot exceed
-`min(n^k, n^(d-k))`, i.e. 2. That is a rank-deficient, degenerate starting point
+`[1,4,4,4,4,4,1]` at $n = 2$, while a boundary bond of a TT tensor cannot exceed
+$\min(n^k, n^{d-k})$, i.e. 2. That is a rank-deficient, degenerate starting point
 — the worst possible input for a fixed-rank integrator, not a working regime.
 
-An honest measurement: `d = 6`, `n = 2`, a symmetric `A` with `||A||_2 = 1`,
+An honest measurement: $d = 6$, $n = 2$, a symmetric $A$ with $\|A\|_2 = 1$,
 ranks `y0 = [1,2,4,4,4,2,1]` (admissible), the same cores loaded from a file for
 both implementations, b300/numpy/float64, minimum of 5 runs, a dense `expm` as
 the reference:
 
-| `tau` | legacy, time | legacy, error | ttpy2, time | ttpy2, error |
+| $\tau$ | legacy, time | legacy, error | ttpy2, time | ttpy2, error |
 |---|---|---|---|---|
 | 1e-8 | **0.23 ms** | 2.208e-09 | 4.26 ms | 2.208e-09 |
 | 1e-4 | 0.22 ms | 2.208e-05 | 5.27 ms | 2.208e-05 |
@@ -254,16 +254,16 @@ the reference:
 | 0.20 | 0.23 ms | 4.507e-02 | 5.24 ms | 4.506e-02 |
 | 0.80 | 0.22 ms | 1.854e-01 | 5.28 ms | 1.744e-01 |
 
-The accuracy agrees to 3–4 digits (at `tau = 0.8` ours is slightly better) and
+The accuracy agrees to 3–4 digits (at $\tau = 0.8$ ours is slightly better) and
 neither implementation changes the ranks. **Fortran is 23x faster.** That is an
-honest gap and an open optimization target: 22 local exponentials (`2(2d-1)`)
+honest gap and an open optimization target: 22 local exponentials ($2(2d-1)$)
 with Krylov substepping on a problem of 64 numbers taking 5 ms is Python
 overhead, not flops. The same gap was closed for `amen_solve` (see 3a) and was
 not closed here at all.
 
 Where we are better: on that same rank-deficient input the legacy code returns a
-vector 1.0996 away from `y0` at `tau = 1e-8` and silently changes the rank from
-4 to 2; ours gives 3.37e-09, exactly proportional to `tau`. So we are robust to
+vector 1.0996 away from `y0` at $\tau$ = 1e-8 and silently changes the rank from
+4 to 2; ours gives 3.37e-09, exactly proportional to $\tau$. So we are robust to
 a degenerate starting point and it is not — but that is a narrow case and it
 does not justify the gap in time.
 
@@ -314,8 +314,8 @@ and both paths are pinned to agree to 1e-12 by tests.
 **complex128 runs the same kernels** (2026-08-10): they are dtype-generic, so
 numba specializes them per dtype, and every real/complex divergence is written
 once in the form correct for both -- `abs()**2` norms, `np.conj` on the bra
-side of every interface, the complex-sign Householder reflector (`x/|x|` is
-exactly `+-1.0` on nonzero reals, so the float64 path is bit-for-bit what it
+side of every interface, the complex-sign Householder reflector ($x/|x|$ is
+exactly $\pm 1.0$ on nonzero reals, so the float64 path is bit-for-bit what it
 was).  A Schroedinger step `tau = 1j h` therefore stays compiled whenever the
 blocks fit; the parity with the interpreted path (2.8e-15 on a Henon-Heiles
 step) and the unitarity of the compiled flow are pinned by
@@ -345,19 +345,19 @@ The numbers in sections 1–3 were taken before these changes and describe the
 earlier code.
 
 * **The local Jacobi in `amen_solve` was quadratic in the operator rank.** The
-  compiled kernel fuses all six loops (`r1 r2 n m R1 R2`), whereas a two-step
-  contraction costs `r1 n m R1 R2 + r1 r2 n m R2`. At the ranks it was written
-  for (`r=34, n=2, R_A=4`) the ratio is 3.6 and fusing wins on overhead; at
-  `R_A = 161` the ratio is 84. The choice is now made by cost: **2708 ms → 46.7
+  compiled kernel fuses all six loops ($r_1 r_2 n m R_1 R_2$), whereas a two-step
+  contraction costs $r_1 n m R_1 R_2 + r_1 r_2 n m R_2$. At the ranks it was written
+  for ($r=34, n=2, R_A=4$) the ratio is 3.6 and fusing wins on overhead; at
+  $R_A = 161$ the ratio is 84. The choice is now made by cost: **2708 ms → 46.7
   ms** per call at BPX shapes, with no change (0.09 ms) in the native regime.
   End to end on the 2D problem: **295 → 109 s**.
 * **The exact residual in `amen_solve` is off by default.** Peak memory
   **33.85 GiB → 0.81 GiB** on the same problem, and the run went from 62.2 to
   47.6 s.
 * **`tt.permute` recompresses its result.** Rank 1024 → 118 on a separable
-  function in Morton order at `d = 15` (the tensor's own rank is 102).
-* AMEn parity is intact: 1D `d = 12` at an attainable tolerance is 12.6 ms over
-  3 sweeps, 2D `d = 7+7` is 93 ms.
+  function in Morton order at $d = 15$ (the tensor's own rank is 102).
+* AMEn parity is intact: 1D $d = 12$ at an attainable tolerance is 12.6 ms over
+  3 sweeps, 2D $d = 7+7$ is 93 ms.
 
 ## 4. Installation
 

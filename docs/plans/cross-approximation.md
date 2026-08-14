@@ -34,7 +34,7 @@ what every change below must leave green.
 1. **Our `maxvol`/`rect_maxvol` are better than teneva's on every axis measured**
    — same pivots, same volume, same `K`, same row-norm bound, but **3.0×** faster
    for square maxvol and **18.0×** faster for rectangular maxvol at
-   `N = 100000, r = 200`, and they raise where teneva silently returns a matrix
+   $N = 100000, r = 200$, and they raise where teneva silently returns a matrix
    full of `NaN`. Do not port teneva's maxvol. Port nothing from it. (§3.1, §4.1)
 2. **Our cross throws away 60–76 % of its function evaluations by re-asking for
    entries it already has.** teneva's `cache` (`cross.py::_func_eval`) removes
@@ -43,7 +43,7 @@ what every change below must leave green.
    probe in the prototype, so it is a *loss* for a black box cheaper than that
    and a **2.2× wall-clock win** for one at 50 µs/point. Must be opt-in. (§4.3, §5 P1)
 3. **`tt.cross` returns a confidently wrong answer on a two-line function, with
-   every indicator we own reading ~1e-15.** `f(i) = 1/(1e-2 + |sum_k i_k/9 − 5/2|)`,
+   every indicator we own reading ~1e-15.** $f(i) = 1/(10^{-2} + |\sum_k i_k/9 - 5/2|)$,
    `d = 6`, `n = 10`, `eps = 1e-8`: true relative error **3.82e-04**,
    `converged=True`, `err_rel=2.9e-15`, `err_round=3.5e-15`,
    `err_check` on 4000 held-out points `3.7e-15`, **no warning**. It hits 5 of 6
@@ -91,8 +91,8 @@ One-site alternating cross with rectangular-maxvol row selection.
 * `_init_right_indices` (`cross.py:259`) orthogonalises `x0` right-to-left and
   runs *square* maxvol on each unfolding to get the starting right sets `J_k`.
 * `_sweep_lr` (`cross.py:282`) walks `k = 0 .. d-2`. It asks `fun` for the whole
-  block `I_k × n_k × J_k` (`r1 * n_k * r2` values), takes an SVD basis of the
-  `(r1 n_k) × r2` unfolding — `_left_basis`, **never truncated**, deliberately, see
+  block $I_k \times n_k \times J_k$ ($r_1 \cdot n_k \cdot r_2$ values), takes an SVD basis of the
+  $(r_1 n_k) \times r_2$ unfolding — `_left_basis`, **never truncated**, deliberately, see
   its docstring — and calls `_select_rows`, which runs
   `rect_maxvol(q, tau, maxK = min(npts, rho + kickrank + rf, max(rmax, rho)), min_add_K = kickrank)`.
   The chosen rows extend `I_{k+1}`. **The values themselves are discarded.**
@@ -100,7 +100,7 @@ One-site alternating cross with rectangular-maxvol row selection.
   this time also builds the cores from `C = Q pinv(Q[ind])` (`_interp`).
 * Stop: `||y − y_prev|| <= max(eps ||y||, eps_abs)`. Then `round(eps)`.
 
-Cost per sweep: `2 * sum_k r_k n_k r_{k+1}` function values, `O(d n r^3)` flops.
+Cost per sweep: $2 \sum_k r_k n_k r_{k+1}$ function values, $O(d n r^3)$ flops.
 Rank growth per bond per sweep: at most `kickrank + rf`, and capped from above by
 the *other* side's set size, because `rho = min(q.shape[1], rmax) = min(r1 n_k, r2)`.
 
@@ -167,7 +167,7 @@ y = cross(f, n, d, eps=1e-8, r=2, seed=0, kickrank=2, n_check=4000, check_seed=7
 ```
 
 The dense oracle is `np.meshgrid`-built and independent of TT:
-`1/(1e-2 + |sum_k i_k/9 − 5/2|)` on the full `10**6` grid.
+$1/(10^{-2} + |\sum_k i_k/9 - 5/2|)$ on the full `10**6` grid.
 
 | what the run reports | value | the truth |
 |---|---|---|
@@ -232,10 +232,10 @@ of the 1000000 entries** (0.039 %); 50 % on 145 entries. The worst entry is the
 grid corner `(9,9,9,9,9,9)`, where `f = 0.2849` and the interpolant gives
 `0.14396`. It is not a spike in the *function* — `f` is perfectly smooth there —
 it is a region the index sets never reached, because the maxvol pivots all sit
-near the peak at `s ≈ 5/2` where `|f|` is 50× larger.
+near the peak at $s \approx 5/2$ where $|f|$ is 50× larger.
 
 **Why `err_check` missed it.** With 394 bad entries out of `10**6`, a uniform
-sample of `m` points misses the region with probability `(1 − 3.94e-4)^m`.
+sample of $m$ points misses the region with probability $(1 - 3.94\times 10^{-4})^m$.
 Measured detection rate over 200 independent samples, threshold `10*eps = 1e-7`
 (E11):
 
@@ -302,7 +302,7 @@ IMMUNE-M).
 * `CrossHistory` as a concept (R7). What is missing from it is listed in §6.
 * The "no cross method can certify its own accuracy" note at `cross.py:426`.
   §1.3 is the *sharper* version of that note: the blind spot is not only spikes,
-  it is any region the pivots avoid because `|f|` is small there.
+  it is any region the pivots avoid because $|f|$ is small there.
 
 ---
 
@@ -333,9 +333,9 @@ candidate set, and there are three regimes selected by `pivpar`:
 
 | `pivoting` | candidate set | evaluations per bond per sweep |
 |---|---|---|
-| `-1` (full) | the entire two-site superblock `r_{p−1} n_p n_{p+1} r_{p+1}` | `r² n²` |
-| `0` | a random "lottery" of `r_{p−1}+n_p+n_{p+1}+r_{p+1}` entries, then one full column and one full row through the winner | `≈ 2 n r` |
-| `p ≥ 1` (rook) | as `0`, then alternate: maximise the residual along the column, then along the row, until a fixed point or `2p` crossings | `≈ 2p · 2 n r` |
+| `-1` (full) | the entire two-site superblock $r_{p-1} n_p n_{p+1} r_{p+1}$ | $r^2 n^2$ |
+| `0` | a random "lottery" of $r_{p-1}+n_p+n_{p+1}+r_{p+1}$ entries, then one full column and one full row through the winner | $\approx 2 n r$ |
+| $p \ge 1$ (rook) | as `0`, then alternate: maximise the residual along the column, then along the row, until a fixed point or $2p$ crossings | $\approx 2p \cdot 2 n r$ |
 
 The lottery is a weighted sample (`lottery2`, `rnd.f90:105-126`) whose weights are
 1 for every `(i,j)` not already a pivot and 0 for those that are — i.e. uniform
@@ -347,7 +347,7 @@ over the not-yet-selected entries. Rook pivoting is `dmrgg.f90:298-359`.
 upd(p) = (abs(pivot) > small_element*amax) .and. (abs(pivot) > small_pivot*pivotmax_prev)
 ```
 (`dmrgg.f90:369`), with `small_element = 10·eps` and `small_pivot = 1e-5` for
-float64 (`dmrgg.f90:53`). `amax` is the largest `|A|` seen anywhere so far,
+float64 (`dmrgg.f90:53`). `amax` is the largest $|A|$ seen anywhere so far,
 `pivotmax_prev` the largest residual of the previous sweep. A tiny pivot is not
 added — the rank does not grow rather than growing by a numerically meaningless
 direction. **We have no analogue**: `_left_basis` takes the full numerical rank
@@ -372,7 +372,7 @@ caller reports **both** `einf/ainf` and `efro/afro`, and optionally the
 multi-index of the worst entry (`pivot` argument). `main.f90` uses `nlot = 2**20`.
 
 **Quantity of interest.** The optional `quad` argument is a TT of quadrature
-weights; the sweep loop then also reports the running value of `<w, X>` and its
+weights; the sweep loop then also reports the running value of $\langle w, X\rangle$ and its
 relative change `|1 − val/val_prev|` per sweep (`dmrgg.f90:634-657`). For the
 Ising susceptibility integrals the code targets, the convergence of the
 *integral* is the thing that matters, and it is monitored directly.
@@ -399,10 +399,10 @@ Three fixes to our stub header along the way (`MPI_2DOUBLE_PRECISION`,
 with `-fallow-argument-mismatch`.
 
 **Protocol.** `test_crs_ising.exe KIND m 65 RANK 1` against ttpy2 `rect_cross`
-on the **identical discretized tensor**: `m−1` variables, 65 Gauss–Legendre
-nodes on `[0,1]`, weights halved to a measure, scaled by `n/2` and baked into
+on the **identical discretized tensor**: $m-1$ variables, 65 Gauss–Legendre
+nodes on $[0,1]$, weights halved to a measure, scaled by $n/2$ and baked into
 the tensor entries exactly as the Fortran driver does; the integral is the
-contraction with the rank-1 tensor of `(2/n)`'s, and the reference is Bailey's
+contraction with the rank-1 tensor of $(2/n)$'s, and the reference is Bailey's
 constant embedded in `test_crs_ising.f90`. Both at `OMP_NUM_THREADS=4`, ttcross
 single-process, ttpy2 at default `kickrank=1, rf=2`, numpy/Accelerate float64.
 
@@ -486,17 +486,17 @@ Three rounds of measured work got it there (each profiled, best-of-5 timings,
    searchsorted — which is what `lottery2` does anyway — and the point-index
    assembly): 37 -> 26 ms on C_6;
 2. raw LAPACK `getrf`/`getrs` instead of the scipy wrappers, whose per-call
-   `check_finite` scans and Python overhead dwarfed the r x r solve;
-3. the structural one: **never form the full `M^{-1} R`**. The port used to
+   `check_finite` scans and Python overhead dwarfed the $r \times r$ solve;
+3. the structural one: **never form the full $M^{-1} R$**. The port used to
    apply the interpolant by solving for the whole block once per bond visit,
-   `O(r^2 n r2)` flops where the original's incremental factors pay
-   `O(r n)` per fiber; solving only for the one column, one row or one
+   $O(r^2 n r_2)$ flops where the original's incremental factors pay
+   $O(r n)$ per fiber; solving only for the one column, one row or one
    scattered batch actually needed removes the gap entirely. An explicit
-   `M^{-1}` cached per bond was tried first and **reverted**: multiplication
+   $M^{-1}$ cached per bond was tried first and **reverted**: multiplication
    by an inverse is not backward stable, the residual noise floor rises from
-   `eps` to `cond(M)*eps`, and the pivot-acceptance threshold (calibrated for
+   $\varepsilon$ to $\mathrm{cond}(M)\,\varepsilon$, and the pivot-acceptance threshold (calibrated for
    a backward-stable residual) starts accepting duplicate pivots, which makes
-   `M` exactly singular — 6 tests caught it.
+   $M$ exactly singular — 6 tests caught it.
 
 With the example's integrand numba-compiled (the Fortran driver's integrand
 is compiled too — equal footing; the numpy fallback computes identical values
@@ -639,7 +639,7 @@ test, an identity post-condition, a non-finite test, or complex support (`v =
 B.dot(B[i])` and `F − l·v·v` are written without conjugation).
 
 `teneva.cross_act` (`cross_act.py`) is the analogue of our `multifuncrs`: an
-AMEn-style cross for `f(X_1, …, X_D)` with interface matrices `Rx` carried per
+AMEn-style cross for $f(X_1, \dots, X_D)$ with interface matrices `Rx` carried per
 input — the fused sampling our `multifuncrs.py` docstring says it gave up. Its
 own docstring says "This is a draft … There is a problem in the rank-1 case".
 It carries `dr` (kickrank) **and `dr2`** — the random enrichment of §1.3
@@ -660,7 +660,7 @@ It carries `dr` (kickrank) **and `dr2`** — the random enrichment of §1.3
 | singular / near-singular submatrix | pivot *rejected* if `|pivot| <= max(10·eps·amax, 1e-5·pivotmax_prev)` — the rank simply does not grow | returns; on an exactly rank-deficient input it returns a `B` that happens to reconstruct `A`, on a `1e-14`-deficient one `max|B[I] − I| = 9.7e-02` and no warning | raises `LinAlgError` with the measured `|U_ii|` ratio; independent post-condition `_check_identity` at `1e-3` (error) / `sqrt(eps)` (warning) | **ttcross** for a cross *sweep* (degrade gracefully), **ttpy2** for a library primitive (fail loud). We should have both: §5 P6 |
 | `NaN` in the input | n/a | returns `piv` and an all-`NaN` `B`, silently | `ValueError` naming the first offending index | **ttpy2** |
 | rectangular maxvol | — | `maxvol_rect` (`maxvol.py:68`) | `rect_maxvol` (`maxvol.py:331`) | — |
-| rect update | — | SWM update, then `np.hstack` — `O(nK)` allocation and copy per added row, `O(nK²)` traffic overall | growable F-ordered buffer with capacity doubling + in-place `ger` | **ttpy2** — 18.0× faster at `N=1e5, r=200` (§4.1) |
+| rect update | — | SWM update, then `np.hstack` — $O(nK)$ allocation and copy per added row, $O(nK^2)$ traffic overall | growable F-ordered buffer with capacity doubling + in-place `ger` | **ttpy2** — 18.0× faster at `N=1e5, r=200` (§4.1) |
 | rect stopping | — | `k >= r_min and F[i] <= e²` | `(row_norm_sqr[i] > tol² and K < maxK) or K < minK`, plus `top_k_index` | equivalent; ttpy2 additionally distinguishes *criterion met* from *post-condition met* and names the reason (`stop_reason`) |
 | reporting | `neval`, per-sweep line | none | `info` dict: `K`, `max_row_norm`, `max_row_norm_bounded`, `converged`, `stop_reason`, nested square-maxvol `info` | **ttpy2** |
 | wrappers | — | none | `maxvol_qr`, `rect_maxvol_qr`, `maxvol_svd`, `rect_maxvol_svd` | **ttpy2** (legacy API surface, COMPAT) |
@@ -673,7 +673,7 @@ ttcross is the *pivot rejection idea*, and it belongs in `cross.py`, not in
 
 | axis | ttcross (`dmrgg.f90`) | teneva (`cross.py`) | ttpy2 (`cross.py`) | better, and why |
 |---|---|---|---|---|
-| block | two-site (DMRG) superblock `r n n r` | one-site `r n r` | one-site `r n r` | **teneva/ttpy2** on cost per micro-step; **ttcross** sees `n²` pivot candidates at once, which is what makes rank +1 per sweep enough |
+| block | two-site (DMRG) superblock $r n n r$ | one-site $r n r$ | one-site $r n r$ | **teneva/ttpy2** on cost per micro-step; **ttcross** sees $n^2$ pivot candidates at once, which is what makes rank +1 per sweep enough |
 | rank adaptation | +1 per bond per sweep, pivot = argmax residual | `dr_min … dr_max` per micro-step (default 1..1), driven by `maxvol_rect` | `kickrank … kickrank + rf` per micro-step, driven by `rect_maxvol` | **ttcross** is the most parsimonious in rank; **ttpy2** reaches the target rank in the fewest sweeps; on the Ising family ttcross is uniformly cheaper in evaluations, 5–40x (measured, §2.1a) — §4.2's "neither is uniformly cheaper" survives only as a statement about worst cases |
 | pivot choice | max of the **residual** `A − col·row`, by full / lottery / rook search | max 2-volume of an orthonormal basis (`maxvol_rect`) | same as teneva | **ttcross** — the residual is the quantity the error depends on; volume is a proxy for it. But rook pivoting needs `2p` extra fibers per bond per sweep and is only affordable because the rank grows by 1 |
 | exploration beyond the pivots | the lottery is a uniform random sample of unselected entries — **random exploration is built into every pivot search** | none in `cross`; `dr2` exists in `cross_act` | none | **ttcross**, decisively. This is the same gap §1.3 measures |
@@ -736,10 +736,11 @@ Degenerate inputs, `N = 200`, `r = 10` (E7 C):
 | complex, well conditioned | `max|B[I] − I| = 3.2e-16` | `max|B[I] − I| = 4.5e-16` (accidentally correct: this matrix is Hermitian-free) |
 
 Honest counterweight on the last-but-one row: **our rank test is stricter than
-necessary and rejects a matrix teneva handles correctly.** `A = Q·diag(1, 1e-2,
-…, 1e-18)` is numerically full rank in the sense that matters here, and teneva
-returns a `B` accurate to 2e-16. Our `_check_rank` threshold `r·eps` on
-`diag(U)` refuses it. The escape hatches exist (`rcond=`, `maxvol_qr`) and the
+necessary and rejects a matrix teneva handles correctly.**
+$A = Q\,\mathrm{diag}(1, 10^{-2}, \dots, 10^{-18})$ is numerically
+full rank in the sense that matters here, and teneva
+returns a `B` accurate to 2e-16. Our `_check_rank` threshold $r\,\varepsilon$ on
+$\mathrm{diag}(U)$ refuses it. The escape hatches exist (`rcond=`, `maxvol_qr`) and the
 cross path always passes an orthonormal `Q`, so this never bites inside ttpy2 —
 but a user calling `maxvol` directly on a badly scaled matrix will hit it.
 Documented, not changed (§10 Q4).
@@ -824,7 +825,7 @@ first: seed 1 passes here and fails under numpy 2.4.6.
 | 4 | **3.82e-04** | 131879 | 2.84e-10 | 212540 | 2.12 | 2.84e-10 | 112630 | 17.36 |
 | 5 | **3.82e-04** | 102190 | 2.84e-10 | 226382 | 2.44 | 5.84e-10 | 97349 | 10.30 |
 
-Smooth `sin(s)/(1+s)`, `d = 5`, `n = 12`, `eps = 1e-10`, three seeds: all nine
+Smooth $\sin(s)/(1+s)$, `d = 5`, `n = 12`, `eps = 1e-10`, three seeds: all nine
 runs give 5.86e-11; uniq 13724–13766 (ttpy2), 19606–21161 (+k2+cache),
 10655–14733 (teneva+cache); time 0.08–0.09 s vs 0.16–0.30 s.
 
@@ -839,7 +840,7 @@ method rather than of either implementation.
 ### 4.5 SVD vs QR in `_left_basis` (E12)
 
 teneva takes a QR where we take an SVD, and we never truncate, so the column
-spaces are identical (`max|UUᵀ − QQᵀ| ≤ 2.6e-16` at every size tested).
+spaces are identical ($\max|U U^{T} - Q Q^{T}| \le 2.6\times 10^{-16}$ at every size tested).
 
 | block `(m, k)` | `svd` (ms) | `qr` (ms) | speed-up |
 |---|---|---|---|
@@ -856,7 +857,7 @@ standalone change** (§5, "not recommended").
 
 ### 4.6 Scale, for the record (E13)
 
-`f(t) = exp(−3t)sin(12t) + 1/(1+t)` on a binary QTT grid of `2**d` points,
+$f(t) = e^{-3t}\sin(12t) + 1/(1+t)$ on a binary QTT grid of `2**d` points,
 `eps = 1e-10`, `kickrank = 1`, `n_check = 2000`:
 
 | `d` | max rank | `err_check` | `fun_eval` | time (s) | `fun_eval / 2**d` |
@@ -866,7 +867,7 @@ standalone change** (§5, "not recommended").
 | 40 | 6 | 1.53e-11 | 33318 | 0.08 | 3.03e-08 |
 | 60 | 6 | 1.54e-11 | 54820 | 0.12 | 4.75e-14 |
 
-No warnings; `fun_eval` grows linearly in `d` as it should. Note `d = 10` asks
+No warnings; `fun_eval` grows linearly in $d$ as it should. Note `d = 10` asks
 for **4× the whole tensor** — for a small `2**d` the method is a pessimisation,
 which is worth saying in the docstring.
 
@@ -911,7 +912,7 @@ any mode size and never collides.
 *Buys.* Measured: 2.52× / 3.07× / 4.16× fewer black-box calls (§4.3); 2.2×
 wall-clock on a 50 µs/point black box.
 
-*Costs.* ≈1.25 µs per probe (prototype); a `dict` of `d·8 + 8` bytes per distinct
+*Costs.* ≈1.25 µs per probe (prototype); a `dict` of $d \cdot 8 + 8$ bytes per distinct
 index (169 421 entries ≈ 10 MB on the kink); a second owner of "what is the value
 at this index" that must be invalidated if `fun` is not a function of the index —
 which `rect_cross`'s contract already requires, and which the cache now *enforces*
@@ -1007,7 +1008,7 @@ too tight" situation goes unmentioned is covered by `info['stop_reason']`, which
    not a difference between iterates. Our one-site sweep already has the
    ingredients: at each micro-step, the block `A_k` is evaluated and the current
    interpolant's value on the same block is one contraction away, so
-   `max |A_k − X_k| / amax` costs `O(d n r²)` flops and **zero extra function
+   `max |A_k − X_k| / amax` costs $O(d n r^2)$ flops and **zero extra function
    evaluations**.
 2. *The rule requires three consecutive sweeps below the threshold.* Our §1.3
    failure passes a one-sweep test trivially (`err_rel = 3e-15` on the sweep it
@@ -1035,10 +1036,10 @@ the sweep) and each sweep dict gains `err_resid`.
 difference of iterates cannot be fooled by a fixed point of the index sets in the
 way §1.3 is — the residual is evaluated on the *newly probed* rows, and with P2's
 random rows those include unexplored regions. Cost of `stop_strikes=3` is two
-extra sweeps per run, i.e. roughly `2 · 2 · sum_k r n r` evaluations.
+extra sweeps per run, i.e. roughly $2 \cdot 2 \cdot \sum_k r n r$ evaluations.
 
 *Costs.* Two more sweeps by default if the default changes (it should not, in the
-first commit). The residual computation is `O(d n r²)` flops and `O(n r²)` memory
+first commit). The residual computation is $O(d n r^2)$ flops and $O(n r^2)$ memory
 per micro-step, both already paid.
 
 ---
@@ -1163,8 +1164,8 @@ must warn loudly, which the existing note machinery already does.
   wrong. Reject.
 * **Porting ttcross's DMRG sweep wholesale.** It is a second engine with its own
   index representation (nested `(i,j,k,q)` quadruples), its own bordered-LU
-  arithmetic, and a two-site block that costs `n²r²` per micro-step against our
-  `n r²`. §4.2 shows no evaluation-count advantage for the maxvol family that
+  arithmetic, and a two-site block that costs $n^2 r^2$ per micro-step against our
+  $n r^2$. §4.2 shows no evaluation-count advantage for the maxvol family that
   would justify it, and `docs/REQUIREMENTS.md` R0 is explicit that ttpy2 exists to
   have *fewer* engines. Take the indicator (P4), the pivot rejection (P6) and the
   two-norm check (P5); leave the sweep.
@@ -1393,9 +1394,9 @@ P6 entirely and say so in the docstring.
 
 **Q4 — is `maxvol`'s rank test too strict?** §4.1 measured one case
 (`cond ≈ 1e18`, full rank) where teneva returns a correct factorisation and we
-raise. *Experiment:* sweep `A = Q diag(1, σ, …, σ^{r−1})` for
-`σ ∈ {1e-1 … 1e-3}` at `r = 10, 20, 50` and, for each, compare
-`max|B[I] − I|` and `‖B A[I] − A‖/‖A‖` from the two implementations against the
+raise. *Experiment:* sweep $A = Q\,\mathrm{diag}(1, \sigma, \dots, \sigma^{r-1})$ for
+$\sigma \in \{10^{-1} \dots 10^{-3}\}$ at `r = 10, 20, 50` and, for each, compare
+$\max|B[I] - I|$ and $\|B A[I] - A\|/\|A\|$ from the two implementations against the
 value of `rcond` that would have let ours through. If the post-condition
 `_check_identity` holds at `1e-3` everywhere teneva succeeds, then `_check_rank`
 is redundant with it and the default `rcond` should be loosened to the point
@@ -1468,10 +1469,10 @@ adapter's own cost is the bottleneck.
   function on which it fails; Q1 is the experiment that broadens the evidence.
 * **The failure of §1.3 is characterised, not explained in the sense of a
   theorem.** I measured that the error concentrates on 394 entries in a corner
-  where `|f|` is 50× smaller than at the pivots, and that the index sets reach a
+  where $|f|$ is 50× smaller than at the pivots, and that the index sets reach a
   fixed point. I did not prove that "volume-maximal pivots avoid regions where
-  `|f|` is relatively small", and the literature reference for that (the
-  quasioptimality bounds carry a `sqrt(1 + ...)` factor in the max norm) was not
+  $|f|$ is relatively small", and the literature reference for that (the
+  quasioptimality bounds carry a $\sqrt{1 + \dots}$ factor in the max norm) was not
   read.
 * **Nothing was run on a GPU.** No claim here applies to the torch backend.
 * **`float32` was not exercised.** Every measurement is float64. The `tau`,

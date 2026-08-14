@@ -43,7 +43,7 @@ Existing `import tt` scripts must run unchanged. Preserved:
   tt.riemannian.*, tt.completion.*`.
 
 **The internal representation changes.** The owner of the truth is
-`cores: list[ndarray]` of shape `(r_k, n_k, r_{k+1})`. The flat `core` and the
+`cores: list[ndarray]` of shape $(r_k, n_k, r_{k+1})$. The flat `core` and the
 pointer array `ps` are derived properties kept for compatibility, not storage.
 Assigning `x.core = buf` rebuilds `cores` — a converter, not a second owner.
 
@@ -70,10 +70,10 @@ Assigning `x.core = buf` rebuilds `cores` — a converter, not a second owner.
 Not legacy compatibility but a new capability. The owner is
 `tt/algs/qtt_ell.py` plus four constructors in `tt/core/tools.py`.
 
-* Constructors: `qdiff` (the difference operator `I - S`, rank 2), `qtri_ones`
+* Constructors: `qdiff` (the difference operator $I - S$, rank 2), `qtri_ones`
   (its **exact** inverse, rank 2), `qlaplace_dn(d, bc, order)` with mixed
   boundary conditions, `level_major_order`.
-* `bc='DN'` is the only combination with exactly `2^l` degrees of freedom per
+* `bc='DN'` is the only combination with exactly $2^l$ degrees of freedom per
   level, so it is the only one fit for multilevel prolongations;
   `qlaplace_dd` cannot be used there. `bc='NN'` is singular and is **refused**.
 * The index order is an explicit argument, not a default: the preconditioner's
@@ -83,15 +83,15 @@ Not legacy compatibility but a new capability. The owner is
   reached by accident. `merge_levels` is the single owner of the translation.
 * `bpx(d, D, weight, scaled)` is the BPX preconditioner ([BK20], Theorem 3),
   assembled as a two-state automaton over the levels: **no summation** of TT
-  matrices and no rounding anywhere. The rank is exactly `2*4^D`, independent
+  matrices and no rounding anywhere. The rank is exactly $2 \cdot 4^D$, independent
   of `d`.
 * `bpx_theta(d, D)` gives the fused factors ([BK20] Lemma 5 / Theorem 4),
-  `B = sum_k Theta_k^T Theta_k`, of rank `2^(2D) + 2^(2D-1)`. It returns a
+  $B = \sum_k \Theta_k^T \Theta_k$, of rank $2^{2D} + 2^{2D-1}$. It returns a
   **list** even for `D = 1`: for `D > 1` the sum must not be assembled, it is
   applied factor by factor.
-* Acceptance: `kappa(C A C)` stays bounded as `d` grows, while `kappa(A)` grows
-  like `4^d`. Checked with dense eigenvalues.
-* A variable coefficient needs no closed form: `1/a` and `sqrt(a)` are taken by
+* Acceptance: $\kappa(C A C)$ stays bounded as `d` grows, while $\kappa(A)$ grows
+  like $4^d$. Checked with dense eigenvalues.
+* A variable coefficient needs no closed form: $1/a$ and $\sqrt{a}$ are taken by
   cross approximation (`tt.multifuncrs`), wrapped as `qtt_ell.invert` /
   `qtt_ell.sqrt`. The cross tolerance becomes the scheme's tolerance, which is
   why it is in the signature rather than hidden inside.
@@ -102,7 +102,7 @@ The legacy code is **not** an oracle. The truth is:
 
 1. a dense numpy computation for small `d, n` (the full tensor, the full linear
    system, the full eigenproblem, the full `expm`);
-2. invariants (orthogonality after a sweep, `A x = b` with residual <= eps,
+2. invariants (orthogonality after a sweep, $A x = b$ with residual <= eps,
    monotone energy, ranks <= the theoretical ones);
 3. algorithms compared against each other (`amen_solve` vs `GMRES` vs a dense
    solve).

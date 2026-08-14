@@ -11,17 +11,17 @@ Sources actually read, and what each one is:
   header, so the pagination below is the preprint's). **This is the automatic
   differentiation paper**, read in full (text extracted with `pypdf` on b300;
   figures were not rendered, but the paper's quantitative content is in tables,
-  which extracted cleanly). Contents: the auxiliary function `g = f ∘ T_X` whose
+  which extracted cleanly). Contents: the auxiliary function $g = f \circ T_X$ whose
   ordinary gradient with respect to the *delta cores* is the Riemannian gradient
   (§4.2 matrices, §5.2 tensors, Alg. 5.1/5.2); the complexity statement
-  `O(F + d n r³)` (Prop. 5.2); the `stop_gradient` trick that turns
-  `P_X B⁻¹(A X − F)` into a Riemannian gradient (§5.3); the approximate
+  $O(F + d n r^3)$ (Prop. 5.2); the `stop_gradient` trick that turns
+  $P_X B^{-1}(A X - F)$ into a Riemannian gradient (§5.3); the approximate
   Riemannian Hessian-by-vector product (§6, Alg. 6.1/6.2); and CPU/GPU timings
   against a hand-written baseline in T3F (§7, Tables 2–3).
 * **[RNO19]** M. Rakhuba, A. Novikov, I. Oseledets, *Low-rank Riemannian
   eigensolver for high-dimensional Hamiltonians*, J. Comput. Phys. **396**
   (2019) 718–737. Read here for the *manifold machinery only* — §4.1 (tangent
-  representation and the `S_k` stack), §4.2 (projection and its cost), §4.3
+  representation and the $S_k$ stack), §4.2 (projection and its cost), §4.3
   (the cheap tangent inner product, their eq. (22)), §4.4 (TT-SVD retraction),
   §4.5 and eq. (24)–(25) (the preconditioner as a sum of rank-1 TT-matrices).
   The *eigensolver* content of this paper is owned by
@@ -87,13 +87,11 @@ cores_orthogonalization_step(cores, dim, left_to_right=True)   # one QR step, in
 
 `project(X, Z)` implements the closed form of [LOV15] Thm 3.1,
 
-```
-P_X = sum_{k=1..d} P_{<k} (x) I_k (x) P_{>k}  -  sum_{k=1..d-1} P_{<=k} (x) P_{>k},
-```
+$$P_X = \sum_{k=1}^{d} P_{\lt k} \otimes I_k \otimes P_{\gt k} \;-\; \sum_{k=1}^{d-1} P_{\le k} \otimes P_{\gt k},$$
 
 as one sweep: right-to-left orthogonalization of `X` giving the right frames
-`V_k` and the right interfaces `rhs[k] : (r_z(k), r_x(k))`; then left-to-right
-QR giving the left frames `U_k`, and at each site the *delta core*
+$V_k$ and the right interfaces `rhs[k] : (r_z(k), r_x(k))`; then left-to-right
+QR giving the left frames $U_k$, and at each site the *delta core*
 
 ```
 proj    = lhs @ Z_k                     # (r_{k-1}, n_k, rz_k)
@@ -101,23 +99,22 @@ lhs_new = U_k^H proj                    # gauge part
 delta   = (proj - U_k lhs_new) @ rhs[k+1]      # (r_{k-1}, n_k, r_k)
 ```
 
-which is exactly `δG_k` of [RNO19] eq. (20)–(21) and `Ṡ_k` of [NRO22] eq. (5.9).
-The result is assembled into the rank-`2r` stack of [RNO19] §4.1 / [NRO22] (5.7)
+which is exactly $\delta G_k$ of [RNO19] eq. (20)–(21) and $\dot S_k$ of [NRO22] eq. (5.9).
+The result is assembled into the rank-$2r$ stack of [RNO19] §4.1 / [NRO22] (5.7)
 
-```
-S_1(i) = [δG_1(i)  U_1(i)],   S_k(i) = [[V_k(i), 0], [δG_k(i), U_k(i)]],
-S_d(i) = [V_d(i); δG_d(i)]
-```
+$$S_1(i) = \begin{bmatrix} \delta G_1(i) & U_1(i) \end{bmatrix}, \quad
+S_k(i) = \begin{bmatrix} V_k(i) & 0 \\ \delta G_k(i) & U_k(i) \end{bmatrix}, \quad
+S_d(i) = \begin{bmatrix} V_d(i) \\ \delta G_d(i) \end{bmatrix}$$
 
 and returned as a `tt.vector` — **the delta cores are computed and thrown away**.
 That is the single most consequential gap in the module (§2.2, §8(a)).
 
 Three things it does that are worth keeping verbatim:
 
-* `Z` may be **a list of `tt.vector`s**, and then `P_X(Σ_i Z_i)` is computed
+* `Z` may be **a list of `tt.vector`s**, and then $P_X(\sum_i Z_i)$ is computed
   without ever forming the sum. This is precisely the structure
   [RNO19] eq. (25) needs for a preconditioner given as a sum of rank-1
-  TT-matrices, and §6 below uses it at `ρ_B = 61` terms without modification.
+  TT-matrices, and §6 below uses it at $\rho_B = 61$ terms without modification.
 * It **refuses a rank-deficient `X`** (`_left_step_checked`), because at a corner
   of the manifold the closed form still returns a Hermitian idempotent — of the
   wrong space. The docstring records 31 % relative error against the dense
@@ -128,7 +125,7 @@ Three things it does that are worth keeping verbatim:
 ([LOV15] §4.2): one left-to-right sweep of K steps (absorb `delta` seen through
 the current frames) and S steps (subtract what the next K step double-counts).
 It keeps the ranks of `Y` exactly and is *exact* when `Y + delta` happens to
-have rank `r(Y)`.
+have rank $r(Y)$.
 
 ### 1.2 Measured: it works
 
@@ -139,7 +136,7 @@ The 34 existing tests touching this module (`tests/test_ports.py`,
 pass in **2.52 s** wall.
 
 Re-verified independently (`p2_tangent.py`, §(a)) against a dense
-`N x N` tangent projector assembled from `numpy.linalg.svd` of the dense
+$N \times N$ tangent projector assembled from `numpy.linalg.svd` of the dense
 unfoldings of `X` — i.e. from `X` alone, not from this code:
 
 | `d, n` | ranks of `X` | `r_z` | `‖P_tt z − P_dense z‖ / ‖P z‖` | idempotence of the oracle |
@@ -150,7 +147,7 @@ unfoldings of `X` — i.e. from `X` alone, not from this code:
 | 5, 2 | `1,2,2,2,2,1` | 4 | 9.67e-16 | 4.61e-16 |
 | 3, 5 | `1,4,4,1` | 6 | 7.34e-16 | 7.79e-16 |
 
-The list form was exercised at `ρ_B = 41…61` summands inside a working
+The list form was exercised at $\rho_B = 41\ldots61$ summands inside a working
 preconditioned eigensolver (§6, table 2) and produced eigenvalues correct to
 2e-09; the loud refusal at a rank-deficient point was reproduced
 (`p5_adverse.py` §(B)):
@@ -172,12 +169,12 @@ project: unfolding 1 of X has TT rank 2 but numerical rank 1
 | 20 | 2 | 20 | 40 | 3.95 | 1.3e+06 |
 | 20 | 2 | 20 | 80 | 4.26 | 5.1e+06 |
 
-The theoretical cost is `O(d n r r_z²)` ([RNO19] §4.2). The last three rows hold
-`d, n, r` fixed and multiply `r_z` by 2 and 4, i.e. the model predicts `x4` and
+The theoretical cost is $O(d n r r_z^2)$ ([RNO19] §4.2). The last three rows hold
+`d, n, r` fixed and multiply $r_z$ by 2 and 4, i.e. the model predicts `x4` and
 `x16` — and the measured time moves 3.93 → 3.95 → 4.26 ms. **At QTT sizes
-`project` is python-dispatch-bound, not flop-bound**: the time is linear in `d`
+`project` is python-dispatch-bound, not flop-bound**: the time is linear in $d$
 (2.72 → 5.60 ms for `d = 20 → 40`) and almost independent of the rank, i.e. it
-is `d` times a constant of about 135 µs per site, which is roughly six of the
+is $d$ times a constant of about 135 µs per site, which is roughly six of the
 ~7 µs numpy calls that `docs/plans/bug-integrator.md` §6 measures, plus a QR.
 The consequence for §5's algorithm ordering: on a QTT problem the cost of a
 Riemannian step is dominated by the number of `project` calls, not by their
@@ -188,9 +185,9 @@ count.
 
 * No delta/gauge representation exposed (§2.2). Without it the cheap tangent
   inner product of [RNO19] eq. (22) is impossible and every Gram matrix costs
-  `O(d n r³)` instead of `O(d n r²)`.
+  $O(d n r^3)$ instead of $O(d n r^2)$.
 * No vector transport, no retraction other than the projector splitting, no
-  fused `P_X (A Z)`, no Riemannian gradient of anything, no optimizer.
+  fused $P_X (A Z)$, no Riemannian gradient of anything, no optimizer.
 * No autodiff.
 * `projector_splitting_add` is a *first-order* retraction only; there is no
   second-order retraction and no rank adaptation anywhere.
@@ -264,7 +261,7 @@ Two consequences had to be handled, and both are in the same commit:
   *rank*, a discrete choice, and nothing differentiable passes through it.
 * *Scalar multiplication stopped accepting the result.* `x * (1 / x.norm())` is
   what every algorithm writes, and `vector.__mul__` tested `isinstance(other,
-  Number)`, which a 0-d tensor is not. Keeping the tape alive through `||x||`
+  Number)`, which a 0-d tensor is not. Keeping the tape alive through $\|x\|$
   and then breaking it at the scaling would have been pointless, so
   `bk.is_scalar` / `bk.scalar_dtype` were added as the single owner of "may this
   thing scale a TT tensor", and `vector.__mul__/__rmul__/__truediv__/__add__`
@@ -293,14 +290,14 @@ argument is unaffected: the QR sweep is differentiable in torch (measured, §4.1
 
 ### 1.5 A second, structural defect: two owners of the tangent projection
 
-`tt/algs/ksl.py:347` `tangent_defect(A, y)` computes `‖(I − P_{T_y M}) A y‖` by
+`tt/algs/ksl.py:347` `tangent_defect(A, y)` computes $\|(I - P_{T_y M})\, A y\|$ by
 its own inlined sweep, using the same decomposition as `project` but never
 calling it. That is a second implementation of the same mathematics.
 
 Measured (`p10_ssot.py`, b300, numpy, float64): `tangent_defect`, the quantity
-`sqrt(‖z‖² − Σ_k ‖δG_k‖²)` computed from the delta cores, and the direct
+$\sqrt{\|z\|^2 - \sum_k \|\delta G_k\|^2}$ computed from the delta cores, and the direct
 `‖z − project(y, z)‖` agree to **0.0, 0.0 and 1.54e-16** relative on three
-problems (`d,n,r,R = 6,4,3,2`; `10,2,4,3`; `8,3,2,2`, `z = A y`). They are the
+problems (`d,n,r,R = 6,4,3,2`; `10,2,4,3`; `8,3,2,2`, $z = A y$). They are the
 same object. Once `project_delta` exists (§8(a)), `tangent_defect` must be
 
 ```python
@@ -319,83 +316,75 @@ equations exactly (the increment is constant) and one with
 has a closed form and paying for a Krylov exponential to get it would be
 absurd — but it should be documented as a deliberate second implementation with
 a shared test (`projector_splitting_add(Y, tau*A@Y)` vs `ksl(A, Y, tau)` agreeing
-to `O(tau²)`), not left as an accident.
+to $O(\tau^2)$), not left as an accident.
 
 ---
 
 ## 2. The manifold machinery, in our conventions
 
-Conventions throughout: TT cores `G_k : (r_{k-1}, n_k, r_k)`; TT-matrix cores
-`A_k : (R_{k-1}, n_k, m_k, R_k)` with the **row index first**; merged vector mode
-`s = i + n*j`; mode 1 is the fastest index; `ML(G) : (r_{k-1} n_k, r_k)` is the
+Conventions throughout: TT cores $G_k : (r_{k-1}, n_k, r_k)$; TT-matrix cores
+$A_k : (R_{k-1}, n_k, m_k, R_k)$ with the **row index first**; merged vector mode
+$s = i + n j$; mode 1 is the fastest index; $ML(G) : (r_{k-1} n_k, r_k)$ is the
 left matricization. Code is 0-based, the mathematics below is 1-based.
 
 ### 2.1 The tangent space and its parametrization
 
-`M_r = { X : rank_TT(X) = r }` is a smooth embedded submanifold of
-`R^{n_1 x ... x n_d}` of dimension `Σ_k r_{k-1} n_k r_k − Σ_{k<d} r_k²`. At
-`X ∈ M_r` write the two orthogonal representations
+$M_r = \{ X : \mathrm{rank}_{TT}(X) = r \}$ is a smooth embedded submanifold of
+$\mathbb{R}^{n_1 \times \dots \times n_d}$ of dimension $\sum_k r_{k-1} n_k r_k - \sum_{k<d} r_k^2$. At
+$X \in M_r$ write the two orthogonal representations
 
-```
-X = U_1 U_2 ... U_{d-1} S_d          # left-orthogonal:  ML(U_k)^H ML(U_k) = I
-X = S_1 V_2 ... V_d                  # right-orthogonal: MR(V_k) MR(V_k)^H = I
-```
+$$X = U_1 U_2 \cdots U_{d-1} S_d \qquad \text{(left-orthogonal: } ML(U_k)^{H}\, ML(U_k) = I)$$
+$$X = S_1 V_2 \cdots V_d \qquad \text{(right-orthogonal: } MR(V_k)\, MR(V_k)^{H} = I)$$
 
 Both are produced by the sweeps already in the codebase:
-`_ops.orthogonalize(cores, center=0)` gives `S_1, V_2..V_d`, and
-`_localops.left_orthogonalize` applied left to right gives `U_1..U_{d-1}`.
+`_ops.orthogonalize(cores, center=0)` gives $S_1, V_2 \dots V_d$, and
+`_localops.left_orthogonalize` applied left to right gives $U_1 \dots U_{d-1}$.
 `project` builds both in one pass and this is the state every routine in §8
 should share.
 
-A tangent vector is parametrized by **delta cores** `δG_k : (r_{k-1}, n_k, r_k)`,
+A tangent vector is parametrized by **delta cores** $\delta G_k : (r_{k-1}, n_k, r_k)$,
 
-```
-ξ = δG_1 V_2 ... V_d + U_1 δG_2 V_3 ... V_d + ... + U_1 ... U_{d-1} δG_d
-```
+$$\xi = \delta G_1 V_2 \cdots V_d + U_1\, \delta G_2 V_3 \cdots V_d + \dots + U_1 \cdots U_{d-1}\, \delta G_d$$
 
 with the **gauge condition** ([RNO19] eq. (21), [NRO22] eq. (5.6))
 
-```
-ML(δG_k)^H ML(U_k) = 0,   k = 1, ..., d-1
-```
+$$ML(\delta G_k)^{H}\, ML(U_k) = 0, \qquad k = 1, \dots, d-1$$
 
-(no condition on `δG_d`). The gauge makes the parametrization a bijection, and
+(no condition on $\delta G_d$). The gauge makes the parametrization a bijection, and
 it is what makes the tangent inner product cheap:
 
-```
-<ξ, η> = Σ_{k=1..d} <δG_k^ξ, δG_k^η>_F                    [RNO19] eq. (22)
-```
+$$\langle \xi, \eta \rangle = \sum_{k=1}^{d} \langle \delta G_k^{\xi}, \delta G_k^{\eta} \rangle_F \qquad \text{[RNO19] eq. (22)}$$
 
 Measured (`p2_tangent.py` §(b), b300, numpy, float64): the deltas produced by
-the `project` sweep satisfy `max |ML(δG_k)^H ML(U_k)|` = **7.9e-16** (d=4,n=3,r=2),
-**7.1e-15** (d=6,n=4,r=3), **4.3e-14** (d=10,n=2,r=4); rebuilding the rank-`2r`
-tensor from `(U, V, δG)` reproduces `project`'s output to **2.9e-16 … 9.5e-16**
+the `project` sweep satisfy $\max |ML(\delta G_k)^{H} ML(U_k)|$ = **7.9e-16** (d=4,n=3,r=2),
+**7.1e-15** (d=6,n=4,r=3), **4.3e-14** (d=10,n=2,r=4); rebuilding the rank-$2r$
+tensor from $(U, V, \delta G)$ reproduces `project`'s output to **2.9e-16 … 9.5e-16**
 relative; and the cheap inner product agrees with the full TT contraction
 `tt.dot(P Z_1, P Z_2)` to **3.6e-16, 6.4e-16, 8.1e-16** relative on the same
 three problems. So eq. (22) holds in our conventions, exactly as written.
 
-The rank-`2r` stack is the `S_k` block form quoted in §1.1.
+The rank-$2r$ stack is the $S_k$ block form quoted in §1.1.
 
-### 2.2 Projection `P_{T_X M}` — the workhorse
+### 2.2 Projection $P_{T_X M}$ — the workhorse
 
-Implemented (§1.1), verified (§1.2), cost `O(d n r r_z²)` in theory and
+Implemented (§1.1), verified (§1.2), cost $O(d n r r_z^2)$ in theory and
 dispatch-bound in the QTT regime (§1.2, table). What is missing is the
 **delta-returning** variant, `project_delta` (§8(a)). Everything else in this
 document depends on it:
 
-* the Gram matrix of `b` tangent vectors costs `O(b² d n r²)` from deltas and
-  `O(b² d n r³)` from the assembled tensors ([RNO19] §4.3) — the factor that
+* the Gram matrix of $b$ tangent vectors costs $O(b^2 d n r^2)$ from deltas and
+  $O(b^2 d n r^3)$ from the assembled tensors ([RNO19] §4.3) — the factor that
   makes their LOBPCG affordable;
 * summing tangent vectors at the same point is *free* in the deltas
-  (`δG^{αξ+βη} = α δG^ξ + β δG^η`) and costs a rank-`4r` add plus a rounding in
+  ($\delta G^{\alpha\xi+\beta\eta} = \alpha\, \delta G^{\xi} + \beta\, \delta G^{\eta}$) and costs a rank-$4r$ add plus a rounding in
   the assembled form. t3f has exactly this function (`add_n_projected`, §7);
 * the Riemannian autodiff of §4.3 produces deltas natively and consumes deltas
   natively; going through the assembled tensor at every step is the difference
-  between `O(F)` and `O(F + d n r³)`.
+  between $O(F)$ and $O(F + d n r^3)$.
 
 The `Z` argument must keep accepting a list. A fused `project_matvec(X, A, Z)`
-(project the matvec without forming it) is [RNO19] §4.2's `O(d n r r_y R (r_y + n R))`
-against the naive `O(d n r_y² R² (r + n))`; t3f has it (`riemannian.project_matmul`).
+(project the matvec without forming it) is [RNO19] §4.2's $O(d n r r_y R (r_y + n R))$
+against the naive $O(d n r_y^2 R^2 (r + n))$; t3f has it (`riemannian.project_matmul`).
 It is *not* required for the recommended first build (§5), because §4.4 measures
 the autodiff route beating our current naive route by up to 17x on CPU already.
 
@@ -405,11 +394,11 @@ Three candidates, in the order we should adopt them.
 
 1. **TT-SVD retraction** `R_X(ξ) = round(X + ξ, rmax=r)` ([RNO19] §4.4;
    quasi-optimality and the retraction property are Absil–Oseledets and
-   Steinlechner). Cost `O(d n r³)` with `r' = 3r` before truncation. It is
+   Steinlechner). Cost $O(d n r^3)$ with $r' = 3r$ before truncation. It is
    available today as `(X + xi).round(0.0, rmax=r)` and it is what every
    measurement in §5 and §6 used. **Recommended default.**
 2. **Projector splitting** `projector_splitting_add(X, ξ)` (exists). One sweep,
-   no SVD, exact when `X + ξ` is already of rank `r`. It is a valid
+   no SVD, exact when $X + \xi$ is already of rank $r$. It is a valid
    *first-order* retraction. Cheaper than (1) by the SVD, but it is not
    quasi-optimal and it does not tell you how much it discarded.
 3. **Second-order retractions.** Not implemented, not measured, and I could not
@@ -417,9 +406,9 @@ Three candidates, in the order we should adopt them.
    Absil–Oseledets for the survey but gives none). Deferred to §13 Q4.
 
 **Honest counterweight.** The fixed-rank manifold is not closed: if the solution
-has rank *below* `r`, the minimizer sits on the boundary. Measured
+has rank *below* $r$, the minimizer sits on the boundary. Measured
 (`p8_deficient.py`, b300, torch CPU float64, `d=6`, `n=10`, completion,
-`|Ω| = 100 × dof`, 400 Riemannian GD steps, TT-SVD retraction):
+$|\Omega| = 100 \times \mathrm{dof}$, 400 Riemannian GD steps, TT-SVD retraction):
 
 | true rank | manifold rank | final `f` | `min_k σ_min/σ_max` of the unfoldings, start → end |
 |---|---|---|---|
@@ -439,36 +428,36 @@ report its residual would therefore be silent here, and §10 test 5 pins that.
 ### 2.4 Vector transport
 
 The cheapest valid transport on an embedded submanifold is
-`T_{X→Y}(ξ) = P_{T_Y M} ξ` — one `project` call, rank stays `2r`. It is what
+$T_{X\to Y}(\xi) = P_{T_Y M}\, \xi$ — one `project` call, rank stays $2r$. It is what
 [NRO22]'s reference implementation and geomCG use, and it is what §5's CG used.
 
 In the delta representation there is no shortcut: the deltas at `X` mean nothing
 at `Y`, so the transport is assemble → `project_delta` at `Y`. Cost
-`O(d n r (2r)²) = O(d n r³)`.
+$O(d n r (2r)^2) = O(d n r^3)$.
 
 Measured consequence of *forgetting* it: a first attempt at Riemannian CG added
-`β · η_{k-1}` without re-projecting (a rounding to 1e-13 after the add does not
+$\beta \cdot \eta_{k-1}$ without re-projecting (a rounding to 1e-13 after the add does not
 help — the sum of two tangent vectors at *different* points has no low-rank
-structure to find). The direction's rank then grows by `2r` per iteration until
+structure to find). The direction's rank then grows by $2r$ per iteration until
 the mode sizes bound it, and 300 iterations of completion at `d=6, n=10, r=3`,
-`|Ω| ≈ 4190` took **191 s** against **3.2 s** for the same 300 iterations with
+$|\Omega| \approx 4190$ took **191 s** against **3.2 s** for the same 300 iterations with
 the transport inserted — a 60x self-inflicted cost, and the answer was no
 better. Recorded because it is the single easiest way to get this wrong.
 
 ### 2.5 Riemannian gradient from a Euclidean gradient
 
-`grad f(X) = P_{T_X M} ∇f(X)` ([NRO22] eq. (3.2)). Three ways to get it, and the
+$\operatorname{grad} f(X) = P_{T_X M} \nabla f(X)$ ([NRO22] eq. (3.2)). Three ways to get it, and the
 choice is the whole content of §4:
 
-* (i) form `∇f(X)` as a TT and call `project` — correct, and disastrous when
-  `∇f` has large rank. Measured: for the completion functional with
-  `|Ω| = 200` samples at `d=6, n=4`, the Euclidean gradient `2 P_Ω(X − A)` has
+* (i) form $\nabla f(X)$ as a TT and call `project` — correct, and disastrous when
+  $\nabla f$ has large rank. Measured: for the completion functional with
+  $|\Omega| = 200$ samples at `d=6, n=4`, the Euclidean gradient $2 P_\Omega(X - A)$ has
   TT rank **59** after `tt_svd` at 1e-13, against `r = 3` for `X`. In general
-  its rank is `|Ω|`.
+  its rank is $|\Omega|$.
 * (ii) hand-written adjoints per functional (what [RNO19] does, what t3f's
   "improved" baseline does);
-* (iii) **[NRO22]'s autodiff**: differentiate `g = f ∘ T_X` with respect to the
-  delta cores at `(S_1, 0, ..., 0)` and enforce the gauge. Never forms `∇f`.
+* (iii) **[NRO22]'s autodiff**: differentiate $g = f \circ T_X$ with respect to the
+  delta cores at $(S_1, 0, \dots, 0)$ and enforce the gauge. Never forms $\nabla f$.
   Measured to be correct to 1.9e-15 on exactly that completion functional
   (§4.3).
 
@@ -483,34 +472,34 @@ choice is the whole content of §4:
 | the Lie–Trotter tangent sweep | `riemannian.projector_splitting_add` **and** `ksl._sweep_forward` | two implementations kept on purpose (different local solves), joined by a shared test |
 | retraction | nothing named | `riemannian.retract(X, xi, method=...)`, dispatching to `round` or `projector_splitting_add` |
 
-The rule this table encodes: **`tt.algs.riemannian` owns the geometry of `M_r`;
+The rule this table encodes: **`tt.algs.riemannian` owns the geometry of $M_r$;
 `tt.algs.ksl` owns time integration on it and must not re-derive the geometry.**
 
 ---
 
 ## 3. Cost summary
 
-Notation: `d` modes, mode size `n`, manifold rank `r`, rank of the object being
-projected `r_z`, TT-matrix rank `R`, `b` tangent vectors, `F` = cost of one
+Notation: $d$ modes, mode size $n$, manifold rank $r$, rank of the object being
+projected $r_z$, TT-matrix rank $R$, $b$ tangent vectors, $F$ = cost of one
 evaluation of the objective.
 
 | operation | cost | source |
 |---|---|---|
-| frames `U, V, S` at a point | `d n r³` | [RNO19] §4.1 |
-| `P_X z`, `z` a TT of rank `r_z` | `d n r r_z²` | [RNO19] §4.2 |
-| `P_X (A y)` naive (form `Ay`, then project) | `d n r_y² R² (r + n)` | [RNO19] §4.2 |
-| `P_X (A y)` fused | `d n r r_y R (r_y + n R)` | [RNO19] §4.2 |
-| `P_X (Σ_{q≤ρ} B_q A y)`, `B_q` rank-1 | `ρ · d n r² R (r + n R)` | [RNO19] eq. (25) |
-| `<ξ, η>` from deltas | `d n r²` | [RNO19] eq. (22) |
-| `<ξ, η>` from the rank-`2r` tensors | `d n r³` | [RNO19] §4.3 |
-| Gram of `b` tangent vectors, from deltas | `b² d n r²` | [RNO19] §4.3 |
-| TT-SVD retraction from rank `3r` | `d n r³` | [RNO19] §4.4 |
-| Riemannian gradient by autodiff | `F + d n r³` | [NRO22] Prop. 5.2 |
-| approximate Riemannian Hessian-vector by autodiff | `F + d n r³` | [NRO22] Prop. 6.2 |
+| frames $U, V, S$ at a point | $d n r^3$ | [RNO19] §4.1 |
+| $P_X z$, $z$ a TT of rank $r_z$ | $d n r r_z^2$ | [RNO19] §4.2 |
+| $P_X (A y)$ naive (form $Ay$, then project) | $d n r_y^2 R^2 (r + n)$ | [RNO19] §4.2 |
+| $P_X (A y)$ fused | $d n r r_y R (r_y + n R)$ | [RNO19] §4.2 |
+| $P_X (\sum_{q\le\rho} B_q A y)$, $B_q$ rank-1 | $\rho \cdot d n r^2 R (r + n R)$ | [RNO19] eq. (25) |
+| $\langle \xi, \eta \rangle$ from deltas | $d n r^2$ | [RNO19] eq. (22) |
+| $\langle \xi, \eta \rangle$ from the rank-$2r$ tensors | $d n r^3$ | [RNO19] §4.3 |
+| Gram of $b$ tangent vectors, from deltas | $b^2 d n r^2$ | [RNO19] §4.3 |
+| TT-SVD retraction from rank $3r$ | $d n r^3$ | [RNO19] §4.4 |
+| Riemannian gradient by autodiff | $F + d n r^3$ | [NRO22] Prop. 5.2 |
+| approximate Riemannian Hessian-vector by autodiff | $F + d n r^3$ | [NRO22] Prop. 6.2 |
 
-The `O(F + d n r³) = O(F)` claim of [NRO22] rests on two things that must hold
-in ttpy2 too: the program `p` must be evaluable on a rank-`2r` tensor at cost
-`O(2^q F)` for a polynomial degree `q` (true for every op in `_ops.py`), and
+The $O(F + d n r^3) = O(F)$ claim of [NRO22] rests on two things that must hold
+in ttpy2 too: the program `p` must be evaluable on a rank-$2r$ tensor at cost
+$O(2^q F)$ for a polynomial degree $q$ (true for every op in `_ops.py`), and
 reverse-mode AD must cost a constant times the forward pass (true for torch).
 Both are structural; the measured ratio is in §4.4.
 
@@ -524,7 +513,7 @@ Regime: b300, torch 2.13.0+cu130, backend `torch/cpu`, float64, `d=4, n=3, r=2`,
 symmetric TT-matrix of rank 2, gradient of a scalar functional with respect to
 all TT cores, checked against **central finite differences** (`h = 1e-6`) on
 every core entry; the number reported is
-`max_k ‖g_AD − g_FD‖_∞ / max_k ‖g_FD‖_∞`. Prototype `p1_autograd.py`.
+$\max_k \|g_{AD} - g_{FD}\|_\infty / \max_k \|g_{FD}\|_\infty$. Prototype `p1_autograd.py`.
 
 | functional | status | rel. err vs FD | note |
 |---|---|---|---|
@@ -588,14 +577,14 @@ f.backward()
 # cores[0].grad and cores[1].grad are all NaN
 ```
 
-This is `torch.linalg.svd`'s backward, whose formula contains `1/(σ_i² − σ_j²)`;
+This is `torch.linalg.svd`'s backward, whose formula contains $1/(\sigma_i^2 - \sigma_j^2)$;
 it is not a ttpy2 bug. But **ttpy2 inherits it silently**, and the trigger is
 not exotic: any tensor with a symmetry has degenerate singular values, and a
 QTT Laplacian eigenvector, a permutation-symmetric Hamiltonian ground state and
 `tt.ones` all have them. Two consequences for the design:
 
 * the recommended Riemannian AD of §4.3 **never differentiates through an SVD**
-  — the frames `U, V, S` are computed *outside* the tape and the tape sees only
+  — the frames $U, V, S$ are computed *outside* the tape and the tape sees only
   `cat` and `einsum`. That is not an accident of the algorithm; it is one of its
   main practical virtues, and it is why [NRO22] Alg. 5.2 is the right shape.
 * `tt.algs.autodiff` must **refuse** to differentiate a user function that calls
@@ -606,7 +595,7 @@ QTT Laplacian eigenvector, a permutation-symmetric Hamiltonian ground state and
   §10 test 8 asserts a raise, not a warning.
 
 Also verified: the same experiment on `cuda:0` (chosen after `nvidia-smi` showed
-GPUs 0 and 1 at 0 % utilization; GPUs 2–7 were at 94–100 %) — `<x,x>` at
+GPUs 0 and 1 at 0 % utilization; GPUs 2–7 were at 94–100 %) — $\langle x,x\rangle$ at
 `d=20, n=2, r=20` gave finite gradients on device, dtype float64.
 
 ### 4.3 Riemannian autodiff ([NRO22] Alg. 5.2) — measured correct in our conventions
@@ -621,8 +610,8 @@ D_k  :=  d g / d R_k   at R                          # ordinary reverse-mode AD
 delta_k := D_k - ML(U_k) ( ML(U_k)^H ML(D_k) ),  k < d;   delta_d := D_d
 ```
 
-`assemble` is exactly the `S_k` stack of §2.1 and `T_X(S_1, 0, ..., 0) = X`, so
-`g(R^0) = f(X)`.
+`assemble` is exactly the $S_k$ stack of §2.1 and $T_X(S_1, 0, \dots, 0) = X$, so
+$g(R^0) = f(X)$.
 
 Measured (`p2_tangent.py` §(c), b300, torch CPU float64), against
 `2 · project(X, A X)` computed on the numpy backend — i.e. against the *other*
@@ -634,8 +623,8 @@ route, not against itself:
 | `d=6, n=4, r=3, R_A=2` | **2.63e-15** |
 | `d=8, n=2, r=3, R_A=3` | **2.48e-15** |
 
-and for the completion functional `f(X) = Σ_{Ω} (X_i − a_i)²`, `d=6, n=4, r=3`,
-`|Ω| = 200`, against `project(X, tt_svd(dense Euclidean gradient, 1e-13))`:
+and for the completion functional $f(X) = \sum_{\Omega} (X_i - a_i)^2$, `d=6, n=4, r=3`,
+$|\Omega| = 200$, against `project(X, tt_svd(dense Euclidean gradient, 1e-13))`:
 
 ```
 ||AD grad - P_X(dense Euclidean grad)|| / ||.|| = 1.91e-15
@@ -643,8 +632,8 @@ rank of the Euclidean gradient = 59        (against r = 3 for X)
 ```
 
 **One discrepancy with the paper, worth recording.** [NRO22] eq. (5.11) writes
-the gauge step with a **minus**, `Ṡ_k = ∂g/∂R_k − U_k Σ_j U_k^H ∂g/∂R_j`, while
-Alg. 5.2 line 9 writes `D_k := D_k + U_k^L((U_k^L)^T D_k)` with a **plus**. Only
+the gauge step with a **minus**, $\dot S_k = \partial g/\partial R_k - U_k \sum_j U_k^{H}\, \partial g/\partial R_j$, while
+Alg. 5.2 line 9 writes $D_k := D_k + U_k^L((U_k^L)^T D_k)$ with a **plus**. Only
 the minus is the projection onto the gauge complement, and only the minus
 reproduces `project` — measured 1.5e-15 with minus. Either the paper has a typo
 in Alg. 5.2 or the text extractor lost a sign; t3f's `_enforce_gauge_conditions`
@@ -656,8 +645,8 @@ Our implementation uses the minus and §10 test 3 pins it.
 Regime: b300, float64, CPU restricted to 8 threads (`OMP_NUM_THREADS=8`,
 `MKL_NUM_THREADS=8`, `torch.set_num_threads(8)`), GPU `cuda:0` (0 % utilization
 at the time, checked with `nvidia-smi`), median of 3 runs, TT ranks capped to
-structurally possible values. Objective `f(X) = <A X, X>`, `A` symmetric of
-TT rank `R_A`. Prototype `p7_timing.py`.
+structurally possible values. Objective $f(X) = \langle A X, X\rangle$, $A$ symmetric of
+TT rank $R_A$. Prototype `p7_timing.py`.
 
 "numpy explicit" is `2 · project(X, tt.matvec(A, X))` — i.e. what ttpy2 can do
 today, and what [NRO22] calls the **naive** baseline. ttpy2 has no fused
@@ -679,27 +668,27 @@ Then the shape of the result:
 * On the **QTT-like** case `d=20, n=2, r=10` AD is a wash (1.09x) and the GPU is
   2.7x *slower* than numpy — the tensors are 10x2x10 and everything is launch
   latency. **AD is not a win in the small-QTT regime.**
-* As soon as `n r` grows, AD wins on CPU by 2–17x, because the naive explicit
-  route pays for materializing `A X` at rank `R_A · r` while AD never does.
+* As soon as $n r$ grows, AD wins on CPU by 2–17x, because the naive explicit
+  route pays for materializing $A X$ at rank $R_A \cdot r$ while AD never does.
 * On the GPU the largest case goes from 2184 ms (numpy explicit) to 40.8 ms —
   **54x** — and 130 ms (torch CPU) to 40.8 ms.
 
 This reproduces the qualitative content of [NRO22] Table 2a (their AD beats
-naive by 2.4x and improved by 3.3x on `<AX,X>` at `d=40, n=20, r=20` on CPU) on
+naive by 2.4x and improved by 3.3x on $\langle A X, X\rangle$ at `d=40, n=20, r=20` on CPU) on
 our own code, and it is the measurement that decides §5.
 
 ### 4.5 Beyond the gradient: what the paper gives us for free
 
-* **`stop_gradient`** ([NRO22] §5.3). `P_X B⁻¹(A X − F)` is not the Riemannian
-  gradient of any quadratic when `B A` is nonsymmetric, but it *is*
-  `P_X ∇h` for `h(X) = <B A c(X), X> − <B F, X>` where `c` is the identity with
-  zero derivative. In torch, `c(X)` is `X.detach()`, and every op in `_ops.py`
+* **`stop_gradient`** ([NRO22] §5.3). $P_X B^{-1}(A X - F)$ is not the Riemannian
+  gradient of any quadratic when $B A$ is nonsymmetric, but it *is*
+  $P_X \nabla h$ for $h(X) = \langle B A c(X), X\rangle - \langle B F, X\rangle$ where $c$ is the identity with
+  zero derivative. In torch, $c(X)$ is `X.detach()`, and every op in `_ops.py`
   handles a detached operand without complaint. This is what makes a
   *preconditioned* Riemannian eigensolver or linear solver expressible as an
   autodiff of a scalar, and it is the bridge to §6. Not prototyped.
 * **Approximate Riemannian Hessian-vector product** ([NRO22] §6, Alg. 6.2):
-  `w(X) = <P_{c(X)}∇f, Z> = Σ_k <δG_k, δG_k^Z>` (the cheap inner product of
-  §2.1), then a second Riemannian gradient of `w`. Same `O(F + d n r³)`. The
+  $w(X) = \langle P_{c(X)}\nabla f, Z\rangle = \sum_k \langle \delta G_k, \delta G_k^Z\rangle$ (the cheap inner product of
+  §2.1), then a second Riemannian gradient of $w$. Same $O(F + d n r^3)$. The
   curvature term of the true Riemannian Hessian is omitted, which is what makes
   it stable — the exact term contains inverted singular values ([NRO22] §3,
   citing Absil–Mahony–Trumpf). Not prototyped.
@@ -766,8 +755,8 @@ reproduced verbatim in §8 so that there is one owner and not two proposals.
 
 ### 5.2 Measured: Riemannian GD and CG on tensor completion, against `ttSparseALS`
 
-Problem: recover `A ∈ R^{10×...×10}` (`d = 6`, 10⁶ entries) of TT rank 3 from
-`|Ω|` uniformly random entries. The target is a **random point of `M_3` with
+Problem: recover $A \in \mathbb{R}^{10\times\dots\times10}$ (`d = 6`, 10⁶ entries) of TT rank 3 from
+$|\Omega|$ uniformly random entries. The target is a **random point of $M_3$ with
 left-orthogonal cores** (QR of Gaussian blocks), `dof = 420`. Method: Riemannian
 gradient by autodiff (§4.3), exact line search (the functional is quadratic
 along a tangent direction), TT-SVD retraction. Baseline:
@@ -798,12 +787,12 @@ Four readings, three of them counterweights:
   the fit while GD keeps descending. Neither is "better"; they answer different
   questions. Do not sell Riemannian completion as faster than our ALS.
 * **The iteration count is wildly sample-set dependent.** The same problem, the
-  same `|Ω| = 100 × dof`, a *different draw* of Ω: 59 iterations in one run and
+  same $|\Omega| = 100 \times \mathrm{dof}$, a *different draw* of $\Omega$: 59 iterations in one run and
   **1420** in another (`p3c_dbg.py`; monotone throughout, on a plateau at
   train rel ≈ 0.86 for 1400 iterations and then a drop to 3.4e-13 in a few
   steps). A `maxit` chosen from one run is worthless.
 * **A naive Riemannian CG was measured to be *worse* than GD.** Fletcher–Reeves
-  `β = ‖g_k‖²/‖g_{k-1}‖²`, direction transported by `project`, exact line
+  $\beta = \|g_k\|^2/\|g_{k-1}\|^2$, direction transported by `project`, exact line
   search, restart on a non-descent direction: 2000 iterations without reaching
   1e-6 on the run where GD reached 3.4e-13 at iteration 1420. This is a
   statement about *that* CG, not about geomCG (Steinlechner), which uses a
@@ -817,7 +806,7 @@ nothing in the method detects them.
 
 ### 5.3 Rank adaptation — the central difficulty, and what each option costs
 
-`M_r` is a fixed-rank manifold. Every method in this spec needs `r` as an input,
+$M_r$ is a fixed-rank manifold. Every method in this spec needs $r$ as an input,
 and §2.3 measures that guessing it 2 too high costs 28 orders of magnitude of
 residual on a completion problem. The options, honestly:
 
@@ -827,24 +816,24 @@ residual on a completion problem. The options, honestly:
    `docs/plans/eigenvalues.md` §1.2 documents for `eigb` at `B = 1`.
 2. **Rank continuation** (fit at rank 1, pad with a small random block, refit at
    rank 2, ...). Standard in the completion literature. **Measured and it did
-   not help here**: at `|Ω| = 10 × dof` continuation gave train 6.68e-01 against
+   not help here**: at $|\Omega| = 10 \times \mathrm{dof}$ continuation gave train 6.68e-01 against
    6.49e-01 for a random rank-3 start, and at 30x 7.93e-01 against 8.08e-01 —
    i.e. inside the noise, and both far from the solution (`p3b_completion.py`).
    It costs one full solve per rank level.
-3. **Grow into the normal space.** Compute the component of `−∇f` orthogonal to
-   `T_X M`, truncate it to `kickrank` directions and add it to the iterate —
+3. **Grow into the normal space.** Compute the component of $-\nabla f$ orthogonal to
+   $T_X M$, truncate it to `kickrank` directions and add it to the iterate —
    the manifold analogue of AMEn's residual enrichment, and the same mechanism
    `docs/plans/eigenvalues.md` §2.1 recommends for the eigensolver. We already
-   measure the normal component: `‖(I − P)Z‖` is `ksl.tangent_defect`, and after
-   §1.5 it is `sqrt(‖Z‖² − Σ‖δG_k‖²)`, free once the deltas are computed. The
-   *directions* are not free: extracting them needs `Z − P_X Z` as a TT of rank
-   `r_z + 2r`, one rounding, and then a rank increase at every bond. Cost per
-   step `O(d n r r_z² + d n (r + kickrank)³)`. **Not prototyped.**
+   measure the normal component: $\|(I - P)Z\|$ is `ksl.tangent_defect`, and after
+   §1.5 it is $\sqrt{\|Z\|^2 - \sum \|\delta G_k\|^2}$, free once the deltas are computed. The
+   *directions* are not free: extracting them needs $Z - P_X Z$ as a TT of rank
+   $r_z + 2r$, one rounding, and then a rank increase at every bond. Cost per
+   step $O(d n r r_z^2 + d n (r + \mathrm{kickrank})^3)$. **Not prototyped.**
 4. **BUG-style augment-and-truncate.** `docs/plans/bug-integrator.md` §2.2 has
-   the machinery (augment the frames to `2r`, run the Galerkin step, truncate by
-   a tolerance `θ` and use the discarded singular values as the error estimate).
+   the machinery (augment the frames to $2r$, run the Galerkin step, truncate by
+   a tolerance $\theta$ and use the discarded singular values as the error estimate).
    For optimization rather than integration the augmentation would be
-   `orth([U_k, ML(δG_k)])`, which is exactly the rank-`2r` structure `project`
+   $\mathrm{orth}([U_k, ML(\delta G_k)])$, which is exactly the rank-$2r$ structure `project`
    already returns. This is the option with the strongest theory behind it
    (robustness to small singular values) and it shares an owner with the BUG
    spec. **Not prototyped.**
@@ -852,7 +841,7 @@ residual on a completion problem. The options, honestly:
    the same problems and adapt ranks natively, and §5.2 measures ALS beating
    Riemannian GD 4–5x in wall clock on completion. The Riemannian family earns
    its place where the *rank is genuinely fixed by the budget* (a GPU memory
-   limit, a `b`-eigenvector block whose block-TT rank would otherwise be `B r`,
+   limit, a $b$-eigenvector block whose block-TT rank would otherwise be $B r$,
    §[RNO19]) — not where the rank is a free parameter.
 
 **Recommendation:** ship (1) with a loud residual report, implement (4) once
@@ -873,8 +862,8 @@ this spec needs the comparison against a *genuine* Riemannian step (tangent
 projection + retraction), which that prototype did not have.
 
 Regime: b300, numpy, float64, `tt.qlaplace_dd([d])`, oracle
-`λ_1 = 4 sin²(π/(2(N+1)))`, seed 0, rank cap 4, step from the exact 2x2
-Rayleigh–Ritz in `span{x, z}`. `p4_precond.py` §(1).
+$\lambda_1 = 4 \sin^2(\pi/(2(N+1)))$, seed 0, rank cap 4, step from the exact 2x2
+Rayleigh–Ritz in $\mathrm{span}\{x, z\}$. `p4_precond.py` §(1).
 
 | `d` | `N` | `κ` | method | iterations to rel. 1e-3 | rel. err at the cap | wall |
 |---|---|---|---|---|---|---|
@@ -897,45 +886,39 @@ why.
 
 [RNO19] §4.5 assumes
 
-```
-B^{-1} = B_1 + ... + B_{rho_B},     each B_i a TT-matrix of TT rank 1,
-```
+$$B^{-1} = B_1 + \dots + B_{\rho_B}, \qquad \text{each } B_i \text{ a TT-matrix of TT rank 1},$$
 
-because multiplying a TT-matrix of rank `R` by a rank-1 TT-matrix leaves the
-rank at `R`. Then
+because multiplying a TT-matrix of rank $R$ by a rank-1 TT-matrix leaves the
+rank at $R$. Then
 
-```
-P_x B^{-1} H x  =  P_x B_1 H x + ... + P_x B_{rho_B} H x
-```
+$$P_x B^{-1} H x \;=\; P_x B_1 H x + \dots + P_x B_{\rho_B} H x$$
 
-is assembled term by term at cost `O(b d n r² R (r + nR) ρ_B)`, and no
-intermediate of rank `ρ_B R r` is ever formed. `riemannian.project` **already
+is assembled term by term at cost $O(b d n r^2 R (r + nR)\, \rho_B)$, and no
+intermediate of rank $\rho_B R r$ is ever formed. `riemannian.project` **already
 accepts a list and sums inside** (§1.1), so the ttpy2 realisation of eq. (25) is
 one call.
 
-For a Kronecker-sum operator `A = Σ_i I ⊗ ... ⊗ L ⊗ ... ⊗ I` such a `B^{-1}`
-comes from an exponential sum for `1/λ`: with `1/λ = ∫_0^∞ e^{-λ t} dt` and
-`t = e^s`, the trapezoidal (sinc) rule gives
+For a Kronecker-sum operator $A = \sum_i I \otimes \dots \otimes L \otimes \dots \otimes I$ such a $B^{-1}$
+comes from an exponential sum for $1/\lambda$: with $1/\lambda = \int_0^\infty e^{-\lambda t}\, dt$ and
+$t = e^s$, the trapezoidal (sinc) rule gives
 
-```
-1/lambda  ~  h * sum_{q=-M..M} e^{s_q} exp(-lambda e^{s_q}),   s_q = q h + shift,
-B^{-1}    =  h * sum_q e^{s_q}  exp(-e^{s_q} L) (x) ... (x) exp(-e^{s_q} L),
-```
+$$\frac{1}{\lambda} \;\approx\; h \sum_{q=-M}^{M} e^{s_q} \exp(-\lambda e^{s_q}), \qquad s_q = q h + \mathrm{shift},$$
+$$B^{-1} \;=\; h \sum_q e^{s_q}\, \exp(-e^{s_q} L) \otimes \dots \otimes \exp(-e^{s_q} L),$$
 
 each summand a rank-1 TT-matrix. This is the construction [RNO19] cites
 (Khoromskij, Constr. Approx. 30:599–620, 2009) and the one measured below.
-`shift = -0.5 log(λ_min λ_max)` centres the quadrature on the spectrum.
+$\mathrm{shift} = -0.5 \log(\lambda_{\min} \lambda_{\max})$ centres the quadrature on the spectrum.
 
 ### 6.3 Measured: preconditioning makes the iteration count independent of κ
 
-Problem: `A = Σ_{i=1..D} I ⊗...⊗ L ⊗...⊗ I` with `L` the `n x n` Dirichlet
-Laplacian `tridiag(−1, 2, −1)`, physical modes (not QTT), TT-matrix rank 2.
-Oracle: `λ_1 = D · 4 sin²(π/(2(n+1)))`, exact; the ground state is the product
-of sines, TT rank 1, so the manifold `M_1` **contains the exact answer** and the
+Problem: $A = \sum_{i=1}^{D} I \otimes\dots\otimes L \otimes\dots\otimes I$ with $L$ the $n \times n$ Dirichlet
+Laplacian $\mathrm{tridiag}(-1, 2, -1)$, physical modes (not QTT), TT-matrix rank 2.
+Oracle: $\lambda_1 = D \cdot 4 \sin^2(\pi/(2(n+1)))$, exact; the ground state is the product
+of sines, TT rank 1, so the manifold $M_1$ **contains the exact answer** and the
 only thing being measured is the convergence rate. Preconditioned iteration:
-`z = P_x(Σ_q c_q B_q (A x − λ x))` through the list form of `project`; step from
+$z = P_x(\sum_q c_q B_q (A x - \lambda x))$ through the list form of `project`; step from
 the exact 2x2 Rayleigh–Ritz; retraction `round(·, rmax=1)`.
-`γ = max_{λ∈[λ_min,λ_max]} |1 − λ Σ_q c_q e^{-λ t_q}|` measured on a 4000-point
+$\gamma = \max_{\lambda\in[\lambda_{\min},\lambda_{\max}]} |1 - \lambda \sum_q c_q e^{-\lambda t_q}|$ measured on a 4000-point
 log grid. Regime: b300, numpy, float64, single runs. `p4_precond.py` §(2).
 
 | `D` | `n` | `κ` | `ρ_B` | `γ` | method | it → 1e-3 | it → 1e-8 | wall | final rel. err |
@@ -948,7 +931,7 @@ log grid. Regime: b300, numpy, float64, single runs. `p4_precond.py` §(2).
 | 4 | 512 | 1.07e+05 | 61 | 3.40e-02 | **preconditioned** | **12** | **18** | 2.4 s | 2.87e-09 |
 
 The iteration count of the preconditioned method is **10, 11, 12** across a
-242-fold increase of `κ` — the textbook signature of spectral equivalence, and
+242-fold increase of $\kappa$ — the textbook signature of spectral equivalence, and
 the reason [RNO19] can run Riemannian LOBPCG on vibrational Hamiltonians at all.
 At `κ = 1.07e5` the unpreconditioned Rayleigh quotient after 3000 iterations is
 5.4 times too large; the preconditioned one is correct to 2.9e-09 in 2.4 s.
@@ -957,19 +940,19 @@ Honest counterweights on the same table:
 
 * The **rank-1-per-term structure is what makes it cheap**, and it exists only
   because the operator is a Kronecker sum over *physical* modes. For a **1D QTT**
-  Laplacian, `exp(−tL)` is a single `2^d × 2^d` matrix whose QTT representation
+  Laplacian, $\exp(-tL)$ is a single $2^d \times 2^d$ matrix whose QTT representation
   is not rank-1 across the QTT bonds, so eq. (24) does not apply and this
   construction gives nothing. That is exactly the gap §6.4 hands to BPX.
   **Since measured, and it is worse than "not rank-1":**
   `docs/plans/qtt-elliptic-bpx.md` §2.3 took the TT-SVD of the dense
   `expm(−t A_DN)` at `L = 6, 8, 10` and four values of `t` and found QTT ranks
-  **8–21** (`L`-independent, but not 1), so `ρ_B ≈ 40..60` terms of rank ≈ 15
+  **8–21** (`L`-independent, but not 1), so $\rho_B \approx 40..60$ terms of rank ≈ 15
   would cost more than one AMEn sweep on the preconditioned operator. The
   exponential-sum route does not transfer to the by-scale setting at all.
-* `ρ_B = 41..61` means 41–61 TT matvecs per iteration. Even so the
+* $\rho_B = 41..61$ means 41–61 TT matvecs per iteration. Even so the
   preconditioned run at `n = 512` converged to 2.9e-09 in **2.4 s**, where the
   unpreconditioned run spent **166 s** on 3000 iterations to arrive at a
-  Rayleigh quotient 441 % too large. But the per-iteration cost is `ρ_B` times
+  Rayleigh quotient 441 % too large. But the per-iteration cost is $\rho_B$ times
   higher, so on a problem where the unpreconditioned method converges in ~20
   iterations the preconditioner loses. The `n = 32` row shows the discount
   already: 875 → 16 iterations to 1e-8 is a factor 55, but 1.4 s → 0.1 s is only
@@ -982,16 +965,16 @@ Honest counterweights on the same table:
 Identical to the interface `docs/plans/eigenvalues.md` §3.3 states, and it must
 stay one interface. Restated from this side:
 
-1. `B⁻¹` must be exposable **as a list of rank-1 TT-matrices**, not only as a
+1. $B^{-1}$ must be exposable **as a list of rank-1 TT-matrices**, not only as a
    black-box `apply`. `project(X, [B_1 @ z, ..., B_ρ @ z])` is then the whole
-   preconditioned projected residual, and no intermediate of rank `ρ R r` exists.
+   preconditioned projected residual, and no intermediate of rank $\rho R r$ exists.
    A callable `prec(z) -> tt.vector` must also be accepted (it is what a BPX
    with a multilevel structure will naturally be), but it is the slow path and
    the API should say so.
 
    **Corrected by measurement, from the BPX side.** `docs/plans/qtt-elliptic-bpx.md`
    §4.2 item 1 answers this and rejects both halves: BPX is a **single
-   `tt.matrix`** of TT rank `2^{2D+1}` — measured exactly 8 / 32 / 128 for
+   `tt.matrix`** of TT rank $2^{2D+1}$ — measured exactly 8 / 32 / 128 for
    `D = 1, 2, 3`, independent of `L` up to `L = 50` (their §1.5) — it cannot be
    made into a sum of rank-1 terms, and it is **not** a slow path (one matvec
    plus one rounding, the cost of one extra matvec by `A`, whose rank is 3–4).
@@ -999,9 +982,9 @@ stay one interface. Restated from this side:
    case measured in §6.3 below, and only for it. The reconciled contract — three
    accepted forms, each declaring its side (`'left'` vs `'two-sided'`) and its
    rank, plus what it forbids — is `docs/plans/ROADMAP.md` §3.
-2. SPD, or the 2x2 / 3b x 3b Rayleigh–Ritz that chooses the step loses its
+2. SPD, or the $2\times2$ / $3b \times 3b$ Rayleigh–Ritz that chooses the step loses its
    variational characterization.
-3. Spectral equivalence with `d`- and mesh-independent constants — §6.3 measures
+3. Spectral equivalence with $d$- and mesh-independent constants — §6.3 measures
    what that buys (10 → 12 iterations across `κ = 4e2 → 1e5`).
 4. [BK20] is the source for the QTT case, and it says something this spec cannot
    ignore: applying a BPX preconditioner to a low-rank representation cures the
@@ -1036,12 +1019,12 @@ deltas_to_tangent_space(deltas, tt, left, right)   # deltas -> block cores
 ```
 
 The "projected" representation is **not** a separate container: it is an
-ordinary rank-`2r` `TensorTrain` with a monkey-patched python attribute
+ordinary rank-$2r$ `TensorTrain` with a monkey-patched python attribute
 `tt.projection_on = where` holding a *reference* to the base point, and
 `tangent_space_to_deltas` recovers the deltas by *slicing the block cores*
 (`slice(r/2, None)` on the left rank axis, `slice(0, r/2)` on the right). Three
 functions require the attribute and raise without it; everything else in the
-library treats a projected TT as a plain rank-`2r` TT and silently destroys the
+library treats a projected TT as a plain rank-$2r$ TT and silently destroys the
 structure. `deltas_to_tangent_space` is deliberately **not** exported, with the
 docstring "This function is hard to use correctly because deltas should abey the
 so called gauge conditions. If the don't, the function will silently return
@@ -1071,7 +1054,7 @@ Test coverage is two tests.
 | `_enforce_gauge_conditions` | **yes**, inside `riemannian_grad` | settles the sign question of §4.3 |
 | `_is_invariant_to_input_transforms` runtime check | **yes**, and make it an error not a print | §10 test 8 |
 | `project_sum(what, where, weights)` | **already have it** — our `project(X, [Z...])` is `project_sum`; add `weights` | §8(a) |
-| `pairwise_flat_inner_projected` | **yes**, as `tangent_gram` | `O(b²dnr²)` vs `O(b²dnr³)`, [RNO19] eq. (22) |
+| `pairwise_flat_inner_projected` | **yes**, as `tangent_gram` | $O(b^2 d n r^2)$ vs $O(b^2 d n r^3)$, [RNO19] eq. (22) |
 | `add_n_projected` | **yes**, as delta arithmetic | rank-preserving sum of tangent vectors |
 | `project_matmul` (fused `P_x (M @ z)`) | later | §4.4 shows AD already beats our naive route; revisit if a hand-written path is wanted |
 | `hessian_vector_product` | later | [NRO22] §6; §5.1 item 7 |
@@ -1133,8 +1116,8 @@ duplicated authority the project forbids. The differences: eigenvalues.md has
 `project_delta(X, Z, *, weights=None, frames=None) -> (deltas, Frames)`. **This
 spec's signature wins**, for two measured reasons: the caller almost always
 needs the frames immediately afterwards (`tangent_to_tt`, `transport`,
-`riemannian_grad` all do, and rebuilding them is the `O(d n r³)` term of §3),
-and the `weights`/list form is what §6.3 measured at `ρ_B = 61`. When this lands,
+`riemannian_grad` all do, and rebuilding them is the $O(d n r^3)$ term of §3),
+and the `weights`/list form is what §6.3 measured at $\rho_B = 61$. When this lands,
 `docs/plans/eigenvalues.md` §4(b) must be amended to point here rather than
 restate it.
 
@@ -1365,9 +1348,9 @@ except where the test is explicitly about two code paths agreeing.
 
 2. **The gauge condition and the rebuild.** `project_delta` then `tangent_to_tt`
    must reproduce `project` to `4 * eps(dtype) * scale`, and
-   `max_k |ML(δG_k)^H ML(U_k)|` must be below `8 * eps * d`. Oracle: the
+   $\max_k |ML(\delta G_k)^{H} ML(U_k)|$ must be below $8 \cdot \varepsilon \cdot d$. Oracle: the
    definition, [RNO19] eq. (21). Measured today: rebuild 2.9e-16 … 9.5e-16,
-   gauge 7.9e-16 … 4.3e-14 (the 4.3e-14 at `d = 10`, i.e. it grows with `d` and
+   gauge 7.9e-16 … 4.3e-14 (the 4.3e-14 at `d = 10`, i.e. it grows with $d$ and
    the threshold must too).
 
 3. **The cheap inner product equals the TT contraction.** `tangent_inner(a, b)`
@@ -1377,15 +1360,15 @@ except where the test is explicitly about two code paths agreeing.
    Alg. 5.2 "+" instead of the "−" of its eq. (5.11), the deltas are not in the
    gauge complement and this test fails.
 
-4. **Riemannian autodiff against `project(X, ∇f)`.** `f(X) = <A X, X>` with
-   symmetric `A`, whose Euclidean gradient `2 A X` we can form: assert
+4. **Riemannian autodiff against `project(X, ∇f)`.** $f(X) = \langle A X, X\rangle$ with
+   symmetric $A$, whose Euclidean gradient $2 A X$ we can form: assert
    `‖riemannian_grad(f, X) − 2 project(X, A X)‖ / ‖·‖ <= 1e-13`. Measured
    1.5e-15, 2.6e-15, 2.5e-15 (§4.3). The one place where comparing against our
    own code is the right test: it pins that the two routes to the same
    mathematical object agree.
 
 5. **THE FAIL-LOUD TEST: an underdetermined completion.** `d=6, n=10`, target of
-   TT rank 3 with orthogonal cores, `|Ω| = 10 × dof = 4200`. Measured (§5.2):
+   TT rank 3 with orthogonal cores, $|\Omega| = 10 \times \mathrm{dof} = 4200$. Measured (§5.2):
    both Riemannian GD (3000 iterations, 27.6 s) and `ttSparseALS` (300 sweeps,
    2.0 s) stop with a *training* error of 0.59 and a *test* error of 2.4 and
    11.7 respectively — a fit worse than returning zero. Assert that
@@ -1423,15 +1406,15 @@ except where the test is explicitly about two code paths agreeing.
 
 10. **The preconditioned iteration count is `κ`-independent.** `D=4` Laplacian,
     physical modes, `n = 32` and `n = 128`, manifold rank 1, sinc exponential
-    sum with `ρ_B = 41 / 51`. Oracle: `λ_1 = D 4 sin²(π/(2(n+1)))`, analytic.
+    sum with $\rho_B = 41 / 51$. Oracle: $\lambda_1 = D\, 4 \sin^2(\pi/(2(n+1)))$, analytic.
     Assert the preconditioned run reaches relative 1e-8 in `<= 25` iterations at
-    both `n` (measured 16 and 17, §6.3) **and** that the unpreconditioned run at
+    both $n$ (measured 16 and 17, §6.3) **and** that the unpreconditioned run at
     `n = 128` does not reach 1e-3 in 200 (measured: not in 3000). The second
     assertion is what makes the test about the preconditioner and not about the
     problem.
 
 11. **`retract(X, 0) == X`, and first-order accuracy.**
-    `‖retract(X, t ξ) − (X + t ξ)‖ = O(t²)` for tangent `ξ`, checked at
+    `‖retract(X, t ξ) − (X + t ξ)‖ = O(t²)` for tangent $\xi$, checked at
     `t = 1e-1, 1e-2, 1e-3` with an observed order in `[1.8, 2.2]`. Oracle: the
     definition of a retraction. `test_projector_splitting_add_is_a_first_order_retraction`
     exists and does this for `method='psa'`; extend to `'svd'`.
@@ -1456,24 +1439,24 @@ verified here.
 
 ### 11.1 (i) Tensor completion at known rank
 
-`d = 6`, `n = 10`, target a random point of `M_3` with left-orthogonal cores
-(QR of Gaussian blocks), `dof = 420`, `|Ω| ∈ {10, 30, 100, 300} × dof` uniform
+`d = 6`, `n = 10`, target a random point of $M_3$ with left-orthogonal cores
+(QR of Gaussian blocks), `dof = 420`, $|\Omega| \in \{10, 30, 100, 300\} \times \mathrm{dof}$ uniform
 without replacement, seed 5, test set 50 000 held-out entries.
 Reference: **measured here** (§5.2). The regime boundary is the useful number:
 at 10x and 30x nothing recovers the tensor (train 0.59/0.76, test 2.4/2.3); at
 100x Riemannian GD reaches train 1.6e-13 / test 2.0e-13 in 59 iterations and
 5.4 s, `ttSparseALS` reaches 6.6e-08 in 20 sweeps and 1.2 s.
-Difficulty: the plateau. The same `|Ω| = 100 × dof` with a different draw of Ω
+Difficulty: the plateau. The same $|\Omega| = 100 \times \mathrm{dof}$ with a different draw of $\Omega$
 took **1420** iterations instead of 59 (measured).
 
 **A hypothesis that was measured and did not hold, recorded so it is not
 re-tried.** The first target was built from raw Gaussian cores rather than
-orthogonal ones and nothing converged at `|Ω| ∈ {4, 10} × dof` (train 0.40–0.69,
+orthogonal ones and nothing converged at $|\Omega| \in \{4, 10\} \times \mathrm{dof}$ (train 0.40–0.69,
 test 1.7–10.8, for Riemannian GD, Riemannian CG and `ttSparseALS` alike). The
 natural explanation — a Gaussian-core TT is entrywise spiky, so a uniform sample
 set sees none of the mass — was tested by switching the target to
 left-orthogonal cores. **It changed nothing at that sampling ratio**: on the
-orthogonal target with `|Ω| = 4200 ≈ 10 × dof`, `ttSparseALS` from three
+orthogonal target with $|\Omega| = 4200 \approx 10 \times \mathrm{dof}$, `ttSparseALS` from three
 different random starts reached train 0.586 / 0.595 / 0.597 and a *full-tensor*
 relative error of 6.4 / 8.1 / 6.3, while the same ALS started **from the true
 tensor** stayed at a full-tensor error of 3.2e-15 with a fit of 4.3e-30
@@ -1487,7 +1470,7 @@ which is not measured.)
 ### 11.2 (i) Rayleigh-quotient minimization, 1D QTT Laplacian
 
 `A = tt.qlaplace_dd([d])`, `d = 6, 8, 10`, manifold rank 4.
-Reference: `λ_1 = 4 sin²(π/(2(N+1)))`, analytic, `N = 2^d`.
+Reference: $\lambda_1 = 4 \sin^2(\pi/(2(N+1)))$, analytic, $N = 2^d$.
 **Measured here** (§6.1): 1413 iterations (truncated SD) and 1398 (Riemannian
 GD) to 1e-3 at `d = 6`; neither reaches 1e-3 at `d ≥ 8`. This is the *negative*
 benchmark: it is in the suite to keep anyone from claiming a Riemannian
@@ -1495,37 +1478,37 @@ eigensolver is usable on QTT elliptic problems without a preconditioner.
 
 ### 11.3 (i) Kronecker-sum Laplacian with an exponential-sum preconditioner
 
-`A = Σ_{i=1..D} I ⊗ ... ⊗ L ⊗ ... ⊗ I`, `L = tridiag(−1,2,−1)` of size `n × n`,
-`D = 4`, `n ∈ {32, 128, 512}`, manifold rank 1, `B⁻¹` a sinc exponential sum with
-`ρ_B = 41/51/61` rank-1 TT-matrix terms.
-Reference: `λ_1 = D · 4 sin²(π/(2(n+1)))`, analytic. **Measured here** (§6.3):
+$A = \sum_{i=1}^{D} I \otimes \dots \otimes L \otimes \dots \otimes I$, $L = \mathrm{tridiag}(-1,2,-1)$ of size $n \times n$,
+`D = 4`, $n \in \{32, 128, 512\}$, manifold rank 1, $B^{-1}$ a sinc exponential sum with
+$\rho_B = 41/51/61$ rank-1 TT-matrix terms.
+Reference: $\lambda_1 = D \cdot 4 \sin^2(\pi/(2(n+1)))$, analytic. **Measured here** (§6.3):
 preconditioned 10/11/12 iterations to 1e-3 and 16/17/18 to 1e-8 across
 `κ = 4.4e2 … 1.1e5`; unpreconditioned 475 at `κ=4.4e2` and never at `κ ≥ 6.7e3`.
 This is the benchmark that makes the preconditioner interface (§6.4) testable
 without waiting for BPX.
 
-### 11.4 (ii) Riemannian linear solve `A X = F` with `stop_gradient`
+### 11.4 (ii) Riemannian linear solve $A X = F$ with `stop_gradient`
 
-`A = tt.qlaplace_dd([d]*D)`, `F` a rank-1 right-hand side, objective
-`h(X) = <B A c(X), X> − <B F, X>` ([NRO22] §5.3), preconditioner as in 11.3 for
+`A = tt.qlaplace_dd([d]*D)`, $F$ a rank-1 right-hand side, objective
+$h(X) = \langle B A c(X), X\rangle - \langle B F, X\rangle$ ([NRO22] §5.3), preconditioner as in 11.3 for
 the physical-mode case. Reference: `amen_solve` at `eps = 1e-10`, plus the
-residual `‖A X − F‖ / ‖F‖` as a self-contained oracle. Difficulty: this is the
+residual $\|A X - F\| / \|F\|$ as a self-contained oracle. Difficulty: this is the
 first test of `stop_gradient` in ttpy2 (`X.detach()` on the torch backend) and
-of a *nonsymmetric* `B A`. **Not measured.**
+of a *nonsymmetric* $B A$. **Not measured.**
 
-### 11.5 (ii) Rayleigh quotient with a fixed block of `b` eigenvectors
+### 11.5 (ii) Rayleigh quotient with a fixed block of $b$ eigenvectors
 
 The LRRAP setting of [RNO19] §3.2. Owned by `docs/plans/eigenvalues.md` §2.2;
-this spec supplies `tangent_gram` (the `O(b² d n r²)` Gram) and the `prec=` list
+this spec supplies `tangent_gram` (the $O(b^2 d n r^2)$ Gram) and the `prec=` list
 interface. Reference and parameters: `docs/plans/eigenvalues.md` §9.3.
 
 ### 11.6 (ii) Riemannian Hessian-vector product against finite differences of the gradient
 
-`f = <A X, X>`, `Z` a tangent vector: `H_X[Z] = 2 P_X A Z` exactly, so the
+$f = \langle A X, X\rangle$, $Z$ a tangent vector: $H_X[Z] = 2 P_X A Z$ exactly, so the
 oracle is `2 project(X, tt.matvec(A, tangent_to_tt(X, Z)))`. Assert 1e-13.
 The one problem where the approximate Hessian and the true one coincide (the
 curvature term vanishes for a quadratic at a stationary point only — so the test
-must be read as "the implemented object is `P_X ∇² f Z`", not "the Riemannian
+must be read as "the implemented object is $P_X \nabla^2 f Z$", not "the Riemannian
 Hessian"). **Not measured.**
 
 ### 11.7 (iii) Hénon–Heiles / molecular vibrational spectra
@@ -1538,8 +1521,8 @@ in hand.
 
 ### 11.8 (iii) Exponential machines / a TT-parametrized model trained by Riemannian optimization
 
-[NRO22] §7.1's fifth benchmark: `f(X) = Σ_i h(<X, W^{(i)}>, y^{(i)})` with rank-1
-`W^{(i)}`, `d = 10`, `n = 500`, minibatch 32. Reference: t3f's published timings
+[NRO22] §7.1's fifth benchmark: $f(X) = \sum_i h(\langle X, W^{(i)}\rangle, y^{(i)})$ with rank-1
+$W^{(i)}$, `d = 10`, `n = 500`, minibatch 32. Reference: t3f's published timings
 (§7.3) and the accuracy of Novikov–Trofimov–Oseledets. Aspirational because it
 needs a data loader and a batch container, not because of the mathematics. It is
 the benchmark that would justify the batch TT container of §7.2.
@@ -1586,8 +1569,8 @@ the benchmark that would justify the batch TT container of §7.2.
 * **Every completion number is a single run at a single seed**, and §5.2 measures
   a 24x spread in iteration count between two draws of Ω at the same `|Ω|`. Treat
   those iteration counts as orders of magnitude.
-* **No measurement of `tangent_gram` at large `b`.** The `O(b² d n r²)` versus
-  `O(b² d n r³)` claim is [RNO19] eq. (22) plus our 8e-16 agreement check at
+* **No measurement of `tangent_gram` at large $b$.** The $O(b^2 d n r^2)$ versus
+  $O(b^2 d n r^3)$ claim is [RNO19] eq. (22) plus our 8e-16 agreement check at
   `b = 2`, not a timing.
 * **t3f was audited from source but not executed** (no TensorFlow on either
   host). In particular `utils.in_eager_mode()` calls `context.in_eager_mode()`,
@@ -1608,7 +1591,7 @@ count failures; the ones that matter are formatting and comparisons in
 `tests/test_backend_torch.py` and `tests/test_algs_torch.py`. Cheap, not yet run.
 
 **Q2 — In the QTT regime, is a Riemannian step ever worth it?** §1.2 measures
-`project` as dispatch-bound at `n = 2` (flat in `r_z` from 20 to 80), §4.4
+`project` as dispatch-bound at `n = 2` (flat in $r_z$ from 20 to 80), §4.4
 measures AD as a wash at `d=20, n=2, r=10` and the GPU as 2.7x *slower* there,
 and §6.1 measures the tangent projection buying nothing over plain truncation.
 The experiment: take the one QTT problem where the rank is genuinely fixed by a
@@ -1617,8 +1600,8 @@ memory budget (a `b`-eigenvector block, `docs/plans/eigenvalues.md` §7.4 measur
 wall time. Until then, this spec's QTT claims are all negative ones.
 
 **Q3 — Does growing into the normal space work?** §5.3 option 3. The signal is
-free (`‖(I−P)∇f‖`, §1.5); the directions are not. The experiment: completion at
-`|Ω| = 30 × dof`, where §5.2 measures *both* fixed-rank methods stalling at 0.76,
+free ($\|(I-P)\nabla f\|$, §1.5); the directions are not. The experiment: completion at
+$|\Omega| = 30 \times \mathrm{dof}$, where §5.2 measures *both* fixed-rank methods stalling at 0.76,
 with `kickrank ∈ {0, 1, 2}` added to every bond every 10 iterations, comparing
 the held-out error. If it does not beat 0.76 there, the option is dead.
 
@@ -1659,7 +1642,7 @@ benchmark (§7.3) shows batching buying 5x on CPU and 5–1000x on GPU per objec
 and [RNO19]'s whole cost argument for `b = 84` eigenvectors rests on it
 (`docs/plans/eigenvalues.md` §11 Q6 asks the same question from the other side).
 The experiment that settles it for us: implement `tangent_gram` twice — once as
-`b²` calls to `tangent_inner`, once as one batched `einsum` over a
+$b^2$ calls to `tangent_inner`, once as one batched `einsum` over a
 `(b, r, n, r)` delta stack — and time both on b300 CPU and GPU at
 `b = 4, 16, 64`. This is a half-day experiment and it decides whether the batch
 container of §7.2 goes in before or after the optimizers.

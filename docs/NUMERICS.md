@@ -23,8 +23,8 @@ for legacy behaviour, [BENCHMARKS.md](BENCHMARKS.md) for the benchmark suite,
 
 ### Attainable residual (the accuracy floor)
 
-The relative residual is bounded below by `eps_machine * ||A|| ||x|| / ||f||`.
-For the QTT Laplacian on `2^12` points with a constant right-hand side that
+The relative residual is bounded below by $\varepsilon_{\text{machine}} \|A\| \|x\| / \|f\|$.
+For the QTT Laplacian on $2^{12}$ points with a constant right-hand side that
 factor is 6.1e6, so the floor is ~1e-9 in float64.
 
 Measured there, with the residual evaluated in double-double
@@ -59,7 +59,7 @@ optimistic by more than that — which is what
 
 ### Why `check_true_res` is off by default
 
-Forming `A x` multiplies the ranks. Measured on a preconditioned 2D QTT system
+Forming $A x$ multiplies the ranks. Measured on a preconditioned 2D QTT system
 (`r_A = 161`, `r_x = 122`): the product reaches rank 19642, one core is 12.3 GB,
 peak 91.8 GB — for a number that is only reported. The same product rounded to
 1e-12 has rank 256, so none of that size is needed; it exists only long enough
@@ -71,7 +71,7 @@ rank 20), which is why this is a warning and not a refusal.
 
 ### `max_full_size`: where the dense local solve stops paying
 
-QTT Laplacian `2^12` to `eps=1e-6`: 444 ms at `max_full_size=50` against 8 ms at
+QTT Laplacian $2^{12}$ to `eps=1e-6`: 444 ms at `max_full_size=50` against 8 ms at
 the default, and the dense route also reached a *better* residual (1.1e-9
 against 1.8e-7) with lower ranks. Raise it when the local systems are hard for
 GMRES, not for speed.
@@ -136,33 +136,33 @@ thin blocks of moderate condition number.
 
 ### `_gram_svd`: where the orthogonality goes
 
-Orthogonality of `u` degrades like `eps_machine * cond(a)^2` rather than
-`eps_machine`. Measured on a dense `a` of size 4096x64 with a logarithmically
+Orthogonality of `u` degrades like $\varepsilon_{\text{machine}} \mathrm{cond}(a)^2$ rather than
+$\varepsilon_{\text{machine}}$. Measured on a dense `a` of size $4096 \times 64$ with a logarithmically
 graded spectrum, float64, seed 90 (reproduced by
 `test_gram_orthogonality_degrades_with_the_condition_number`):
 
-| cond(a) | gram, dev. of `u^H u` from `I` | direct QR, dev. of `q^H q` from `I` |
+| $\mathrm{cond}(a)$ | gram, dev. of $u^H u$ from $I$ | direct QR, dev. of $q^H q$ from $I$ |
 |---|---|---|
 | 1e0 | 9.6e-15 | 2.9e-15 |
 | 1e3 | 6.0e-11 | 2.5e-15 |
 | 1e7 | 2.3e-03 | 2.8e-15 |
 
-The direct path is flat in `cond(a)`; the Gram path is not, and at `cond(a) =
-1e7` it has no orthogonality left. The *reconstruction* `u diag(s) vh ~ a` stays
+The direct path is flat in $\mathrm{cond}(a)$; the Gram path is not, and at
+$\mathrm{cond}(a) = 10^7$ it has no orthogonality left. The *reconstruction* `u diag(s) vh ~ a` stays
 at ~1e-15 throughout — it is the orthogonality of the frame, not the
 factorization, that is lost, and an ALS sweep depends on exactly that.
 
 ### The left-orthogonality check has to follow the precision
 
-A genuinely orthogonal float32 core comes out of a QR at `||Q^H Q - I|| ~ 5e-8`,
+A genuinely orthogonal float32 core comes out of a QR at $\|Q^H Q - I\| \sim 5 \times 10^{-8}$,
 so a fixed `1e-8` threshold rejects correct input in float32. The threshold is
-`1e3 * eps`: 1.2e-4 in float32, 1e-8 in float64, while a core that is not
+$10^3 \varepsilon$: 1.2e-4 in float32, 1e-8 in float64, while a core that is not
 orthogonal at all misses by O(1).
 
 ### What `z` is
 
-`z` is an orthogonal projection of `r = (A x - y)/||y||` onto a
-rank-`kickrank` subspace, so `<z, r> = ||z||^2` — measured to four digits. That
+`z` is an orthogonal projection of $r = (A x - y)/\|y\|$ onto a
+rank-`kickrank` subspace, so $\langle z, r \rangle = \|z\|^2$ — measured to four digits. That
 identity is the only property distinguishing a correct `z` from an arbitrary
 enrichment subspace, since the accuracy of `y` is blind to it
 (`test_z_is_the_projection_of_the_residual`).
@@ -177,7 +177,7 @@ enrichment subspace, since the accuracy of `y` is blind to it
 threshold of the stopping rule (relative change between two sweeps) and the
 accuracy of the final rounding. The sweeps do not truncate locally.
 
-Measured on `1/(1+t)`, `t = (i+1)/2^d` on a binary QTT grid, relative error on
+Measured on $1/(1+t)$, $t = (i+1)/2^d$ on a binary QTT grid, relative error on
 2000 held-out points (`n_check`), float64, default `kickrank=5`, achieved
 divided by requested:
 
@@ -194,7 +194,7 @@ measurement on one smooth function, not a promise.
 ### The failure cross cannot see by itself
 
 A feature carried by a few entries. For `funs` equal to 1 at a single point of a
-`6^5` grid and 1e-3 elsewhere, the run returns the constant 1e-3 (relative error
+$6^5$ grid and 1e-3 elsewhere, the run returns the constant 1e-3 (relative error
 0.995) with `converged=True` and a relative change between sweeps of 1e-15.
 Only `n_check` large enough to hit the feature sees it: 3000 points did, 20 did
 not. Nothing else can.
@@ -216,7 +216,7 @@ relative accuracy is what is wanted.
 ### Why the local basis is not truncated (`_left_basis`)
 
 Truncating the local basis lets the greedy index sets reach a fixed point far
-above `eps`. Measured on `1/(1 + i_1 + ... + i_4)`, `n = 8`, `eps = 1e-10`: the
+above `eps`. Measured on $1/(1 + i_1 + \cdots + i_4)$, `n = 8`, `eps = 1e-10`: the
 ranks lock and the error stops there.
 
 ### `_select_rows`: the enrichment that moves the failure mode
@@ -258,28 +258,28 @@ second one specifically — see [test tolerances](#test-tolerances-and-oracles).
 Full derivation and measurements:
 [plans/qtt-elliptic-bpx.md](plans/qtt-elliptic-bpx.md).
 
-### Why `C A C` must never be assembled
+### Why $C A C$ must never be assembled
 
-Its entries cancel over `4^d`, so rounding the triple product represents a
-matrix with error growing like `4^d * eps`: measured 1.3e-10 at `d = 10`,
-6.0e-04 at `d = 20`, 4.8e+14 at `d = 50`, while the fused `Theta` form stays at
+Its entries cancel over $4^d$, so rounding the triple product represents a
+matrix with error growing like $4^d \varepsilon$: measured 1.3e-10 at `d = 10`,
+6.0e-04 at `d = 20`, 4.8e+14 at `d = 50`, while the fused $\Theta$ form stays at
 1.4e-14. The rank tells the same story: `round(C A C)` was measured at 96, 135,
-185 for `d = 10, 14, 18`, growing with `d`, while `Theta` is rank 6 and `B` rank
+185 for `d = 10, 14, 18`, growing with `d`, while $\Theta$ is rank 6 and $B$ rank
 17, flat in `d`.
 
 ### End to end
 
-`-u'' = 1` with `u(0) = 0, u'(1) = 0`, AMEn at `eps = 1e-10`, b300 / numpy /
+$-u'' = 1$ with $u(0) = 0, u'(1) = 0$, AMEn at `eps = 1e-10`, b300 / numpy /
 float64, interleaved runs:
 
-| d | unpreconditioned | `B = Theta^T Theta` |
+| d | unpreconditioned | $B = \Theta^T \Theta$ |
 |---|---|---|
 | 10 | 30 sweeps, 0.63 s, 4.1e-10 | 7 sweeps, 0.07 s, 2.3e-14 |
 | 18 | 30 sweeps, 2.51 s, 8.6e-06 | 7 sweeps, 0.18 s, 8.1e-14 |
 | 26 | 30 sweeps, 11.1 s, 4.1e-01 | 7 sweeps, 0.41 s, 1.7e-13 |
 | 30 | 30 sweeps, 23.3 s, 1.03 | 7 sweeps, 0.51 s, 1.8e-13 |
 
-At `d = 30` that is `2^30` unknowns, 46x faster, and the unpreconditioned answer
+At `d = 30` that is $2^{30}$ unknowns, 46x faster, and the unpreconditioned answer
 is simply wrong (relative error 1.03) — reported as such by `amen_solve`, which
 does not converge and says so.
 
@@ -304,29 +304,29 @@ of 50. Hence `check_residual` and `block_residuals`.
 
 ### The denominator of the eigenresidual
 
-`||A y_i||` (that is, `lam_i`) asks every eigenvalue to be accurate
+$\|A y_i\|$ (that is, $\lambda_i$) asks every eigenvalue to be accurate
 *relatively*, which no eigensolver at truncation accuracy `eps` can deliver near
 the bottom of the spectrum: on `qlaplace_dd([10])` with `B = 4` the pairs are
-right to 1e-9 absolute, yet `res/||A y||` is 3.0e-04 because `lam_1 = 9.4e-06`.
+right to 1e-9 absolute, yet $\mathrm{res}/\|A y\|$ is 3.0e-04 because $\lambda_1 = 9.4 \times 10^{-6}$.
 
-`||A||_F` overestimates in exactly the regime that matters — measured 78.4
-against `||A||_2 = 4.0` for the same operator, and 41.6 against 4.26 for a
+$\|A\|_F$ overestimates in exactly the regime that matters — measured 78.4
+against $\|A\|_2 = 4.0$ for the same operator, and 41.6 against 4.26 for a
 10-site Heisenberg chain. A denominator 10-20x too large desensitizes the
 warning by the same factor.
 
 `spectral_norm_estimate` is used instead. It is a *lower* bound, so it can only
-make the warning more eager. Measured against a dense `||A||_2` at `its=12`:
+make the warning more eager. Measured against a dense $\|A\|_2$ at `its=12`:
 0.94-0.97 of the truth on `qlaplace_dd`, 0.97 on Heisenberg, in 25-40 ms — and
 both operators have a clustered top of the spectrum, the slow case for power
 iteration, so this is close to the worst it does.
 
 ### Thresholds have to follow the precision
 
-`sym_tol` defaults to `sqrt(eps_machine)`: 1.5e-8 in float64, 3.5e-4 in float32.
+`sym_tol` defaults to $\sqrt{\varepsilon_{\text{machine}}}$: 1.5e-8 in float64, 3.5e-4 in float32.
 A fixed 1e-8 would reject every float32 problem, whose projected local matrices
 are asymmetric at the 1e-7 level from rounding alone.
 
-`res_warn` defaults to `sqrt(eps)` floored at `8 * eps_machine` — the residual a
+`res_warn` defaults to `sqrt(eps)` floored at $8 \varepsilon_{\text{machine}}$ — the residual a
 converged run actually reaches, since the eigenvalue error is quadratic in the
 eigenvector error while the residual is linear. A *fixed* threshold is the wrong
 shape: 1e-2 left six silent decades between an `eps=1e-8` request and the
@@ -335,8 +335,8 @@ See [plans/eigenvalues.md](plans/eigenvalues.md).
 
 ### `block_residuals` forms the residual vector
 
-Expanding `||z||^2 - 2 lam <z, y> + lam^2 ||y||^2` instead cancels down to
-`sqrt(eps) ||A y||` and would report 1e-9 where the truth is 1e-16.
+Expanding $\|z\|^2 - 2 \lambda \langle z, y \rangle + \lambda^2 \|y\|^2$ instead cancels down to
+$\sqrt{\varepsilon} \|A y\|$ and would report 1e-9 where the truth is 1e-16.
 
 ---
 
@@ -345,7 +345,7 @@ Expanding `||z||^2 - 2 lam <z, y> + lam^2 ||y||^2` instead cancels down to
 ### The splitting order is only visible against the projected flow
 
 The order is verified against the dense solution of the *projected* ODE
-`y' = P_{T_y M} A y` — the equation this integrator discretizes — where the
+$y' = P_{T_y M} A y$ — the equation this integrator discretizes — where the
 observed orders are 1.00 and 2.00. Measured against `expm(tau A) y0` instead,
 the two schemes are indistinguishable: either the manifold contains the
 trajectory and both are exact, or it does not and the tau-independent modelling
@@ -354,9 +354,9 @@ error hides the splitting error.
 ### `err_est` and the error part company when the flow grows
 
 The Krylov error estimate is normalized by the norm of the *input*. On a
-strongly non-normal operator with `||exp(A) x|| / ||x|| ~ 1e5`, asking for
+strongly non-normal operator with $\|\exp(A) x\| / \|x\| \sim 10^5$, asking for
 `tol = 1e-10` delivers 5.5e-8 relative to the result and reports
-`err_est = 6.4e-2`. Inside KSL, where `tau ||B||` is small, the two agree.
+`err_est = 6.4e-2`. Inside KSL, where $\tau \|B\|$ is small, the two agree.
 
 ### `step_error_est` is an indicator, not a bound
 
@@ -382,7 +382,7 @@ It warns in every one of those cases, so nothing is silent.
 
 With a nonzero `underdetermined_slices` count a run can reach `fit = 1e-31` and
 still be 100 % wrong away from the samples. Measured on a rank-4 tensor of shape
-`6x6x6` fitted from 38 samples (144 parameters): `fit = 4.9e-31`,
+$6 \times 6 \times 6$ fitted from 38 samples (144 parameters): `fit = 4.9e-31`,
 `converged = True`, `determined = False`, relative error against the truth 5.8
 (i.e. off by 580 % of the norm of the truth). The run warns.
 
@@ -391,7 +391,7 @@ only means "reproduces the samples".
 
 ### ALS here is not globally convergent
 
-Measured on a rank-2 tensor of shape `8x8x8x8` (96 parameters) recovered at rank
+Measured on a rank-2 tensor of shape $8 \times 8 \times 8 \times 8$ (96 parameters) recovered at rank
 2 with `alpha = 0`:
 
 | distinct samples | outcome over 6 random starts |
@@ -424,9 +424,9 @@ relative, same rank-1 tensor and ranks as above.
 
 ### Nor does `tt_qr`
 
-`bk.qr` still returns cores with orthonormal columns and `X = Q R` still holds
-to roundoff; only the columns of `Q` corresponding to a zero on the diagonal of
-`R` are arbitrary. Verified on the same tensor: orthogonality and reconstruction
+`bk.qr` still returns cores with orthonormal columns and $X = Q R$ still holds
+to roundoff; only the columns of $Q$ corresponding to a zero on the diagonal of
+$R$ are arbitrary. Verified on the same tensor: orthogonality and reconstruction
 both hold to 1e-15.
 
 ---
@@ -450,8 +450,8 @@ capability tables there are this measurement.
 
 ### What a float32 backend can solve
 
-`kappa(qlaplace_dd([d]))` is about `0.4 * 4^d` and the reachable residual is
-`kappa * eps`. At `d=8` (kappa 1.3e4) float32 stalls at 1e-3 no matter how many
+`kappa(qlaplace_dd([d]))` is about $0.4 \cdot 4^d$ and the reachable residual is
+$\kappa \varepsilon$. At `d=8` (kappa 1.3e4) float32 stalls at 1e-3 no matter how many
 sweeps it is given — on the numpy backend as well as on MPS, so it is the
 precision talking and not the device. Measured with `eps=1e-5` requested:
 
@@ -470,7 +470,7 @@ alternative — keeping whatever dtype numpy handed over — put float64 on a
 float32 backend: twice the memory and traffic on CUDA, and on MPS `tt.ones`
 could not place its own core on the device at all.
 
-### `norm()` is a sweep, not `sqrt(<x, x>)`
+### `norm()` is a sweep, not $\sqrt{\langle x, x \rangle}$
 
 The contraction is 12x faster on a rank-141 tensor (2.4 ms against 29.9 ms), but
 in the TT format the inner product is a contraction whose intermediates cancel,
@@ -492,9 +492,9 @@ it, which is why it is a dictionary lookup and not an isinstance chain.
 ### `norm()` must not end in `.item()`
 
 Returning a Python float detaches the value from the autograd tape: a functional
-containing `||x||` then differentiates to a silently wrong gradient — no error,
+containing $\|x\|$ then differentiates to a silently wrong gradient — no error,
 no NaN, just a missing term. Measured on a completion functional whose
-`||x - b|| = 29.4` contributed exactly zero, `max |AD - finite differences| =
+$\|x - b\| = 29.4$ contributed exactly zero, `max |AD - finite differences| =
 7.03e-01`. Reverting it was measured as well: 12 tests caught it, and on a
 convection problem the solver reported a residual of 1.25e-06 where the true one
 was below 1e-06.
@@ -506,16 +506,16 @@ was below 1e-06.
 ### `qlaplace_dn` and the `'DN'` case
 
 `'DN'` — Dirichlet at 0, Neumann at 1 — is the only combination with exactly
-`2^l` degrees of freedom on every level, so it is the one the multilevel
-prolongations of [BK20] are built for. Measured: `M^T M` with `M = qdiff(d)`
-equals `tridiag(-1, 2, -1)` with the last diagonal entry 1 to 2.0e-15 at
+$2^l$ degrees of freedom on every level, so it is the one the multilevel
+prolongations of [BK20] are built for. Measured: $M^T M$ with `M = qdiff(d)`
+equals $\mathrm{tridiag}(-1, 2, -1)$ with the last diagonal entry 1 to 2.0e-15 at
 `d = 3`, and its smallest eigenvalue matches the analytic
-`4 sin^2(pi / (2(2N+1)))` to 1e-15. TT ranks 4 (`D = 1`) and 5 (`D > 1`,
+$4 \sin^2(\pi / (2(2N+1)))$ to 1e-15. TT ranks 4 (`D = 1`) and 5 (`D > 1`,
 measured at `D = 2, 3`).
 
 ### `qtt_fem.placement`: the last row of the identity
 
-The fake element slot `e = n-1` must be dropped by both corner operators. The
+The fake element slot $e = n-1$ must be dropped by both corner operators. The
 shift does so on its own; the identity needs its last row zeroed. With a full
 identity the fake elements deposit their `(0, .)`-corner contributions on the
 last row of nodes — invisible under an all-Dirichlet mask, and corrupting
@@ -541,7 +541,7 @@ screened and the assembly is three components instead of four.
 
 Several verification tests measure a residual smaller than the rounding error of
 the obvious way to measure it: on the `d = 12` QTT Laplacian
-`||A|| ||x|| / ||f||` reaches 6e6, so a float64 evaluation of `A x - f` carries a
+$\|A\| \|x\| / \|f\|$ reaches 6e6, so a float64 evaluation of $A x - f$ carries a
 relative noise floor near 6e-10 — the size of the residual being judged.
 
 That accuracy came from `np.longdouble`, which is 80-bit x87 on Intel and an
@@ -557,7 +557,7 @@ every platform. Validation: the `d=12` float64 dense-solve floor comes out
 `tests/conftest.py` carries one calibration row per working precision. The
 float64 row is what the tests were originally written with; the float32 row is
 measured on MPS with roughly a decade of headroom (worst observed parity 4e-7 on
-a 4x4x4x4 round-trip). `QLAPLACE_D` comes from the float32 table
+a $4 \times 4 \times 4 \times 4$ round-trip). `QLAPLACE_D` comes from the float32 table
 [above](#what-a-float32-backend-can-solve).
 
 ### Determinism of the non-finite sweep test

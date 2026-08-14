@@ -47,7 +47,7 @@ instead. The reason: two owners of the same numbers drift apart sooner or later.
 
 Local systems smaller than this are solved densely, larger ones by GMRES. The
 value 50 made sense where the local solver was Fortran. In Python the threshold
-is a different number: on a 2^12 QTT Laplacian it is 444 ms at 50 against 8 ms
+is a different number: on a $2^{12}$ QTT Laplacian it is 444 ms at 50 against 8 ms
 at 1000, and the dense path is more accurate as well (1.1e-9 against 1.8e-7) at
 ranks 7 instead of 12. If you relied on the old value, pass
 `max_full_size=50` explicitly.
@@ -78,11 +78,11 @@ against dense truth:
 
 Measured on one machine, with bit-identical input.
 
-**KSL.** `d=6, n=2`, ranks `[1,2,4,8,4,2,1]` — that is the whole space, so there
+**KSL.** $d=6, n=2$, ranks `[1,2,4,8,4,2,1]` — that is the whole space, so there
 is no projection error and what shows is exactly the accuracy of the local
 exponential:
 
-| tau | old (EXPOKIT) | ttpy 2 |
+| $\tau$ | old (EXPOKIT) | ttpy 2 |
 |---|---|---|
 | 1e-3 | 1.33e-08 | **1.96e-15** |
 | 1e-2 | 1.26e-05 | **2.09e-15** |
@@ -95,13 +95,13 @@ On the full manifold our version reproduces the dense exponential to machine
 precision. Test:
 `tests/test_examples.py::test_ksl_is_exact_when_the_manifold_is_the_whole_space`.
 
-Separately: on an initial condition with **unreachable** ranks (`r=8` at `n=2`
+Separately: on an initial condition with **unreachable** ranks ($r=8$ at $n=2$
 on the first bonds) the old KSL returns a vector of norm 3.2e-08 for an input of
 norm 1491 — i.e. essentially zero, without a single warning. Ours handles such
 input normally.
 
-**eigb.** `d=8` (n=256), the 4 smallest eigenvalues, accuracy against the
-analytic formula `4 sin^2(pi k / 2(N+1))`:
+**eigb.** $d=8$ (n=256), the 4 smallest eigenvalues, accuracy against the
+analytic formula $4 \sin^2(\pi k / 2(N+1))$:
 
 | | largest error | time |
 |---|---|---|
@@ -134,15 +134,15 @@ Old scripts run unchanged. What changed substantively:
   what is reproduced. The order of the scheme is verified numerically against an
   **independent** oracle:
   `tests/test_verify_eigb_ksl.py::test_ksl_order_against_the_dense_projected_flow`
-  integrates the projected ODE `y' = P_{T_y M} A y` with a dense DOP853 (the
+  integrates the projected ODE $y' = P_{T_y M} A y$ with a dense DOP853 (the
   projector is built from scratch inside the test, numpy only) and gives 1.00
   for `scheme='first'` and 2.00 for `scheme='symm'`, with a modelling error 25x
   larger than the splitting error being measured. The comparison has to be
   against the projected flow, not against `expm(tau A) y0`: relative to the
   latter the two schemes are indistinguishable.
 * **KSL measures and reports what a fixed rank cannot see.** `check_rank=True`
-  (the default) computes the off-tangent part `(I - P_{T_y M}) A y` and records
-  `defect_rel` and `step_error_est` (= `tau ||(I-P) A y|| / ||y||`) in the
+  (the default) computes the off-tangent part $(I - P_{T_y M}) A y$ and records
+  `defect_rel` and `step_error_est` (= $\tau \|(I-P) A y\| / \|y\|$) in the
   history; when `step_error_est > defect_warn` it raises an explicit
   `RuntimeWarning`. Measured: `step_error_est` predicts the true step error
   against `scipy.linalg.expm` to within 3%. It costs one TT matvec plus one
@@ -155,18 +155,18 @@ Old scripts run unchanged. What changed substantively:
 * **The local eigenproblem in `eigb`** at `size > max_full_size` is solved by
   `scipy.sparse.linalg.lobpcg` on an implicit operator (instead of PRIMME); the
   true local residuals are measured and land in `history.max_local_res`.
-  Problems smaller than `5B + 10` always take the dense path.
+  Problems smaller than $5B + 10$ always take the dense path.
 * **`eigb` measures its own residual and reports failure.** `ermax` (the
   movement of the Ritz values) cannot tell convergence from being stuck:
-  one-site ALS cannot grow a rank, so with `B = 1` and a rank-1 initial guess
+  one-site ALS cannot grow a rank, so with $B = 1$ and a rank-1 initial guess
   the iteration stands still, `ermax` drops to 1e-14, and what used to come back
   was `lam = 7.8e-3` where the minimum is `1.5e-4` — silently. Now
-  `check_residual=True` (the default) computes `||A y_i - lam_i y_i||` in the TT
+  `check_residual=True` (the default) computes $\|A y_i - \lambda_i y_i\|$ in the TT
   format (matvec + sum + QR sweep, never expanding into a dense vector) and puts
   it in `history.res` / `history.res_rel`; a relative residual above `res_warn`
   (1e-2) raises a `RuntimeWarning` with the numbers. It costs about one sweep.
-  The cure for the underlying problem is a higher-rank initial guess or `B > 1`.
-* **`sym_tol` defaults** to `sqrt(eps)` of the working dtype rather than a fixed
+  The cure for the underlying problem is a higher-rank initial guess or $B > 1$.
+* **`sym_tol` defaults** to $\sqrt{\varepsilon}$ of the working dtype rather than a fixed
   `1e-8`: in float32 the projection of the local matrix is asymmetric at the
   1e-7 level from rounding alone, and a fixed threshold rejected every float32
   problem.
@@ -205,7 +205,7 @@ riemannian,solvers}.py`. All four gained an optional `return_history=True`
   `history.consistency` is its discrepancy with what the sweep saw (nonzero only
   for a non-deterministic function).
 * New keyword arguments: `rho` (the steepness of the default smoothing function
-  `pi/2 - arctan((p - lam)/rho)`; `0.5` for `min_func`, as in the signature, and
+  $\pi/2 - \arctan((p - \lambda)/\rho)$; `0.5` for `min_func`, as in the signature, and
   `1.0` for `min_tens`, as in the old code), `seed`, `return_history`.
 * `history.evaluations` counts **with repetitions**: adjacent sweeps look at
   overlapping blocks.
@@ -216,7 +216,7 @@ riemannian,solvers}.py`. All four gained an optional `return_history=True`
   norm in place.
 * The least-squares matrices are assembled for all samples at once by two
   interface passes instead of one Python `getRow` call per (sample, slice) pair:
-  `O(P d r^2)` in BLAS instead of `O(P d^2 r^2)` in the interpreter.
+  $O(P d r^2)$ in BLAS instead of $O(P d^2 r^2)$ in the interpreter.
 * A slice that no sample touched keeps its previous value instead of being
   zeroed (zeroing changes `X` without changing the functional — it silently
   destroys rank).
@@ -247,7 +247,7 @@ riemannian,solvers}.py`. All four gained an optional `return_history=True`
 * Restarts are a loop, not recursion (the old version called itself once per
   restart and ran into the stack at a large `maxit`).
 * `u_0` is not damaged. The old version did `u_0 += ...` in place.
-* The **true** relative residual `||b - A x|| / ||b||` of the computed `x` is
+* The **true** relative residual $\|b - A x\| / \|b\|$ of the computed `x` is
   returned. The old version returned the residual of the first iteration of the
   last restart and declared convergence from it.
 * The small least-squares problem on the Hessenberg matrix is solved densely
@@ -264,15 +264,15 @@ riemannian,solvers}.py`. All four gained an optional `return_history=True`
 ### Changes after adversarial verification (`tests/test_verify_ports.py`)
 
 * `project` now **refuses** to work at a rank-deficient point. Measured: a
-  rank-1 tensor written with TT ranks `(1, 2, 2, 1)`, `d = 3`, `n = 4`, float64 —
+  rank-1 tensor written with TT ranks `(1, 2, 2, 1)`, $d = 3$, $n = 4$, float64 —
   the formula returned a correct Hermitian idempotent projector (idempotence
   1.6e-16) differing from the tangent projector at that point by 31 % of its
   norm. The previous guard ("orthogonalization changed the ranks") never fired:
   a QR never drops rank. `X.round(0)` does not reduce the rank either — `chop`
   at `eps <= 0` returns the full size by definition; `X.round(1e-14)` does. The
   test is exact rather than heuristic: the singular values of the triangular
-  factor `R_k` of the left QR sweep, after the right orthogonalization, are
-  exactly the singular values of the `(k+1)`-st unfolding of `X`.
+  factor $R_k$ of the left QR sweep, after the right orthogonalization, are
+  exactly the singular values of the $(k+1)$-st unfolding of $X$.
 * `projector_splitting_add` at such a point, by contrast, is **left working**:
   it measures 1.3e-15 on the same example, and refusing would be a regression.
   `tt_qr` there gives orthogonality and reconstruction at 1e-15.
@@ -311,7 +311,7 @@ riemannian,solvers}.py`. All four gained an optional `return_history=True`
   dimensions) — it is simply the identity. On a non-degenerate example
   (`n = [3, 4, 5]`, rank 2, tangent space 24 inside 60) the discrepancy is 74 %.
   The correct oracle is `vh[:r].T`; it agrees with a basis of the tangent space
-  built straight from the definition (`span_k tau(C_1, ..., dC_k, ..., C_d)`) to
+  built straight from the definition ($\mathrm{span}_k \tau(C_1, \ldots, dC_k, \ldots, C_d)$) to
   2.6e-15, and with `project` to 6.7e-16. The tests that compare against the
   dense projector now check that the case is non-degenerate.
 
@@ -321,16 +321,16 @@ Not a legacy-compatibility matter (these arguments did not exist in `ttpy` 1.x),
 but it changes the behaviour of code written against early 2.0 builds.
 
 * **`amen_solve(..., check_true_res=)` is now `False`.** The exact residual
-  `||A x - f|| / ||f||` used to be computed after suitable sweeps and served as
-  the stopping criterion. The product `A x` has cores
-  `(rA_k rx_k, n_k, rA_{k+1} rx_{k+1})` — the ranks multiply — and on a
-  preconditioned 2D problem (`r_A = 161`, `r_x = 122`) that is rank 19642 and
+  $\|A x - f\| / \|f\|$ used to be computed after suitable sweeps and served as
+  the stopping criterion. The product $A x$ has cores
+  $(r^A_k r^x_k, n_k, r^A_{k+1} r^x_{k+1})$ — the ranks multiply — and on a
+  preconditioned 2D problem ($r_A = 161$, $r_x = 122$) that is rank 19642 and
   12.3 GB in a single core, with a measured peak of 91.8 GiB, for a number that
   is only printed. The same product rounded to 1e-12 has rank 256.
 
   Consequences for the caller: `info.true_res` is now `nan` (not a guess but
   "not measured"), and the stopping criterion is `max_res`, the local residual
-  `||B_k x_k - rhs_k||` of every block **before** it is solved. The guarantee
+  $\|B_k x_k - \mathrm{rhs}_k\|$ of every block **before** it is solved. The guarantee
   "never return an iterate worse than one already seen" now rests on an active
   measure. The exact residual is still available through the same argument and
   warns about its cost before allocating (`true_res_budget`).
@@ -338,16 +338,16 @@ but it changes the behaviour of code written against early 2.0 builds.
 * **`ksl` refuses a stiff step instead of returning a number.** The S-steps of
   the projector splitting run backwards in time, so for a dissipative `A` they
   amplify; the following K-step shrinks the data but not the rounding error that
-  accumulated. Measured on `dy/dt = -(2^L+1)^2 Laplace y`: at `tau||A|| = 169`
-  it returned `||y|| = 3.3e+106` where the exact norm is 0.307. Now every local
+  accumulated. Measured on $dy/dt = -(2^L+1)^2\,\mathrm{Laplace}\,y$: at $\tau\|A\| = 169$
+  it returned $\|y\|$ = 3.3e+106 where the exact norm is 0.307. Now every local
   exponential records its growth factor, the history carries `max_growth` and
   `roundoff_floor`, exhausting the digits entirely is a `RuntimeError`, and
   exceeding the requested `local_tol` is a warning. The threshold is measured,
   not derived; the table of measurements sits next to `KSL_GROWTH_EXPONENT`.
 
 * **`eigb` warns on the backward error, not on the relative residual.** The
-  `res_warn` threshold is no longer a fixed `1e-2` but `sqrt(eps)`, and it
-  applies to `||A y - lam y|| / ||A||_2` rather than `/ ||A y||`. The latter
+  `res_warn` threshold is no longer a fixed `1e-2` but $\sqrt{\varepsilon}$, and it
+  applies to $\|A y - \lambda y\| / \|A\|_2$ rather than $/ \|A y\|$. The latter
   demands *relative* accuracy of every eigenvalue, which is unreachable at the
   bottom of the spectrum: on `qlaplace_dd([10])` the values are correct to 1e-9
   absolute while `res/||Ay||` is 3.0e-04. `history.res_rel` is kept, and
@@ -355,5 +355,5 @@ but it changes the behaviour of code written against early 2.0 builds.
 
 * **`tt.permute` returns a compressed representation.** Bubble transpositions
   used to leave rank slack behind: on a three-peak separable function shuffled
-  into Morton order at `d = 15`, rank 1024 for a tensor whose own rank is 102.
+  into Morton order at $d = 15$, rank 1024 for a tensor whose own rank is 102.
   The tensor was right, the representation was not.

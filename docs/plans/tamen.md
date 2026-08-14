@@ -6,35 +6,35 @@ reference implementation `github.com/dolgov/tamen` (MATLAB, cell-array TT).
 
 ## What it is
 
-A solver for `dx/dt = A(t) x`, `x(0) = x0` that treats one *time interval* as
+A solver for $dx/dt = A(t)\,x$, $x(0) = x_0$ that treats one *time interval* as
 a single TT tensor with an extra time mode and solves the global space-time
 system by an AMEn iteration:
 
-    B x = f,    B = I_N (x) S  -  (I_N (x) P) A(t),    f = x0 (x) (S e),
+$$B x = f, \qquad B = I_N \otimes S \;-\; (I_N \otimes P)\, A(t), \qquad f = x_0 \otimes (S e),$$
 
-where `S`/`P` are the stiffness/mass matrices of the time discretization on
-`J` nodes.  The paper's default is **Chebyshev spectral differentiation**
-(`S` = Lagrange derivative matrix on Chebyshev nodes, `P = I`): exponential
-convergence in `J` for solutions analytic near `[0, T]`, so `J = 8..16`
+where $S$/$P$ are the stiffness/mass matrices of the time discretization on
+$J$ nodes.  The paper's default is **Chebyshev spectral differentiation**
+($S$ = Lagrange derivative matrix on Chebyshev nodes, $P = I$): exponential
+convergence in $J$ for solutions analytic near $[0, T]$, so `J = 8..16`
 replaces hundreds of steps of Crank-Nicolson.  The last TT block carries the
 time mode; the rest is the spatial TT of all snapshots at once.
 
 Two properties make it more than "amen_solve on a bigger system":
 
 1. **Exact invariants.** The AMEn enrichment is doubled: besides the residual
-   `zeta`, every core is enriched with the projected co-kernel vectors
-   `C_k = (X^{<k})* C^{<k}` of the linear invariants `c_m* x(t) = const`
+   $\zeta$, every core is enriched with the projected co-kernel vectors
+   $C_k = (X^{<k})^{*} C^{<k}$ of the linear invariants $c_m^{*} x(t) = \mathrm{const}$
    (total probability of a CME, mass, charge).  At the last core the local
-   problem *is* the Galerkin-projected ODE in a basis that contains `C`, so
+   problem *is* the Galerkin-projected ODE in a basis that contains $C$, so
    the invariants are conserved **up to machine precision, independently of
-   the TT truncation accuracy** (paper Sec. 3.4).  For skew-symmetric `A` the
+   the TT truncation accuracy** (paper Sec. 3.4).  For skew-symmetric $A$ the
    2-norm is preserved by rescaling the projected initial state:
-   `theta = sqrt((|x0|^2 - |C* x0|^2)) / |X* x0|` (paper eq. 5).
+   $\theta = \sqrt{\|x_0\|^2 - \|C^{*} x_0\|^2} \,/\, \|X^{*} x_0\|$ (paper eq. 5).
 2. **Adaptive intervals with rejections.** Per-interval error estimate
-   `E_{J,h}`; the next interval is `h (eps/E)^{1/q}` with `q = J` for the
+   $E_{J,h}$; the next interval is $h\,(\varepsilon/E)^{1/q}$ with $q = J$ for the
    Chebyshev scheme; an interval that misses the target is shrunk and redone.
 
-Complexity per interval: `O(d n (R r^3 + R^2 r^2))` -- AMEn's own.
+Complexity per interval: $O(d n (R r^3 + R^2 r^2))$ -- AMEn's own.
 
 ## Why we want it
 
@@ -60,7 +60,7 @@ Complexity per interval: `O(d n (R r^3 + R^2 r^2))` -- AMEn's own.
   machinery, local solvers and interfaces are reusable as is.
 * `tt/algs/_localops.py` -- interfaces/projections (single owner).
 * The Chebyshev differentiation matrix is 10 lines of numpy (nodes
-  `T/2 (1 - cos(pi j/J))`, Lagrange derivative); no new dependency.
+  $\tfrac{T}{2}(1 - \cos(\pi j/J))$, Lagrange derivative); no new dependency.
 * Oracles already in the tree: `examples/fokker_planck_dumbbell.py` (its CN
   path becomes a cross-check), `tests/hamiltonians.py`, and the KSL suite.
 
@@ -75,32 +75,32 @@ x_t, info = tamen(A, x0, T, eps,
 ```
 
 `x_t` is the space-time TT of the last interval (time mode last); `info`
-carries the interval history (accepted/rejected `h`, `E_{J,h}`, ranks) and
-the measured invariant drift -- which the tests pin at `< 10 eps_machine`.
+carries the interval history (accepted/rejected $h$, $E_{J,h}$, ranks) and
+the measured invariant drift -- which the tests pin at $< 10\,\varepsilon_{\mathrm{machine}}$.
 
 ## Acceptance (all against external truth)
 
 1. **Convection** (paper Sec. 4.1): periodic 2D transport, exact solution
-   repeats with period `T_p = 20`; error = distance to the initial state
+   repeats with period $T_p = 20$; error = distance to the initial state
    after a full period.  Reproduce the shape of the paper's Table 2 with our
    `ksl` as the second column.
 2. **CME lambda-phage** (paper Sec. 4.2): 5-species stochastic kinetics via
    shift-matrix MPO; oracle = total-probability drift (must be machine-eps)
-   plus the stationary state from `amen_solve` on `A^T pi = 0`.
+   plus the stationary state from `amen_solve` on $A^T \pi = 0$.
 3. **Invariant conservation vs truncation**: run at crude `eps = 1e-2` and
    verify the invariants still hold to 1e-14 -- the property that
    distinguishes tAMEn from "solve and round".
-4. Chebyshev-in-time convergence: fixed `h`, error vs `J` exponential until
+4. Chebyshev-in-time convergence: fixed $h$, error vs $J$ exponential until
    the spatial error floor.
 
 ## Risks and open questions
 
-* The global matrix `B` is nonsymmetric and its conditioning grows with the
-  Chebyshev `S` (`docs/plans/qtt-elliptic-bpx.md` owns the conditioning
+* The global matrix $B$ is nonsymmetric and its conditioning grows with the
+  Chebyshev $S$ (`docs/plans/qtt-elliptic-bpx.md` owns the conditioning
   lore); the paper solves local systems with GMRES -- our `amen_solve`
   local solver policy (`max_full_size`, matrix-free path) needs a
   nonsymmetric review before reuse.
-* Complex `A` (Schroedinger): the paper stays real; our KSL complex path
+* Complex $A$ (Schroedinger): the paper stays real; our KSL complex path
   covers that side, so tAMEn can stay real-first.
 * The restarted-interval bookkeeping (Alg. 1 of the paper) is where the
   MATLAB reference spends its subtlety; port it as data (a plain interval
@@ -115,13 +115,13 @@ Implemented as designed, with two deviations recorded here:
    argument of the paper's Sec. 3.4 only needs the span at the last step).
 2. **The Galerkin re-solve is residual-guarded.** The projection of a
    nonnormal operator is not stability-preserving: on the SIR master
-   equation `X* A X` acquired right-half-plane eigenvalues and an unguarded
-   re-solve compounded to `||p|| ~ 1e19` over 6 intervals while the embedded
-   time-error estimate stayed quiet (both J and J/2 solves share the same
+   equation $X^{*} A X$ acquired right-half-plane eigenvalues and an unguarded
+   re-solve compounded to $\|p\| \sim 10^{19}$ over 6 intervals while the embedded
+   time-error estimate stayed quiet (both $J$ and $J/2$ solves share the same
    bad projection).  The re-solved iterate is therefore accepted only when
-   its residual in the *full* system is `<= 2 res(amen) + eps`; otherwise
+   its residual in the *full* system is $\le 2\,\mathrm{res}(\mathrm{amen}) + \varepsilon$; otherwise
    the endpoint comes from the amen iterate and the invariants are restored
-   by an explicit Gram-solved shift along the `c_m` (O(eps) perturbation,
+   by an explicit Gram-solved shift along the $c_m$ ($O(\varepsilon)$ perturbation,
    machine-exact conservation either way).  On the CME the guard rejects
    the Galerkin path in every interval -- the conservation contract is
    carried entirely by the correction path there, and holds: drift 3e-14
@@ -134,11 +134,11 @@ Measured niche, part 1 -- dissipative dynamics (Mac, dense-`expm` oracle):
 | SIR CME, N=7 chain, T=30 | **0.8 s, err 9.2e-7, sum(p) drift 3.6e-14** | 1.8-19.5 s, err stuck at ~1e-3 (fixed-rank modelling error; more steps and rank 16 do not help), drift 2-5e-4 |
 
 Measured niche, part 2 -- the paper's Table 2 regime, reproduced across
-grids.  2D periodic convection on `[-10,10]^2`, T = 20, central differences
+grids.  2D periodic convection on $[-10,10]^2$, $T = 20$, central differences
 in QTT; the oracle is the *FFT-exact* solution of the discrete system (the
 periodic difference operator is diagonal in Fourier), so the numbers are
 pure time-integration error at any grid with no dense matrix anywhere.
-ksl at fixed rank 30; n = 64 on a Mac, the rest on 8 cores of a loaded
+ksl at fixed rank 30; $n = 64$ on a Mac, the rest on 8 cores of a loaded
 h200:
 
 | n per axis | tamen (eps=1e-6, J=12) | ksl, fixed tau |
@@ -149,20 +149,20 @@ h200:
 
 This is the paper's Table 2 shape, reproduced with our own solvers: on
 fine grids the splitting error forces KSL into thousands of steps (and a
-fixed tau chosen too large returns garbage *with nothing to say so* --
+fixed $\tau$ chosen too large returns garbage *with nothing to say so* --
 which is why `ksl_adaptive` now exists: step-doubling control finds the
-admissible tau and pays ~3x the matvec work for never being silently
+admissible $\tau$ and pays ~3x the matvec work for never being silently
 wrong about the time error).  The controller itself took three measured
 iterations to get right, all recorded in the code comments: a growth
 limiter after rejections (44% of attempts were wasted thrashing on the
 acceptance boundary), the inner Krylov tolerance scaled with the step
 budget, and -- the decisive one -- the incoherent-accumulation budget
-`eps sqrt(tau/T)` instead of the worst-case L1 `eps tau/T`, which
+$\varepsilon\sqrt{\tau/T}$ instead of the worst-case L1 $\varepsilon\,\tau/T$, which
 over-delivered by 500x at 10x the cost (n=1024: 1074 s / err 2.1e-7 /
 10022 steps for eps=1e-4 under L1 against 84 s / err 1.4e-5 / 1144 steps
-under sqrt).  At n = 4096 tamen reaches the same accuracy
-2.6x faster than the equal-error fixed-tau KSL run.  In *plain* TT at
-n = 64 the balance flips (ksl 0.5 s vs tamen 8.5 s): amen sweeps pay for
+under sqrt).  At $n = 4096$ tamen reaches the same accuracy
+2.6x faster than the equal-error fixed-$\tau$ KSL run.  In *plain* TT at
+$n = 64$ the balance flips (ksl 0.5 s vs tamen 8.5 s): amen sweeps pay for
 the large mode there, KSL does not -- in QTT all modes are 2 and the
 balance flips back.
 
@@ -176,5 +176,5 @@ the compiled kernels of `_ksl_fast.py` cover only the exact-expm regime
 (blocks <= 40).  Compiling the Krylov path is the follow-up with the
 largest measured payoff.
 
-Remaining from the original plan: time-dependent `A(t)`, the
-theta rescaling for 2-norm conservation, and the lambda-phage CME example.
+Remaining from the original plan: time-dependent $A(t)$, the
+$\theta$ rescaling for 2-norm conservation, and the lambda-phage CME example.
