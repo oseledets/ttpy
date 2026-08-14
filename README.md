@@ -6,11 +6,9 @@ The Tensor Train toolbox, rewritten in pure Python.
 pip install ttpy          # or: uv pip install ttpy
 ```
 
-No Fortran, no `f2py`, no `numpy.distutils`, no compiler, no git submodules.
-The wheel is `py3-none-any`, 169 KB, and installs into a fresh environment in a
-quarter of a second. For comparison, building ttpy 1.x on a current machine
-needs six separate workarounds — they are written down in
-[docs/LEGACY_BUILD.md](docs/LEGACY_BUILD.md).
+No Fortran, no `f2py`, no compiler, no git submodules: the wheel is pure
+Python (`py3-none-any`, 169 KB) and installs into a fresh environment in a
+quarter of a second.
 
 ```python
 import tt
@@ -27,12 +25,22 @@ Three dimensions of `2^12` points each -- 6.9e10 unknowns -- is
 ## What it is
 
 A tensor in the TT (tensor train) format is stored as `d` cores of shape
-`(r, n, r)`, which turns `n**d` numbers into `d n r**2` and makes linear algebra
-in dimension 100 possible. This package implements the format and the algorithms
-around it: TT-SVD and rounding, cross approximation, elementwise functions,
-AMEn linear solvers and matvecs, block eigensolvers, the KSL integrator,
-Riemannian tools, and completion -- plus a QTT toolkit for elliptic problems
-with BPX multilevel preconditioning (`tt.algs.qtt_ell`), which is new in 2.0.
+`(r_i, n_i, r_{i+1})`, which turns `prod n_i` numbers into
+`sum r_i n_i r_{i+1}` and makes linear algebra in dimension 100 possible.
+What is implemented, against the 1.x baseline:
+
+| | ttpy 1.x | ttpy 2 |
+|---|---|---|
+| TT algebra, rounding, TT-SVD | Fortran core | pure numpy/torch, same numbers |
+| cross approximation | `rect_cross` | `rect_cross` + Savostyanov's greedy `dmrg_cross` |
+| linear solvers | `amen_solve` | `amen_solve` (2.8x faster) + spectral-in-time `tamen` with exact invariants |
+| eigensolvers | `eigb` | `eigb`, dense or matrix-free local solves |
+| dynamics | `ksl` | `ksl` with compiled float64/complex128 sweeps + step-adaptive `ksl_adaptive` |
+| Riemannian toolbox | -- | tangent-space machinery + `rgd` with torch autodiff |
+| elliptic QTT | -- | BPX multilevel preconditioner (`tt.algs.qtt_ell`) |
+| sampling / densities | -- | deep inverse Rosenblatt transports (`tt.transport`) |
+| backends | numpy | numpy and torch, CPU/CUDA/MPS |
+| install | f2py + Fortran toolchain | pure-python wheel |
 
 `tt.transport` also contains an experimental sample-only deep inverse
 Rosenblatt transport. Its default root-free estimator stores a centered direct
