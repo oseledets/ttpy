@@ -106,19 +106,31 @@ def dense_oracle(bits, dirichlet=False):
 
 
 def sweep_frames(bits, eps=1e-9, nswp=8):
-    """AMEn iterates sweep by sweep -- the material of the README animation."""
-    A, h = assemble(bits)
+    """AMEn iterates sweep by sweep -- the material of the README animation.
+
+    The wall clock shown in the frames is cumulative over the sweeps of
+    *this* solve; the one-time numba/import warm-up is spent on a throwaway
+    small problem first, so the first frame does not carry it.
+    """
+    import time
+    A, h = assemble(bits, dirichlet=True)   # the symmetric, fully-clamped one
     f = tt.ones(2, 2 * bits)
-    x, out = f, []
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        Aw, _ = assemble(4)
+        amen_solve(Aw, tt.ones(2, 8), tt.ones(2, 8), 1e-6, verb=0)  # warm-up
+    x, out, elapsed = f, [], 0.0
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         for swp in range(1, nswp + 1):
+            t0 = time.perf_counter()
             x = amen_solve(A, f, x, eps, nswp=1, verb=0)
+            elapsed += time.perf_counter() - t0
             res = float((tt.matvec(A, x) - f).norm() / f.norm())
             n = 2 ** bits
             U = np.asarray(x.full()).reshape(-1, order="F").reshape(
                 n, n, order="F")
-            out.append((swp, res, int(max(x.r)), U))
+            out.append((swp, res, int(max(x.r)), elapsed, U))
     return out
 
 
@@ -130,12 +142,12 @@ def render_gif(frames, path):
     from matplotlib import colors
     from PIL import Image
 
-    n = frames[0][3].shape[0]
+    n = frames[0][4].shape[0]
     g = (np.arange(n) + 1) / (n + 1)
     K = 10.0 ** (np.sin(3 * np.pi * g)[:, None] * np.sin(3 * np.pi * g)[None, :])
-    vmax = frames[-1][3].max()
+    vmax = frames[-1][4].max()
     pngs = []
-    for swp, res, rank, U in frames:
+    for swp, res, rank, elapsed, U in frames:
         fig, (axk, axu) = plt.subplots(1, 2, figsize=(9.6, 4.2), dpi=100)
         imk = axk.imshow(K.T, origin="lower", cmap="viridis",
                          norm=colors.LogNorm(vmin=0.1, vmax=10),
@@ -145,8 +157,8 @@ def render_gif(frames, path):
         fig.colorbar(imk, ax=axk, fraction=0.046)
         imu = axu.imshow(U.T, origin="lower", cmap="magma", vmin=0, vmax=vmax,
                          extent=[0, 1, 0, 1])
-        axu.set_title(f"sweep {swp}:  residual {res:.1e},  TT rank {rank}",
-                      fontsize=10)
+        axu.set_title(f"sweep {swp}:  residual {res:.1e},  TT rank {rank},"
+                      f"  t = {elapsed:.2f} s", fontsize=10)
         fig.colorbar(imu, ax=axu, fraction=0.046)
         fig.suptitle(r"amen_solve on $-\nabla\cdot(k\nabla u)=1$, "
                      r"QTT $%d^2$ (no preconditioner)" % n, fontsize=11)
