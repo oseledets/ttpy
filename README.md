@@ -44,7 +44,9 @@ Kronecker products, and `amen_solve` needs eight sweeps:
 
 The animation is the solver iterate after every sweep
 (`examples/qtt_divgrad_cross.py --gif`, which also checks the assembly
-against a `scipy.sparse` oracle).  The plain Laplacian at any dimension is
+against a `scipy.sparse` oracle).  A picture gallery of all the examples --
+quantum dynamics at paper scale, polymer rheology, epidemics on networks,
+robust completion -- is in [examples/README.md](examples/README.md).  The plain Laplacian at any dimension is
 one call: `tt.qlaplace_dd([12, 12, 12])` is $2^{12}$ points per axis --
 6.9e10 unknowns.
 
