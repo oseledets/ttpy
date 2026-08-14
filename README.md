@@ -11,22 +11,48 @@ Python (`py3-none-any`, 169 KB) and installs into a fresh environment in a
 quarter of a second.
 
 ```python
+import numpy as np
 import tt
 
-A = tt.qlaplace_dd([12])                    # Laplacian in QTT, 2^12 unknowns
-b = tt.ones(2, 12)
-x = tt.amen_solve(A, b, b, 1e-8, verb=0)    # AMEn linear solver
-print((tt.matvec(A, x) - b).norm() / b.norm())
+bits = 8                                   # a 256 x 256 grid as 16 QTT modes
+h = 1.0 / (2**bits + 1)
+one = tt.ones(2, bits)
+x = (tt.xfun(2, bits) + one) * h           # grid points as a QTT vector
+
+def k(v):                                  # smooth coefficient, contrast 100
+    return 10.0 ** (np.sin(3*np.pi*v[:, 0]) * np.sin(3*np.pi*v[:, 1]))
+
+# k sampled at the flux faces by TT-cross -- no dense array is ever formed
+kx = tt.multifuncrs([tt.kron(x - one*(h/2), one), tt.kron(one, x)], k, 1e-10, verb=0)
+ky = tt.multifuncrs([tt.kron(x, one), tt.kron(one, x - one*(h/2))], k, 1e-10, verb=0)
+
+D = (tt.eye(2, bits) - tt.qshift(bits)) * (1.0/h)
+Dx, Dy = tt.kron(D, tt.eye(2, bits)), tt.kron(tt.eye(2, bits), D)
+A = (Dx.T @ tt.diag(kx) @ Dx + Dy.T @ tt.diag(ky) @ Dy).round(1e-12)
+
+f = tt.ones(2, 2*bits)
+u = tt.amen_solve(A, f, f, 1e-8, verb=0)   # no preconditioner
+print((tt.matvec(A, u) - f).norm() / f.norm())
 ```
 
-Three dimensions of `2^12` points each -- 6.9e10 unknowns -- is
-`tt.qlaplace_dd([12, 12, 12])`, and costs the same call.
+A variable-coefficient diffusion $-\nabla\cdot(k\nabla u)=1$, assembled and
+solved entirely in the compressed format: the coefficient enters through
+TT-cross interpolation from pointwise samples, the operator is a sum of
+Kronecker products, and `amen_solve` needs eight sweeps:
+
+![AMEn sweeps on -div(k grad u) = 1](docs/media/divgrad_amen.gif)
+
+The animation is the solver iterate after every sweep
+(`examples/qtt_divgrad_cross.py --gif`, which also checks the assembly
+against a `scipy.sparse` oracle).  The plain Laplacian at any dimension is
+one call: `tt.qlaplace_dd([12, 12, 12])` is $2^{12}$ points per axis --
+6.9e10 unknowns.
 
 ## What it is
 
-A tensor in the TT (tensor train) format is stored as `d` cores of shape
-`(r_i, n_i, r_{i+1})`, which turns `prod n_i` numbers into
-`sum r_i n_i r_{i+1}` and makes linear algebra in dimension 100 possible.
+A tensor in the TT (tensor train) format is stored as $d$ cores of shape
+$(r_i, n_i, r_{i+1})$, which turns $\prod_i n_i$ numbers into
+$\sum_i r_i n_i r_{i+1}$ and makes linear algebra in dimension 100 possible.
 What is implemented, against the 1.x baseline:
 
 | | ttpy 1.x | ttpy 2 |
@@ -75,11 +101,11 @@ y = x.round(rmax=100, method="randomized")
 
 ## Elliptic problems in QTT
 
-The condition number of a QTT-discretized elliptic operator grows like `4^d`, so
+The condition number of a QTT-discretized elliptic operator grows like $4^d$, so
 an unpreconditioned iteration stops working long before the format does.
 `tt.algs.qtt_ell` implements the multilevel preconditioner of Bachmayr and
-Kazeev (FoCM 20, 2020) with the ranks their theory predicts: `2^(2D+1)` for the
-preconditioner and `2^(2D) + 2^(2D-1)` for the fused factors, both independent
+Kazeev (FoCM 20, 2020) with the ranks their theory predicts: $2^{2D+1}$ for the
+preconditioner and $2^{2D} + 2^{2D-1}$ for the fused factors, both independent
 of the number of levels.
 
 ```python
@@ -89,8 +115,8 @@ C = bpx(d, D=1)                       # the preconditioner, TT rank 8
 theta, = bpx_theta(d, D=1)            # the fused factor: B = theta^T theta
 ```
 
-`-u'' = 1` with `u(0) = 0, u'(1) = 0`, AMEn at `eps = 1e-10`, `d = 30`
-(2^30 unknowns), one host, interleaved runs:
+$-u'' = 1$ with $u(0) = 0$, $u'(1) = 0$, AMEn at `eps = 1e-10`, `d = 30`
+($2^{30}$ unknowns), one host, interleaved runs:
 
 | | sweeps | time | relative error |
 |---|---|---|---|
@@ -98,10 +124,10 @@ theta, = bpx_theta(d, D=1)            # the fused factor: B = theta^T theta
 | with BPX | 8 | 0.27 s | 1.9e-13 |
 
 The catch worth knowing before you use it: the preconditioned operator must
-never be *assembled* as `C A C`. Its entries cancel over `4^d`, so rounding that
-product loses accuracy like `4^d * eps` -- 6.0e-04 at `d = 20`, 4.8e+14 at
-`d = 50` -- and its rank grows with `d`. `bpx_theta` gives the fused factors
-instead, and `B = sum_k theta_k^T theta_k` is the same matrix at rank 17, flat
+never be *assembled* as $CAC$. Its entries cancel over $4^d$, so rounding that
+product loses accuracy like $4^d \varepsilon$ -- 6.0e-04 at `d = 20`, 4.8e+14 at
+`d = 50` -- and its rank grows with $d$. `bpx_theta` gives the fused factors
+instead, and $B = \sum_k \theta_k^T \theta_k$ is the same matrix at rank 17, flat
 in `d`. Run `examples/bpx_elliptic.py` for the whole story.
 
 ## Coming from ttpy 1.x
@@ -195,7 +221,7 @@ polymer dumbbell in shear flow of Dolgov-Khoromskij-Oseledets, SISC 34(6),
 with the analytic beta=0 stationary state and an independent sparse
 propagator as cross-checks -- and `sir_network_cme.py` -- the SIR-epidemic
 master equation on a network of Dolgov-Savostyanov, AMC 460:128290, 2024,
-where the 3^N-state distribution stays in TT (rank 11 at N=32) and
+where the $3^N$-state distribution stays in TT (rank 11 at $N=32$) and
 rare-event tails down to ~1e-12 are one dot product with an explicit
 indicator train, where SSA would need ~5e13 trajectories.  The integrator
 built for exactly these problems is `tt.tamen` (Dolgov's spectral-in-time

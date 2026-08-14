@@ -434,3 +434,31 @@ def test_sir_cme_matches_brute_force_at_small_n():
     pf = np.asarray(p.full()).flatten("F")
     pf_d = np.array([pf[flat_f(s)] for s in states])
     assert np.linalg.norm(pf_d - pd) / np.linalg.norm(pd) < 1e-6
+
+
+# --- examples/qtt_divgrad_cross.py -------------------------------------------
+
+def test_divgrad_cross_assembly_matches_scipy_sparse():
+    """The README opener's QTT assembly against a dense-free sparse oracle.
+
+    Both boundary variants: the two-term operator (natural BC on the far
+    faces) and the Dirichlet one with the rank-1 corner corrections.  The
+    coefficient goes through multifuncrs (TT-cross), so this also pins the
+    cross on a smooth 2D function against direct sampling.
+    """
+    amen = pytest.importorskip("tt.algs.amen")
+    _examples_path()
+    from qtt_divgrad_cross import assemble, dense_oracle
+
+    bits = 5
+    for dirichlet in (False, True):
+        A, h = assemble(bits, dirichlet=dirichlet)
+        f = tt.ones(2, 2 * bits)
+        import warnings as _w
+        with _w.catch_warnings():
+            _w.simplefilter("ignore")
+            u = amen.amen_solve(A, f, f, 1e-10, verb=0)
+        ud = dense_oracle(bits, dirichlet=dirichlet)
+        utt = np.asarray(u.full()).flatten("F")
+        err = np.linalg.norm(utt - ud) / np.linalg.norm(ud)
+        assert err < 1e-7, f"dirichlet={dirichlet}: {err:.2e}"
