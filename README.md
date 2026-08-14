@@ -137,15 +137,17 @@ documented in [docs/COMPAT.md](docs/COMPAT.md). Four of them were *silent wrong
 answers* -- a returned number with nothing to say it was meaningless -- and that
 is the failure mode this package tries hardest to make impossible.
 
-### Planned, not shipped
+### Future plans
 
-Designed and specified in [docs/plans/](docs/plans/), with the measurements
-behind each decision, but **not implemented**: the BUG / robust rank-adaptive
-integrator, a block AMEn eigensolver, the second-order/preconditioned half of
-the Riemannian roadmap (geomCG, trust region, rank adaptation), and the
-coefficient-dependent form of the BPX factors.
+The next planned pieces of work live in [docs/plans/](docs/plans/), each with
+a written design and the measurements behind it: the rank-adaptive BUG
+integrator (which would lift the fixed-rank restriction of KSL), a block AMEn
+eigensolver, the second-order half of the Riemannian toolbox (geomCG, trust
+region, rank adaptation), the coefficient-dependent BPX factors, and a
+compiled Krylov path for the KSL local exponentials at large block sizes --
+the largest measured performance reserve in the package.
 
-Shipped from the Riemannian roadmap: the tangent-space machinery
+Already delivered from the Riemannian plan: the tangent-space machinery
 (`tt.algs.riemannian`: `project_delta`, `frames`, `retract`, `transport`, the
 cheap tangent inner product) and `tt.rgd` -- Riemannian gradient descent whose
 gradient comes from torch autodiff through the tangent parametrization
@@ -156,7 +158,7 @@ five orders of magnitude off while log-cosh descent recovers the tensor.
 [docs/plans/ROADMAP.md](docs/plans/ROADMAP.md) has the dependency graph, the
 ordered milestones and 43 benchmark problems split by what is runnable today.
 
-Shipped from that list already: `tt.dmrg_cross`, a from-scratch port of
+Also delivered: `tt.dmrg_cross`, a from-scratch port of
 Savostyanov's greedy DMRG cross (`ttcross`) — rank +1 per bond per sweep, rook
 pivoting on the residual; at equal digits on smooth integrands it needs 3–7x
 fewer function evaluations and ~10x less wall time than `rect_cross`
@@ -187,26 +189,69 @@ propagator as cross-checks -- and `sir_network_cme.py` -- the SIR-epidemic
 master equation on a network of Dolgov-Savostyanov, AMC 460:128290, 2024,
 where the 3^N-state distribution stays in TT (rank 11 at N=32) and
 rare-event tails down to ~1e-12 are one dot product with an explicit
-indicator train, where SSA would need ~5e13 trajectories.  The planned
-integrator that conserves probability to machine precision on such problems
-is specified in [docs/plans/tamen.md](docs/plans/tamen.md).
+indicator train, where SSA would need ~5e13 trajectories.  The integrator
+built for exactly these problems is `tt.tamen` (Dolgov's spectral-in-time
+AMEn): it conserves total probability to ~4e-14 even at crude accuracy,
+which no solve-and-round scheme does, and on the SIR master equation it is
+20x faster and three orders more accurate than step-by-step KSL; the
+measured division of labour between the two integrators is recorded in
+[docs/plans/tamen.md](docs/plans/tamen.md).
 
 One known limitation with a workaround: `amen_solve` takes a matrix, so using
 `bpx_theta` with it means assembling `B` at rank 161 in 2D instead of applying
 the rank-24 factors one at a time. The sweep algebra is linear in that rank and
 dominates; teaching the solver to accept a factored operator is the next item.
 
-## References
+## Origins and credits
 
-* I. V. Oseledets, *Tensor-train decomposition*, SIAM J. Sci. Comput. 33(5), 2011.
-* S. Dolgov, D. Savostyanov, *Alternating minimal energy methods for linear
-  systems in higher dimensions*, arXiv:1301.6068, arXiv:1304.1222.
-* A. Mikhalev, I. Oseledets, *Rectangular maximum-volume submatrices and their
-  applications*, arXiv:1502.07838.
-* H. Al Daas et al., *Randomized algorithms for rounding in the Tensor-Train
-  format*, SIAM J. Sci. Comput. 45(1), 2023, arXiv:2110.04393.
-* C. Lubich, I. Oseledets, *A projector-splitting integrator for dynamical
-  low-rank approximation*, BIT 54, 2014.
+This package is a rewrite of [ttpy](https://github.com/oseledets/ttpy), which
+carried the TT format in Python for over a decade on a Fortran core
+(`tt-fort`); everything here is measured against it and owes its shape to it,
+and to everyone who contributed to it over the years.  The algorithms
+themselves come from the literature, and several are reimplementations of
+other people's methods and codes:
+
+* **TT format, TT-SVD, rounding, cross**: I. V. Oseledets, *Tensor-train
+  decomposition*, SIAM J. Sci. Comput. 33(5), 2011; I. Oseledets,
+  E. Tyrtyshnikov, *TT-cross approximation for multidimensional arrays*,
+  Linear Algebra Appl. 432(1), 2010.
+* **AMEn linear solvers** (`amen_solve`, `amen_mv`): S. Dolgov,
+  D. Savostyanov, *Alternating minimal energy methods for linear systems in
+  higher dimensions*, SIAM J. Sci. Comput. 36(5), 2014 (arXiv:1301.6068,
+  arXiv:1304.1222).
+* **Greedy DMRG cross** (`dmrg_cross`): a from-scratch port of
+  D. Savostyanov's [ttcross](https://github.com/savostyanov/ttcross)
+  (D. Savostyanov, *Quasioptimality of maximum-volume cross interpolation of
+  tensors*, Linear Algebra Appl. 458, 2014; S. Dolgov, D. Savostyanov,
+  *Parallel cross interpolation...*, arXiv:1903.11554).
+* **KSL projector-splitting integrator** (`ksl`): C. Lubich, I. Oseledets,
+  *A projector-splitting integrator for dynamical low-rank approximation*,
+  BIT 54, 2014; C. Lubich, I. Oseledets, B. Vandereycken, *Time integration
+  of tensor trains*, SIAM J. Numer. Anal. 53(2), 2015.
+* **tAMEn** (`tamen`): S. V. Dolgov, *A tensor decomposition algorithm for
+  large ODEs with conservation laws*, CMAM 19(1), 2019 (arXiv:1403.8085);
+  reference implementation [dolgov/tamen](https://github.com/dolgov/tamen).
+* **Riemannian autodiff** (`rgd`): A. Novikov, M. Rakhuba, I. Oseledets,
+  *Automatic differentiation for Riemannian optimization on low-rank matrix
+  and tensor-train manifolds*, SIAM J. Sci. Comput. 44(2), 2022; the
+  tangent-space machinery follows Lubich-Oseledets-Vandereycken 2015 and the
+  [t3f](https://github.com/Bihaqo/t3f) library (read, not copied).
+* **BPX preconditioner** (`tt.algs.qtt_ell`): M. Bachmayr, V. Kazeev,
+  *Stability of low-rank tensor representations and structured multilevel
+  preconditioning for elliptic PDEs*, Found. Comput. Math. 20, 2020.
+* **Maxvol**: A. Mikhalev, I. Oseledets, *Rectangular maximum-volume
+  submatrices and their applications*, arXiv:1502.07838.
+* **Randomized rounding**: H. Al Daas et al., *Randomized algorithms for
+  rounding in the Tensor-Train format*, SIAM J. Sci. Comput. 45(1), 2023.
+* **SIR-on-networks master equation** (`examples/sir_network_cme.py`):
+  S. Dolgov, D. Savostyanov, Appl. Math. Comput. 460, 2024
+  (arXiv:2209.03756), with the operator and observable factorizations of
+  [savostyanov/ttsir](https://github.com/savostyanov/ttsir).
+* **Fokker-Planck in TT** (`examples/fokker_planck_dumbbell.py`):
+  S. Dolgov, B. Khoromskij, I. Oseledets, SIAM J. Sci. Comput. 34(6), 2012.
+
+Every example that reproduces a published experiment names its paper in its
+docstring, with section and table numbers.
 
 ## License
 
