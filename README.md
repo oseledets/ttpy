@@ -2,18 +2,29 @@
 
 The Tensor Train toolbox, rewritten in pure Python.
 
+Not on PyPI yet (the `ttpy` name there is still the 1.x Fortran package);
+install straight from this branch -- pure Python, no compiler needed:
+
 ```bash
-pip install "ttpy[fast]"      # recommended: numba-compiled kernels
-pip install ttpy              # minimal install, numpy path only
+pip install "ttpy[fast] @ git+https://github.com/oseledets/ttpy@ttpy2"
 ```
 
-The `[fast]` extra ships compiled sweeps for the KSL integrator (5-10x),
-the greedy-cross bond kernel and the AMEn local solvers; numba installs
-from wheels, so no compiler is needed either way.  Without it every
-result is identical, just slower (`tests/test_fast.py` pins the parity).
+or, for development:
 
-No Fortran, no `f2py`, no compiler, no git submodules: the wheel is pure
-Python (`py3-none-any`) and installs without a native build toolchain.
+```bash
+git clone -b ttpy2 https://github.com/oseledets/ttpy && cd ttpy
+pip install -e ".[fast,test]"
+pytest -q          # ~1000 tests, a couple of minutes
+```
+
+The `[fast]` extra ships numba-compiled sweeps for the KSL integrator
+(5-10x), the greedy-cross bond kernel and the AMEn local solvers; numba
+installs from wheels, so no compiler is needed either way.  Without it
+every result is identical, just slower (`tests/test_fast.py` pins the
+parity).
+
+No Fortran, no `f2py`, no compiler, no git submodules: the package is pure
+Python and installs from the repository in seconds.
 
 ```python
 import numpy as np
