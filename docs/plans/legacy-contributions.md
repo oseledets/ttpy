@@ -17,13 +17,17 @@ and what happens to it.  Nothing on this list may be silently dropped.
    cross-like fibers.  References: A. Dektor, *Collocation methods for
    nonlinear differential equations on low-rank manifolds*, LAA 2025;
    Dektor & Einkemmer, arXiv:2411.15990.  **This fills a hole neither
-   `ksl` (linear) nor `tamen` (linear) covers** and is first in line to
-   port, with the author's name on the module.
+   `ksl` (linear) nor `tamen` (linear) covers**.  **Ported**:
+   `tt/algs/ksl_deim.py` with the author's name on the module and four
+   oracles in `tests/test_ksl_deim.py` (dense expm, `solve_ivp` on the
+   nonlinear case, the demo's eigenvector invariance, agreement with our
+   `ksl`); observed order 1.0 on both linear and nonlinear cases.
 2. **QTT-FFT options** — Dishi Liu, 2018 (`develop`): inverse-FFT mode and
    a bit-reversion switch in `qtt_fft1`, groundwork for multi-dimensional
    QTT-FFT.  ttpy 2 has no QTT-FFT at all yet (the 1.x one lives in
-   `tt-fort`); when it is ported (Dolgov–Khoromskij–Savostyanov, the
-   superfast Fourier transform), these options come with it.
+   `tt-fort`); **Ported**: `tt/algs/qtt_fft.py` (`tt.qtt_fft1`), unitary in both
+   directions, Dishi Liu's `inverse` and `bitReverse` options verbatim,
+   pinned against `numpy.fft` in `tests/test_qtt_fft.py`.
 3. **Flexible GMRES** — Larisa Markeeva, 2018 (`develop`, `new_gmres`):
    a rewritten flexible-preconditioning GMRES.  Our `tt/algs/solvers.py`
    GMRES predates it; diff the two before touching that file again.
