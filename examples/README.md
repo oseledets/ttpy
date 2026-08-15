@@ -21,7 +21,7 @@ with no preconditioner; the animation is the iterate after every sweep.
 <td width="50%">
 <img src="../docs/media/lov15_run.gif" width="100%"><br>
 <b><a href="pages/henon_heiles_ksl_paper.md">henon_heiles_ksl_paper</a></b> (<a href="henon_heiles_ksl_paper.py">code</a>) — Fig. 3 of
-Lubich–Oseledets–Vandereycken (SINUM 2015) end to end: the 10-D Hénon–Heiles
+Lubich–Oseledets–Vandereycken (<a href="https://doi.org/10.1137/140976546">SINUM 2015</a>) end to end: the 10-D Hénon–Heiles
 spectrum by KSL time integration, sine-DVR, complex absorbing potential;
 877 s where the paper reports 4425 s (and 54354 s for MCTDH); the frames
 are the run's real log.  The resulting spectrum is
@@ -44,7 +44,7 @@ where neither has a dense referee.</i>
 <td>
 <img src="../docs/media/fokker_planck_viscometric.png" width="100%"><br>
 <b><a href="pages/fokker_planck_dumbbell.md">fokker_planck_dumbbell</a></b> (<a href="fokker_planck_dumbbell.py">code</a>) — the polymer
-dumbbell in shear flow of Dolgov–Khoromskij–Oseledets (SISC 2012):
+dumbbell in shear flow of Dolgov–Khoromskij–Oseledets (<a href="https://doi.org/10.1137/120864210">SISC 2012</a>):
 Crank–Nicolson in TT, Kramers viscometric functions reaching the paper's
 Table 3 ($\eta$ 1.03291 vs 1.03281).
 <i>Oracles: analytic $\beta=0$ stationary state, sparse propagator, the
@@ -55,7 +55,7 @@ $\alpha=0$ Lyapunov solution.</i>
 <td>
 <img src="../docs/media/sir_rare_events.png" width="100%"><br>
 <b><a href="pages/sir_network_cme.md">sir_network_cme</a></b> (<a href="sir_network_cme.py">code</a>) — the SIR master equation
-on a network (Dolgov–Savostyanov, AMC 2024): the $3^N$-state distribution in
+on a network (Dolgov–Savostyanov, <a href="https://doi.org/10.1016/j.amc.2023.128290">AMC 2024</a>): the $3^N$-state distribution in
 TT, rare-event tails as one dot product with an explicit indicator train —
 down to $10^{-12}$, where SSA would need $\sim 5\cdot 10^{13}$ trajectories.
 <i>Oracles: brute-force propagator at small N, Gillespie SSA.</i>
@@ -75,7 +75,8 @@ recovers the tensor — six orders of magnitude apart on held-out entries.
 <img src="../docs/media/allen_cahn_deim.gif" width="100%"><br>
 <b><a href="pages/allen_cahn_ksl_deim.md">allen_cahn_ksl_deim</a></b> (<a href="allen_cahn_ksl_deim.py">code</a>) — Dektor's
 interpolatory projector-splitting integrator (<code>tt.ksl_deim</code>, ported
-from ttpy PR #102) on the 3D Allen–Cahn equation of his paper (LAA 2025,
+from ttpy PR #102) on the 3D Allen–Cahn equation of his paper
+(<a href="https://doi.org/10.1016/j.laa.2024.11.001">LAA 2025</a>,
 sec. 7.2): the cubic nonlinearity $u-u^3$ is evaluated only on QDEIM-selected
 cross fibers — the case the orthogonal-projector KSL cannot afford — with the
 paper's Fourier pseudospectral Laplacian as a rank-2 TT-matrix; the animation
@@ -106,12 +107,12 @@ samples for sliced Wasserstein, and the exact forward/inverse round trip.</i>
 | [bpx_elliptic.py](bpx_elliptic.py) | BPX preconditioning: $4^d$ conditioning tamed, and why $CAC$ must never be assembled | analytic solution |
 | [qtt_fem_triangle.py](qtt_fem_triangle.py) | QTT finite elements on a triangle | analytic solution |
 | [iga_ring.py](iga_ring.py) | isogeometric ring domain in QTT | manufactured solution |
-| [ising_integrals.py](ising_integrals.py) | Ising susceptibility integrals $C_m$ by greedy DMRG cross, racing the original Fortran `ttcross` | published values (Bailey–Borwein–Crandall) |
+| [ising_integrals.py](ising_integrals.py) | Ising susceptibility integrals $C_m$ by greedy DMRG cross, racing the original Fortran `ttcross` | published values ([Bailey–Borwein–Crandall](https://doi.org/10.1088/0305-4470/39/40/001)) |
 | [cross_engines.py](cross_engines.py) | `dmrg_cross` vs `rect_cross` on identical integrands, matched stopping | same integrals |
 | [robust_completion.py](pages/robust_completion.md) ([code](robust_completion.py)) | the loss ALS structurally cannot have | dense ground truth |
 | [henon_heiles_spectrum.py](pages/henon_heiles_spectrum.md) ([code](henon_heiles_spectrum.py)) | spectra from one trajectory (autocorrelation method) | `eigb` on the same operator |
-| [henon_heiles_ksl_paper.py](pages/henon_heiles_ksl_paper.md) ([code](henon_heiles_ksl_paper.py)) | [LOV15] Fig. 3, quantum dynamics at paper scale | the paper; dense expm at f=2 |
-| [fokker_planck_dumbbell.py](pages/fokker_planck_dumbbell.md) ([code](fokker_planck_dumbbell.py)) | [DKO12] sec. 4.2, polymer rheology in TT | three independent oracles |
-| [sir_network_cme.py](pages/sir_network_cme.md) ([code](sir_network_cme.py)) | [DS24] epidemics on networks, rare events | brute force + SSA |
-| [allen_cahn_ksl_deim.py](pages/allen_cahn_ksl_deim.md) ([code](allen_cahn_ksl_deim.py)) | Dektor's interpolatory KSL (`tt.ksl_deim`) on his paper's 3D Allen–Cahn | dense solve_ivp at small n + energy monotonicity |
+| [henon_heiles_ksl_paper.py](pages/henon_heiles_ksl_paper.md) ([code](henon_heiles_ksl_paper.py)) | [\[LOV15\]](https://doi.org/10.1137/140976546) Fig. 3, quantum dynamics at paper scale | the paper; dense expm at f=2 |
+| [fokker_planck_dumbbell.py](pages/fokker_planck_dumbbell.md) ([code](fokker_planck_dumbbell.py)) | [\[DKO12\]](https://doi.org/10.1137/120864210) sec. 4.2, polymer rheology in TT | three independent oracles |
+| [sir_network_cme.py](pages/sir_network_cme.md) ([code](sir_network_cme.py)) | [\[DS24\]](https://doi.org/10.1016/j.amc.2023.128290) epidemics on networks, rare events | brute force + SSA |
+| [allen_cahn_ksl_deim.py](pages/allen_cahn_ksl_deim.md) ([code](allen_cahn_ksl_deim.py)) | Dektor's interpolatory KSL (`tt.ksl_deim`) on [his paper's](https://doi.org/10.1016/j.laa.2024.11.001) 3D Allen–Cahn | dense solve_ivp at small n + energy monotonicity |
 | [sample_dirt_banana.py](pages/sample_dirt_banana.md) ([code](sample_dirt_banana.py)) | sample-only residual TT transports learned by orthogonal ALS | analytic banana density + independent samples + exact round trip |

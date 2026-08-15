@@ -88,7 +88,7 @@ x = tt.amen_solve(A, f, None, 1e-8, verb=0)
 
 It samples ``k`` at faces by TT-cross and assembles
 ``D.T @ diag(k_face) @ D`` with homogeneous Dirichlet boundaries.  This is
-independent of the Kazeev--Bachmayr multilevel operator; see
+independent of the [Kazeev--Bachmayr](https://doi.org/10.1007/s10208-020-09446-z) multilevel operator; see
 ``docs/QTT_FD.md`` and ``examples/qtt_divgrad_solvers.py``.
 
 ## What it is
@@ -145,8 +145,8 @@ y = x.round(rmax=100, method="randomized")
 
 The condition number of a QTT-discretized elliptic operator grows like $4^d$, so
 an unpreconditioned iteration stops working long before the format does.
-`tt.algs.qtt_ell` implements the multilevel preconditioner of Bachmayr and
-Kazeev (FoCM 20, 2020) with the ranks their theory predicts: $2^{2D+1}$ for the
+`tt.algs.qtt_ell` implements the multilevel preconditioner of [Bachmayr and
+Kazeev (FoCM 20, 2020)](https://doi.org/10.1007/s10208-020-09446-z) with the ranks their theory predicts: $2^{2D+1}$ for the
 preconditioner and $2^{2D} + 2^{2D-1}$ for the fused factors, both independent
 of the number of levels.
 
@@ -227,7 +227,7 @@ Already delivered from the Riemannian plan: the tangent-space machinery
 (`tt.algs.riemannian`: `project_delta`, `frames`, `retract`, `transport`, the
 cheap tangent inner product) and `tt.rgd` -- Riemannian gradient descent whose
 gradient comes from torch autodiff through the tangent parametrization
-(Novikov-Rakhuba-Oseledets, SISC 2022) without ever forming the Euclidean
+([Novikov-Rakhuba-Oseledets, SISC 2022](https://doi.org/10.1137/20M1356774)) without ever forming the Euclidean
 gradient.  Its niche is the loss ALS structurally cannot have: see
 `examples/robust_completion.py`, where 2% outliers send the square-loss fit
 five orders of magnitude off while log-cosh descent recovers the tensor.
@@ -245,8 +245,8 @@ visit then runs as one compiled kernel).  Measured parity and the race in
 
 Quantum dynamics runs at paper scale: the KSL projector-splitting integrator
 (compiled sweeps for float64 *and* complex128 -- a Schroedinger step
-`tau = 1j h` stays on the numba path) reproduces Fig. 3 of Lubich, Oseledets
-& Vandereycken, SINUM 53(2), 2015 end to end --
+`tau = 1j h` stays on the numba path) reproduces Fig. 3 of [Lubich, Oseledets
+& Vandereycken, SINUM 53(2), 2015](https://doi.org/10.1137/140976546) end to end --
 `examples/henon_heiles_ksl_paper.py`: the 10-D Henon-Heiles spectrum with a
 sine-DVR discretization and a complex absorbing potential, 6000 steps at rank
 18 in ~15 minutes on 8 CPU cores (the paper reports 4425 s for its own code
@@ -258,16 +258,16 @@ f=2 machinery is pinned against a dense `expm` propagator in
 Two more paper reproductions live in `examples/`, both propagated by
 Crank-Nicolson with a warm-started `amen_solve` per step and both checked
 against oracles the papers did not have: `fokker_planck_dumbbell.py` -- the
-polymer dumbbell in shear flow of Dolgov-Khoromskij-Oseledets, SISC 34(6),
-2012, reproducing its Table 3 viscometric functions (eta 1.03291 vs 1.03281)
+polymer dumbbell in shear flow of [Dolgov-Khoromskij-Oseledets, SISC 34(6),
+2012](https://doi.org/10.1137/120864210), reproducing its Table 3 viscometric functions (eta 1.03291 vs 1.03281)
 with the analytic beta=0 stationary state and an independent sparse
 propagator as cross-checks -- and `sir_network_cme.py` -- the SIR-epidemic
-master equation on a network of Dolgov-Savostyanov, AMC 460:128290, 2024,
-where the $3^N$-state distribution stays in TT (rank 11 at $N=32$) and
+master equation on a network of [Dolgov-Savostyanov, AMC 460:128290,
+2024](https://doi.org/10.1016/j.amc.2023.128290), where the $3^N$-state distribution stays in TT (rank 11 at $N=32$) and
 rare-event tails down to ~1e-12 are one dot product with an explicit
 indicator train, where SSA would need ~5e13 trajectories.  The integrator
-built for exactly these problems is `tt.tamen` (Dolgov's spectral-in-time
-AMEn): it conserves total probability to ~4e-14 even at crude accuracy,
+built for exactly these problems is `tt.tamen` ([Dolgov's spectral-in-time
+AMEn](https://doi.org/10.1515/cmam-2018-0023)): it conserves total probability to ~4e-14 even at crude accuracy,
 which no solve-and-round scheme does, and on the SIR master equation it is
 20x faster and three orders more accurate than step-by-step KSL; the
 measured division of labour between the two integrators is recorded in
@@ -292,48 +292,66 @@ line to port.  The ledger of 1.x-branch contributions and their fate here is
 themselves come from the literature, and several are reimplementations of
 other people's methods and codes:
 
-* **TT format, TT-SVD, rounding, cross**: I. V. Oseledets, *Tensor-train
-  decomposition*, SIAM J. Sci. Comput. 33(5), 2011; I. Oseledets,
-  E. Tyrtyshnikov, *TT-cross approximation for multidimensional arrays*,
+* **TT format, TT-SVD, rounding, cross**: I. V. Oseledets, [*Tensor-train
+  decomposition*](https://doi.org/10.1137/090752286), SIAM J. Sci. Comput.
+  33(5), 2011; I. Oseledets, E. Tyrtyshnikov, [*TT-cross approximation for
+  multidimensional arrays*](https://doi.org/10.1016/j.laa.2009.07.024),
   Linear Algebra Appl. 432(1), 2010.
 * **AMEn linear solvers** (`amen_solve`, `amen_mv`): S. Dolgov,
-  D. Savostyanov, *Alternating minimal energy methods for linear systems in
-  higher dimensions*, SIAM J. Sci. Comput. 36(5), 2014 (arXiv:1301.6068,
-  arXiv:1304.1222).
+  D. Savostyanov, [*Alternating minimal energy methods for linear systems in
+  higher dimensions*](https://doi.org/10.1137/140953289), SIAM J. Sci.
+  Comput. 36(5), 2014 ([arXiv:1301.6068](https://arxiv.org/abs/1301.6068),
+  [arXiv:1304.1222](https://arxiv.org/abs/1304.1222)).
 * **Greedy DMRG cross** (`dmrg_cross`): a from-scratch port of
   D. Savostyanov's [ttcross](https://github.com/savostyanov/ttcross)
-  (D. Savostyanov, *Quasioptimality of maximum-volume cross interpolation of
-  tensors*, Linear Algebra Appl. 458, 2014; S. Dolgov, D. Savostyanov,
-  *Parallel cross interpolation...*, arXiv:1903.11554).
+  (D. Savostyanov, [*Quasioptimality of maximum-volume cross interpolation of
+  tensors*](https://doi.org/10.1016/j.laa.2014.06.006), Linear Algebra Appl.
+  458, 2014; S. Dolgov, D. Savostyanov, [*Parallel cross
+  interpolation...*](https://doi.org/10.1016/j.cpc.2019.106869),
+  [arXiv:1903.11554](https://arxiv.org/abs/1903.11554)).
 * **KSL projector-splitting integrator** (`ksl`): C. Lubich, I. Oseledets,
-  *A projector-splitting integrator for dynamical low-rank approximation*,
-  BIT 54, 2014; C. Lubich, I. Oseledets, B. Vandereycken, *Time integration
-  of tensor trains*, SIAM J. Numer. Anal. 53(2), 2015.
-* **tAMEn** (`tamen`): S. V. Dolgov, *A tensor decomposition algorithm for
-  large ODEs with conservation laws*, CMAM 19(1), 2019 (arXiv:1403.8085);
+  [*A projector-splitting integrator for dynamical low-rank
+  approximation*](https://doi.org/10.1007/s10543-013-0454-0), BIT 54, 2014;
+  C. Lubich, I. Oseledets, B. Vandereycken, [*Time integration of tensor
+  trains*](https://doi.org/10.1137/140976546), SIAM J. Numer. Anal. 53(2),
+  2015.
+* **tAMEn** (`tamen`): S. V. Dolgov, [*A tensor decomposition algorithm for
+  large ODEs with conservation laws*](https://doi.org/10.1515/cmam-2018-0023),
+  CMAM 19(1), 2019 ([arXiv:1403.8085](https://arxiv.org/abs/1403.8085));
   reference implementation [dolgov/tamen](https://github.com/dolgov/tamen).
 * **Riemannian autodiff** (`rgd`): A. Novikov, M. Rakhuba, I. Oseledets,
-  *Automatic differentiation for Riemannian optimization on low-rank matrix
-  and tensor-train manifolds*, SIAM J. Sci. Comput. 44(2), 2022; the
-  tangent-space machinery follows Lubich-Oseledets-Vandereycken 2015 and the
-  [t3f](https://github.com/Bihaqo/t3f) library (read, not copied).
+  [*Automatic differentiation for Riemannian optimization on low-rank matrix
+  and tensor-train manifolds*](https://doi.org/10.1137/20M1356774), SIAM J.
+  Sci. Comput. 44(2), 2022; the tangent-space machinery follows
+  [Lubich-Oseledets-Vandereycken 2015](https://doi.org/10.1137/140976546)
+  and the [t3f](https://github.com/Bihaqo/t3f) library (read, not copied).
 * **BPX preconditioner** (`tt.algs.qtt_ell`): M. Bachmayr, V. Kazeev,
-  *Stability of low-rank tensor representations and structured multilevel
-  preconditioning for elliptic PDEs*, Found. Comput. Math. 20, 2020.
-* **Maxvol**: A. Mikhalev, I. Oseledets, *Rectangular maximum-volume
-  submatrices and their applications*, arXiv:1502.07838.
-* **Randomized rounding**: H. Al Daas et al., *Randomized algorithms for
-  rounding in the Tensor-Train format*, SIAM J. Sci. Comput. 45(1), 2023.
+  [*Stability of low-rank tensor representations and structured multilevel
+  preconditioning for elliptic
+  PDEs*](https://doi.org/10.1007/s10208-020-09446-z), Found. Comput. Math.
+  20, 2020.
+* **Maxvol**: A. Mikhalev, I. Oseledets, [*Rectangular maximum-volume
+  submatrices and their applications*](https://doi.org/10.1016/j.laa.2017.10.014),
+  Linear Algebra Appl. 538, 2018
+  ([arXiv:1502.07838](https://arxiv.org/abs/1502.07838)).
+* **Randomized rounding**: H. Al Daas et al., [*Randomized algorithms for
+  rounding in the Tensor-Train format*](https://doi.org/10.1137/21M1451191),
+  SIAM J. Sci. Comput. 45(1), 2023.
 * **SIR-on-networks master equation** (`examples/sir_network_cme.py`):
-  S. Dolgov, D. Savostyanov, Appl. Math. Comput. 460, 2024
-  (arXiv:2209.03756), with the operator and observable factorizations of
+  S. Dolgov, D. Savostyanov, [Appl. Math. Comput. 460,
+  2024](https://doi.org/10.1016/j.amc.2023.128290)
+  ([arXiv:2209.03756](https://arxiv.org/abs/2209.03756)), with the operator
+  and observable factorizations of
   [savostyanov/ttsir](https://github.com/savostyanov/ttsir).
 * **Deep inverse Rosenblatt transport** (`tt.transport`): the DIRT
-  construction is T. Cui, S. Dolgov, Found. Comput. Math. 22, 2022
-  (arXiv:2007.06968); the sample-only variant here (ALS on samples, no
-  density evaluations) is this package's own departure from it.
+  construction is T. Cui, S. Dolgov, [Found. Comput. Math. 22,
+  2022](https://doi.org/10.1007/s10208-021-09537-5)
+  ([arXiv:2007.06968](https://arxiv.org/abs/2007.06968)); the sample-only
+  variant here (ALS on samples, no density evaluations) is this package's
+  own departure from it.
 * **Fokker-Planck in TT** (`examples/fokker_planck_dumbbell.py`):
-  S. Dolgov, B. Khoromskij, I. Oseledets, SIAM J. Sci. Comput. 34(6), 2012.
+  S. Dolgov, B. Khoromskij, I. Oseledets, [SIAM J. Sci. Comput. 34(6),
+  2012](https://doi.org/10.1137/120864210).
 
 Every example that reproduces a published experiment names its paper in its
 docstring, with section and table numbers.
