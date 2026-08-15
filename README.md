@@ -328,6 +328,10 @@ other people's methods and codes:
   S. Dolgov, D. Savostyanov, Appl. Math. Comput. 460, 2024
   (arXiv:2209.03756), with the operator and observable factorizations of
   [savostyanov/ttsir](https://github.com/savostyanov/ttsir).
+* **Deep inverse Rosenblatt transport** (`tt.transport`): the DIRT
+  construction is T. Cui, S. Dolgov, Found. Comput. Math. 22, 2022
+  (arXiv:2007.06968); the sample-only variant here (ALS on samples, no
+  density evaluations) is this package's own departure from it.
 * **Fokker-Planck in TT** (`examples/fokker_planck_dumbbell.py`):
   S. Dolgov, B. Khoromskij, I. Oseledets, SIAM J. Sci. Comput. 34(6), 2012.
 

@@ -180,3 +180,19 @@ python examples/sample_dirt_banana.py \
 ```
 
 The default fit plus metrics takes about two seconds on the development laptop; rendering the eight-frame GIF adds a few seconds and requires Matplotlib and Pillow.
+
+## Relation to the original DIRT
+
+The deep inverse Rosenblatt transport is due to Cui and Dolgov: T. Cui,
+S. Dolgov, *Deep composition of tensor trains using approximate transport
+maps*, Found. Comput. Math. 22:1863-1922, 2022 (arXiv:2007.06968), building
+on Dolgov, Anaya-Izquierdo, Fox, Scheichl, *Approximation and sampling of
+multivariate probability distributions in the tensor train decomposition*,
+Stat. Comput. 30:603-625, 2020.  Compared to the original work, which
+builds each layer by TT-cross on **pointwise evaluations of the
+unnormalized target density**, the approach here uses **only samples**: the
+residual TT corrections are fitted by orthogonal ALS from draws of the
+target, and no density oracle is ever called.  That is what makes it
+applicable when the density is unknown or intractable and only data is
+available -- at the price that the accuracy is bounded by the sample size
+rather than by a cross tolerance.
