@@ -65,6 +65,10 @@ ranks 7 instead of 12. If you relied on the old value, pass
   `np.random`.
 * `six`, `np.float` and `np.complex` are gone — the package runs on
   numpy >= 1.24.
+* Sample-DIRT's reusable kernel is available from ``tt.transport`` and lazy
+  ``tt.SampleDIRT``-style imports remain supported.  Its research experiments,
+  reports, and generated artifacts live in the separate `sample-dirt` project,
+  which imports ttypy rather than carrying a second implementation.
 
 ## External libraries that are gone
 

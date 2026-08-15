@@ -470,7 +470,11 @@ def frames(X, mu=1, *, check_rank=True):
     """
     if not isinstance(X, vector):
         raise TypeError(f"frames expects a tt.vector, got {type(X)!r}")
-    X = X.round(eps=0)
+    # Inner optimization loops that have just retracted onto known attainable
+    # ranks can skip the structural TT-SVD together with the numerical-rank
+    # checks.  Their cached-frame update then costs only the two QR sweeps.
+    if check_rank:
+        X = X.round(eps=0)
     d = X.d
     if not 1 <= int(mu) <= d:
         raise ValueError(f"mu must be in 1..{d}, got {mu}")

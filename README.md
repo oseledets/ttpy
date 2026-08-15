@@ -7,8 +7,7 @@ pip install ttpy          # or: uv pip install ttpy
 ```
 
 No Fortran, no `f2py`, no compiler, no git submodules: the wheel is pure
-Python (`py3-none-any`, 169 KB) and installs into a fresh environment in a
-quarter of a second.
+Python (`py3-none-any`) and installs without a native build toolchain.
 
 ```python
 import numpy as np
@@ -50,9 +49,51 @@ robust completion -- is in [examples/README.md](examples/README.md).  The plain 
 one call: `tt.qlaplace_dd([12, 12, 12])` is $2^{12}$ points per axis --
 6.9e10 unknowns.
 
+For a prescribed TT-rank profile, ``lobpcg_solve`` keeps every rank fixed and
+recycles one transported PCG direction per core instead of enriching the TT
+bases:
+
+```python
+depth = 12
+profile = [min(4, 2 ** min(k, depth-k)) for k in range(depth+1)]
+x0 = tt.rand(2, depth, profile)
+x, info = tt.lobpcg_solve(
+    A, b, x0, 1e-8, local_steps=12, verb=0, return_info=True
+)
+print(info.projected_gradient, x.r)
+```
+
+It minimizes the SPD energy on the fixed-rank manifold.  Thus its stopping
+quantity is ``||P_T(Ax-b)||/||b||``; use ``check_true_res=True`` when the full
+linear residual is also required.  A manufactured two-dimensional QTT example
+with both checks is in ``examples/lobpcg_fixed_rank.py``; the algorithm and a
+constrained-rank example are documented in ``docs/LOBPCG.md``.
+
+An ordinary conservative central-difference discretization of
+``-div(k grad u)`` can be assembled directly in QTT from a vectorized
+coefficient function:
+
+```python
+import numpy as np
+import tt
+
+def k(points):
+    x, y = points[:, 0], points[:, 1]
+    return 1.0 + 0.5*np.sin(2*np.pi*x)*np.sin(2*np.pi*y)
+
+A = tt.qtt_divgrad([8, 8], k)
+f = tt.ones(2, 16)
+x = tt.amen_solve(A, f, None, 1e-8, verb=0)
+```
+
+It samples ``k`` at faces by TT-cross and assembles
+``D.T @ diag(k_face) @ D`` with homogeneous Dirichlet boundaries.  This is
+independent of the Kazeev--Bachmayr multilevel operator; see
+``docs/QTT_FD.md`` and ``examples/qtt_divgrad_solvers.py``.
+
 ## What it is
 
-A tensor in the TT (tensor train) format is stored as $d$ cores of shape
+A tensor in the TT (tensor train) format is stored as `d` cores of shape
 $(r_i, n_i, r_{i+1})$, which turns $\prod_i n_i$ numbers into
 $\sum_i r_i n_i r_{i+1}$ and makes linear algebra in dimension 100 possible.
 What is implemented, against the 1.x baseline:
@@ -64,19 +105,18 @@ What is implemented, against the 1.x baseline:
 | linear solvers | `amen_solve` | `amen_solve` (2.8x faster) + spectral-in-time `tamen` with exact invariants |
 | eigensolvers | `eigb` | `eigb`, dense or matrix-free local solves |
 | dynamics | `ksl` | `ksl` with compiled float64/complex128 sweeps + step-adaptive `ksl_adaptive` |
-| Riemannian toolbox | -- | tangent-space machinery + `rgd` with torch autodiff |
-| elliptic QTT | -- | BPX multilevel preconditioner (`tt.algs.qtt_ell`) |
-| sampling / densities | -- | deep inverse Rosenblatt transports (`tt.transport`) |
+| Riemannian toolbox | — | tangent-space machinery + `rgd` with torch autodiff |
+| elliptic QTT | — | BPX multilevel preconditioner (`tt.algs.qtt_ell`) |
+| sampling / densities | — | `tt.transport`: Sample-DIRT densities and Rosenblatt transports |
 | backends | numpy | numpy and torch, CPU/CUDA/MPS |
 | install | f2py + Fortran toolchain | pure-python wheel |
 
-`tt.transport` also contains an experimental sample-only deep inverse
-Rosenblatt transport. Its default root-free estimator stores a centered direct
-TT correction; the quadratic density-ratio loss uses exact TT contractions and
-only the linear term is estimated from samples. Orthogonal ALS and stochastic
-Adam variants are included. The construction and the correlated Gaussian,
-predator--prey and Lorenz--96 examples are documented in
-[docs/SAMPLE_DIRT.md](docs/SAMPLE_DIRT.md).
+The reusable sample-only density and inverse Rosenblatt transport kernel lives
+in `tt.transport`.  It includes TT density families, exact contractions,
+fitters, transport composition, refinement, and serialization, but deliberately
+ships no experiment gallery or generated results.  Those research artifacts
+live in the separate [`sample-dirt`](https://github.com/oseledets/sample-dirt)
+project, which uses `ttpy2` as its library dependency.
 
 ## Backends
 

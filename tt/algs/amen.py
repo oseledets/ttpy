@@ -401,7 +401,8 @@ def _jacobi(kind, phiL, acore, phiR):
         # The n = 2 path inverts the blocks itself, so the batched numpy inverse
         # below must not run first: it was doing the same 1156 two-by-two
         # inversions a second time (16 ms of a 200 ms solve).
-        if _fast.HAVE_NUMBA and type(blocks) is np.ndarray and n == 2:
+        if (_fast.HAVE_NUMBA and type(blocks) is np.ndarray
+                and blocks.dtype == np.float64 and n == 2):
             invT = np.empty((2, 2, blocks.shape[0], blocks.shape[1]))
             ok = _fast.invert_2x2_blocks(blocks, invT)
             if not ok:

@@ -483,6 +483,33 @@ def test_allen_cahn_ksl_deim_matches_dense_solve_ivp():
         f"Ginzburg-Landau energy increased: {e}")
 
 
+# --- examples/sample_dirt_banana.py -----------------------------------------
+
+def test_sample_dirt_banana_transport_improves_samples():
+    """The complete sample-only bridge must bend a fixed reference cloud.
+
+    The oracle is the independently generated banana cloud measured in the
+    original physical coordinates.  Exact invertibility is an independent
+    structural check on the learned Rosenblatt composition.
+    """
+    pytest.importorskip("torch")
+    _examples_path()
+    from sample_dirt_banana import fit_transport
+
+    _, report, stages, _ = fit_transport(
+        train_samples=4_000,
+        evaluation_samples=4_000,
+        plot_samples=32,
+        epochs=6,
+        seed=731,
+    )
+
+    assert len(stages) == 8
+    assert report["final_swd_physical"] < 0.30 * report["initial_swd_physical"]
+    assert report["stored_parameters"] < 2_500
+    assert report["roundtrip_error"] < 1e-12
+
+
 # --- examples/qtt_divgrad_cross.py -------------------------------------------
 
 def test_divgrad_cross_assembly_matches_scipy_sparse():

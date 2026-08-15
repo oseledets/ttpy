@@ -35,18 +35,16 @@ __all__ = [
     "multifuncrs", "multifuncrs2", "GMRES", "amen_solve", "lobpcg_solve",
     "qtt_divgrad", "qtt_divgrad_from_faces", "qtt_fft1", "amen_mv", "tamen",
     "cross", "rect_cross", "dmrg_cross", "greedy_cross", "maxvol",
-    "eigb", "ksl", "ksl_deim", "DirectTTDensity", "PermutedTTDensity", "SampleDIRT",
+    "eigb", "ksl", "ksl_deim", "__version__",
+    "DirectTTDensity", "PermutedTTDensity", "SampleDIRT",
     "SquaredTTDensity", "LinearSquaredTTDensity",
     "AdaptiveLinearSquaredTTDensity", "QuadraticSquaredTTDensity",
-    "LocallyPurifiedLinearTTDensity",
-    "NonnegativeLinearTTDensity",
-    "ProbitOrthogonalTTDensity",
-    "PurifiedLinearTTDensity",
-    "damp_tt_density",
-    "enrich_linear_sample_dirt_ranks",
-    "truncate_linear_sample_dirt_ranks",
-    "fit_centered_tt_density", "fit_centered_tt_ratio",
-    "fit_squared_tt_density", "fit_linear_squared_tt_density",
+    "LocallyPurifiedLinearTTDensity", "NonnegativeLinearTTDensity",
+    "ProbitOrthogonalTTDensity", "PurifiedLinearTTDensity",
+    "damp_tt_density", "enrich_linear_sample_dirt_ranks",
+    "truncate_linear_sample_dirt_ranks", "fit_centered_tt_density",
+    "fit_centered_tt_ratio", "fit_squared_tt_density",
+    "fit_linear_squared_tt_density",
     "fit_adaptive_linear_squared_tt_density",
     "fit_conditional_twists_to_probit_density",
     "fit_locally_purified_linear_tt_density",
@@ -54,7 +52,7 @@ __all__ = [
     "fit_probit_rotated_linear_squared_tt_density",
     "fit_radial_twists_to_probit_density",
     "fit_purified_linear_tt_density",
-    "fit_quadratic_squared_tt_density", "__version__",
+    "fit_quadratic_squared_tt_density",
 ]
 
 
@@ -90,8 +88,29 @@ _FUNCTIONS = {
     "SampleDIRT": ("tt.transport.sample_dirt", "SampleDIRT"),
     "SquaredTTDensity": ("tt.transport.sample_dirt", "SquaredTTDensity"),
     "damp_tt_density": ("tt.transport.sample_dirt", "damp_tt_density"),
+    "enrich_linear_sample_dirt_ranks": (
+        "tt.transport.sample_dirt", "enrich_linear_sample_dirt_ranks"
+    ),
+    "truncate_linear_sample_dirt_ranks": (
+        "tt.transport.sample_dirt", "truncate_linear_sample_dirt_ranks"
+    ),
     "LinearSquaredTTDensity": (
         "tt.transport.sample_dirt", "LinearSquaredTTDensity"
+    ),
+    "AdaptiveLinearSquaredTTDensity": (
+        "tt.transport.sample_dirt", "AdaptiveLinearSquaredTTDensity"
+    ),
+    "LocallyPurifiedLinearTTDensity": (
+        "tt.transport.sample_dirt", "LocallyPurifiedLinearTTDensity"
+    ),
+    "NonnegativeLinearTTDensity": (
+        "tt.transport.sample_dirt", "NonnegativeLinearTTDensity"
+    ),
+    "ProbitOrthogonalTTDensity": (
+        "tt.transport.sample_dirt", "ProbitOrthogonalTTDensity"
+    ),
+    "PurifiedLinearTTDensity": (
+        "tt.transport.sample_dirt", "PurifiedLinearTTDensity"
     ),
     "QuadraticSquaredTTDensity": (
         "tt.transport.sample_dirt", "QuadraticSquaredTTDensity"
@@ -107,6 +126,30 @@ _FUNCTIONS = {
     ),
     "fit_linear_squared_tt_density": (
         "tt.transport.sample_dirt", "fit_linear_squared_tt_density"
+    ),
+    "fit_adaptive_linear_squared_tt_density": (
+        "tt.transport.sample_dirt", "fit_adaptive_linear_squared_tt_density"
+    ),
+    "fit_conditional_twists_to_probit_density": (
+        "tt.transport.sample_dirt",
+        "fit_conditional_twists_to_probit_density",
+    ),
+    "fit_locally_purified_linear_tt_density": (
+        "tt.transport.sample_dirt", "fit_locally_purified_linear_tt_density"
+    ),
+    "fit_nonnegative_linear_tt_density": (
+        "tt.transport.sample_dirt", "fit_nonnegative_linear_tt_density"
+    ),
+    "fit_probit_rotated_linear_squared_tt_density": (
+        "tt.transport.sample_dirt",
+        "fit_probit_rotated_linear_squared_tt_density",
+    ),
+    "fit_radial_twists_to_probit_density": (
+        "tt.transport.sample_dirt",
+        "fit_radial_twists_to_probit_density",
+    ),
+    "fit_purified_linear_tt_density": (
+        "tt.transport.sample_dirt", "fit_purified_linear_tt_density"
     ),
     "fit_quadratic_squared_tt_density": (
         "tt.transport.sample_dirt", "fit_quadratic_squared_tt_density"

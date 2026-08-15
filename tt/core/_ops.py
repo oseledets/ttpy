@@ -68,6 +68,7 @@ def to_dtype(cores, dtype):
 
 def _unify(a, b):
     """Bring two core lists to a common dtype (never narrowing)."""
+    bk.same_backend((*a, *b), what="operands")
     dt = bk.result_dtype(bk.dtype_of(a[0]), bk.dtype_of(b[0]))
     return to_dtype(a, dt), to_dtype(b, dt), dt
 

@@ -232,6 +232,103 @@ def gmres_local(phi1, amat, phi2, invT, use_prec, rhs, tol, restart, maxit,
     return sol, relres, nmv, relres <= tol
 
 
+
+@njit(**_JIT)
+def recycled_pcg_local(phi1, amat, phi2, invT, use_prec, rhs, coarse,
+                       use_coarse, tol, maxit,
+                       i_, m_, j_, p_, n_, c_, b_, a_):
+    """Augmented PCG with one exactly treated recycled direction.
+
+    The local correction is minimized first over ``span(coarse)``.  Every
+    subsequently preconditioned residual is projected to the
+    ``B``-orthogonal complement of that direction.  The projection is kept
+    inside the compiled loop: for one coarse vector it is only a dot and an
+    axpy, while returning to Python once per local iteration costs more than
+    the operation itself at QTT core sizes.
+
+    ``coarse`` is assumed Euclidean-normalized when ``use_coarse`` is true.
+    The returned ``last_search`` is the last fresh PCG direction; callers keep
+    it as the one-vector memory for the next visit of this TT core.
+    """
+    size = rhs.size
+    correction = np.zeros(size)
+    residual = rhs.copy()
+    last_search = np.zeros(size)
+    zvec = np.zeros(size)
+    hp = np.zeros(size)
+    denominator = 0.0
+    matvecs = 0
+    coarse_ok = False
+
+    right_norm = np.sqrt(np.dot(rhs, rhs))
+    if right_norm == 0.0:
+        return (correction, residual, last_search, matvecs, 0, False,
+                coarse_ok)
+
+    if use_coarse:
+        hp[:] = _mv(phi1, amat, phi2, coarse, i_, m_, j_, p_, n_, c_, b_, a_).reshape(size)
+        matvecs += 1
+        denominator = np.dot(coarse, hp)
+        scale = np.sqrt(np.dot(coarse, coarse) * np.dot(hp, hp))
+        if denominator > 100.0 * np.finfo(np.float64).eps * scale:
+            alpha = np.dot(coarse, residual) / denominator
+            correction += alpha * coarse
+            residual -= alpha * hp
+            coarse_ok = True
+
+    if use_prec:
+        jacobi_c_apply(invT, residual.reshape(i_, m_, j_),
+                       zvec.reshape(i_, m_, j_))
+    else:
+        zvec[:] = residual
+    if coarse_ok:
+        zvec -= coarse * (np.dot(hp, zvec) / denominator)
+
+    rho = np.dot(residual, zvec)
+    search = zvec.copy()
+    used = 0
+    breakdown = False
+    for _iteration in range(maxit):
+        if np.sqrt(np.dot(residual, residual)) <= tol * right_norm:
+            break
+        image = _mv(phi1, amat, phi2, search, i_, m_, j_, p_, n_, c_, b_, a_).reshape(size)
+        matvecs += 1
+        curvature = np.dot(search, image)
+        scale = np.sqrt(np.dot(search, search) * np.dot(image, image))
+        if (curvature <= 100.0 * np.finfo(np.float64).eps * scale
+                or rho <= 0.0):
+            breakdown = True
+            break
+        last_search[:] = search
+        used += 1
+        alpha = rho / curvature
+        correction += alpha * search
+        residual -= alpha * image
+        if np.sqrt(np.dot(residual, residual)) <= tol * right_norm:
+            break
+
+        if use_prec:
+            jacobi_c_apply(invT, residual.reshape(i_, m_, j_),
+                           zvec.reshape(i_, m_, j_))
+        else:
+            zvec[:] = residual
+        if coarse_ok:
+            # Strict augmented PCG: do not let preconditioning leak back into
+            # the recycled coarse space.
+            zvec -= coarse * (np.dot(hp, zvec) / denominator)
+        rho_new = np.dot(residual, zvec)
+        if rho_new <= 0.0:
+            breakdown = True
+            break
+        search = zvec + (rho_new / rho) * search
+        rho = rho_new
+
+    return (correction, residual, last_search, matvecs, used, breakdown,
+            coarse_ok)
+
+
+
+
 @njit(**_JIT)
 def invert_2x2_blocks(blocks, out):
     """Invert every 2x2 diagonal block of the central Jacobi preconditioner.

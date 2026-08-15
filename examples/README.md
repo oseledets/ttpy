@@ -83,6 +83,17 @@ is the central slice separating into the $\pm 1$ phases.
 <i>Oracle: dense solve_ivp of the same ODE at small n, plus monotone decay of
 the Ginzburg–Landau energy along the whole run.</i>
 </td>
+<td width="50%">
+<img src="../docs/media/sample_dirt_banana.gif" width="100%"><br>
+<b><a href="pages/sample_dirt_banana.md">sample_dirt_banana</a></b> (<a href="sample_dirt_banana.py">code</a>) — a sample-only
+probit bridge from the uniform square to a thin banana: seven low-rank residual
+TT densities fitted by orthogonal ALS, with exact TT square integrals and exact
+inverse Rosenblatt conditionals.  The same reference cloud sharpens layer by
+layer; physical sliced $W_2$ falls from 0.439 to 0.052 (sampling floor 0.025),
+using 1,912 parameters in about 1.8 s.
+<i>Oracle: the held-out analytic banana density for KL/TV, independent target
+samples for sliced Wasserstein, and the exact forward/inverse round trip.</i>
+</td>
 </tr>
 </table>
 
@@ -103,3 +114,4 @@ the Ginzburg–Landau energy along the whole run.</i>
 | [fokker_planck_dumbbell.py](pages/fokker_planck_dumbbell.md) ([code](fokker_planck_dumbbell.py)) | [DKO12] sec. 4.2, polymer rheology in TT | three independent oracles |
 | [sir_network_cme.py](pages/sir_network_cme.md) ([code](sir_network_cme.py)) | [DS24] epidemics on networks, rare events | brute force + SSA |
 | [allen_cahn_ksl_deim.py](pages/allen_cahn_ksl_deim.md) ([code](allen_cahn_ksl_deim.py)) | Dektor's interpolatory KSL (`tt.ksl_deim`) on his paper's 3D Allen–Cahn | dense solve_ivp at small n + energy monotonicity |
+| [sample_dirt_banana.py](pages/sample_dirt_banana.md) ([code](sample_dirt_banana.py)) | sample-only residual TT transports learned by orthogonal ALS | analytic banana density + independent samples + exact round trip |
