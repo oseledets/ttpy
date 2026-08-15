@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Poisson on a triangle, three glued QTT patches -- Markeeva's benchmark.
+"""Poisson on a triangle: three glued QTT patches, solved as one system.
 
     python examples/qtt_fem_triangle.py            # d = 2..6
     python examples/qtt_fem_triangle.py 7
@@ -10,10 +10,12 @@ the midpoints of its sides and its centroid into **three quadrilaterals**, each
 meshed by a bilinear map of the unit square, each assembled in QTT z-order, and
 the three glued along their shared edges.
 
-This is the benchmark of L. Markeeva's ``qtt-laplace``
+The problem, the discretization and the reference numbers come from ``qtt-laplace``
 (https://github.com/RerRayne/qtt-laplace) -- the ``SolutionOnTriangle``
-notebook: Markeeva's geometry, one-point element rule and interface coupling.
-The algorithm is Markeeva's; this is a reimplementation on ttpy2, not a copy.
+notebook -- the geometry, the one-point element rule and the interface coupling.
+Credit: L. Markeeva, I. Tsybulin, I. Oseledets, J. Comput. Phys. 424:109835,
+2021 (doi:10.1016/j.jcp.2020.109835).
+The method is theirs; this is a reimplementation on ttpy2, not a copy.
 
 The reference is the energy ``int |grad u|^2``, and it comes from outside the
 tensor world: the qtt-laplace repository ships a FEniCS convergence curve, which reaches

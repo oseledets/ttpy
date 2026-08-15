@@ -99,11 +99,12 @@ samples for sliced Wasserstein, and the exact forward/inverse round trip.</i>
 <tr>
 <td width="50%">
 <img src="../docs/media/qtt_fem_triangle.png" width="100%"><br>
-<b><a href="pages/qtt_fem_triangle.md">qtt_fem_triangle</a></b> (<a href="qtt_fem_triangle.py">code</a>) — L. Markeeva's
-<a href="https://github.com/RerRayne/qtt-laplace">qtt-laplace</a> benchmark:
-Poisson on a triangle as three glued QTT patches, the z-order finite-element
-assembly with TT-cross Jacobian fields, one <code>amen_solve</code> on the
-coupled block train; the published TT energies reproduced to 1.5e-9.
+<b><a href="pages/qtt_fem_triangle.md">qtt_fem_triangle</a></b> (<a href="qtt_fem_triangle.py">code</a>) — Poisson on a
+triangle, a domain no single tensor-product grid fits: three glued QTT patches,
+z-order finite-element assembly with TT-cross Jacobian fields, one
+<code>amen_solve</code> on the coupled block train; the energies published with
+<a href="https://github.com/RerRayne/qtt-laplace">qtt-laplace</a>
+(<a href="https://doi.org/10.1016/j.jcp.2020.109835">JCP 2021</a>) reproduced to 1.5e-9.
 <i>Oracle: the FEniCS energy curve shipped in that repository, approached from
 above as a Galerkin energy must.</i>
 </td>
@@ -118,7 +119,7 @@ above as a Galerkin energy must.</i>
 | [qtt_divgrad_cross.py](pages/qtt_divgrad_cross.md) ([code](qtt_divgrad_cross.py)) | div–grad assembly by TT-cross, AMEn animation | scipy.sparse rebuild |
 | [amen_laplace.py](amen_laplace.py) | the AMEn linear solver on the QTT Laplacian | residual + dense solve |
 | [bpx_elliptic.py](bpx_elliptic.py) | BPX preconditioning: $4^d$ conditioning tamed, and why $CAC$ must never be assembled | analytic solution |
-| [qtt_fem_triangle.py](pages/qtt_fem_triangle.md) ([code](qtt_fem_triangle.py)) | [Markeeva's](https://github.com/RerRayne/qtt-laplace) triangle benchmark: three glued QTT patches | the repository's FEniCS curve + its TT energies |
+| [qtt_fem_triangle.py](pages/qtt_fem_triangle.md) ([code](qtt_fem_triangle.py)) | Poisson on a triangle: three glued QTT patches ([qtt-laplace](https://github.com/RerRayne/qtt-laplace)) | the repository's FEniCS curve + its TT energies |
 | [iga_ring.py](iga_ring.py) | isogeometric ring domain in QTT | manufactured solution |
 | [ising_integrals.py](ising_integrals.py) | Ising susceptibility integrals $C_m$ by greedy DMRG cross, racing the original Fortran `ttcross` | published values ([Bailey–Borwein–Crandall](https://doi.org/10.1088/0305-4470/39/40/001)) |
 | [cross_engines.py](cross_engines.py) | `dmrg_cross` vs `rect_cross` on identical integrands, matched stopping | same integrals |
