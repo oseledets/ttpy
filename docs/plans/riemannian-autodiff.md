@@ -87,7 +87,7 @@ cores_orthogonalization_step(cores, dim, left_to_right=True)   # one QR step, in
 
 `project(X, Z)` implements the closed form of [LOV15] Thm 3.1,
 
-$$P_X = \sum_{k=1}^{d} P_{\lt k} \otimes I_k \otimes P_{\gt k} \;-\; \sum_{k=1}^{d-1} P_{\le k} \otimes P_{\gt k},$$
+$$P_X = \sum_{k=1}^{d} P_{\lt k} \otimes I_k \otimes P_{\gt k} \quad -\quad  \sum_{k=1}^{d-1} P_{\le k} \otimes P_{\gt k},$$
 
 as one sweep: right-to-left orthogonalization of `X` giving the right frames
 $V_k$ and the right interfaces `rhs[k] : (r_z(k), r_x(k))`; then left-to-right
@@ -290,7 +290,7 @@ argument is unaffected: the QR sweep is differentiable in torch (measured, §4.1
 
 ### 1.5 A second, structural defect: two owners of the tangent projection
 
-`tt/algs/ksl.py:347` `tangent_defect(A, y)` computes $\|(I - P_{T_y M})\, A y\|$ by
+`tt/algs/ksl.py:347` `tangent_defect(A, y)` computes $\|(I - P_{T_y M})  A y\|$ by
 its own inlined sweep, using the same decomposition as `project` but never
 calling it. That is a second implementation of the same mathematics.
 
@@ -333,8 +333,8 @@ $M_r = \{ X : \mathrm{rank}_{TT}(X) = r \}$ is a smooth embedded submanifold of
 $\mathbb{R}^{n_1 \times \dots \times n_d}$ of dimension $\sum_k r_{k-1} n_k r_k - \sum_{k<d} r_k^2$. At
 $X \in M_r$ write the two orthogonal representations
 
-$$X = U_1 U_2 \cdots U_{d-1} S_d \qquad \text{(left-orthogonal: } ML(U_k)^{H}\, ML(U_k) = I)$$
-$$X = S_1 V_2 \cdots V_d \qquad \text{(right-orthogonal: } MR(V_k)\, MR(V_k)^{H} = I)$$
+$$X = U_1 U_2 \cdots U_{d-1} S_d \qquad \text{(left-orthogonal: } ML(U_k)^{H}  ML(U_k) = I)$$
+$$X = S_1 V_2 \cdots V_d \qquad \text{(right-orthogonal: } MR(V_k)  MR(V_k)^{H} = I)$$
 
 Both are produced by the sweeps already in the codebase:
 `_ops.orthogonalize(cores, center=0)` gives $S_1, V_2 \dots V_d$, and
@@ -344,11 +344,11 @@ should share.
 
 A tangent vector is parametrized by **delta cores** $\delta G_k : (r_{k-1}, n_k, r_k)$,
 
-$$\xi = \delta G_1 V_2 \cdots V_d + U_1\, \delta G_2 V_3 \cdots V_d + \dots + U_1 \cdots U_{d-1}\, \delta G_d$$
+$$\xi = \delta G_1 V_2 \cdots V_d + U_1  \delta G_2 V_3 \cdots V_d + \dots + U_1 \cdots U_{d-1}  \delta G_d$$
 
 with the **gauge condition** ([RNO19] eq. (21), [NRO22] eq. (5.6))
 
-$$ML(\delta G_k)^{H}\, ML(U_k) = 0, \qquad k = 1, \dots, d-1$$
+$$ML(\delta G_k)^{H}  ML(U_k) = 0, \qquad k = 1, \dots, d-1$$
 
 (no condition on $\delta G_d$). The gauge makes the parametrization a bijection, and
 it is what makes the tangent inner product cheap:
@@ -376,7 +376,7 @@ document depends on it:
   $O(b^2 d n r^3)$ from the assembled tensors ([RNO19] §4.3) — the factor that
   makes their LOBPCG affordable;
 * summing tangent vectors at the same point is *free* in the deltas
-  ($\delta G^{\alpha\xi+\beta\eta} = \alpha\, \delta G^{\xi} + \beta\, \delta G^{\eta}$) and costs a rank-$4r$ add plus a rounding in
+  ($\delta G^{\alpha\xi+\beta\eta} = \alpha  \delta G^{\xi} + \beta  \delta G^{\eta}$) and costs a rank-$4r$ add plus a rounding in
   the assembled form. t3f has exactly this function (`add_n_projected`, §7);
 * the Riemannian autodiff of §4.3 produces deltas natively and consumes deltas
   natively; going through the assembled tensor at every step is the difference
@@ -428,7 +428,7 @@ report its residual would therefore be silent here, and §10 test 5 pins that.
 ### 2.4 Vector transport
 
 The cheapest valid transport on an embedded submanifold is
-$T_{X\to Y}(\xi) = P_{T_Y M}\, \xi$ — one `project` call, rank stays $2r$. It is what
+$T_{X\to Y}(\xi) = P_{T_Y M}  \xi$ — one `project` call, rank stays $2r$. It is what
 [NRO22]'s reference implementation and geomCG use, and it is what §5's CG used.
 
 In the delta representation there is no shortcut: the deltas at `X` mean nothing
@@ -632,7 +632,7 @@ rank of the Euclidean gradient = 59        (against r = 3 for X)
 ```
 
 **One discrepancy with the paper, worth recording.** [NRO22] eq. (5.11) writes
-the gauge step with a **minus**, $\dot S_k = \partial g/\partial R_k - U_k \sum_j U_k^{H}\, \partial g/\partial R_j$, while
+the gauge step with a **minus**, $\dot S_k = \partial g/\partial R_k - U_k \sum_j U_k^{H}  \partial g/\partial R_j$, while
 Alg. 5.2 line 9 writes $D_k := D_k + U_k^L((U_k^L)^T D_k)$ with a **plus**. Only
 the minus is the projection onto the gauge complement, and only the minus
 reproduces `project` — measured 1.5e-15 with minus. Either the paper has a typo
@@ -891,19 +891,19 @@ $$B^{-1} = B_1 + \dots + B_{\rho_B}, \qquad \text{each } B_i \text{ a TT-matrix 
 because multiplying a TT-matrix of rank $R$ by a rank-1 TT-matrix leaves the
 rank at $R$. Then
 
-$$P_x B^{-1} H x \;=\; P_x B_1 H x + \dots + P_x B_{\rho_B} H x$$
+$$P_x B^{-1} H x \quad =\quad  P_x B_1 H x + \dots + P_x B_{\rho_B} H x$$
 
-is assembled term by term at cost $O(b d n r^2 R (r + nR)\, \rho_B)$, and no
+is assembled term by term at cost $O(b d n r^2 R (r + nR)  \rho_B)$, and no
 intermediate of rank $\rho_B R r$ is ever formed. `riemannian.project` **already
 accepts a list and sums inside** (§1.1), so the ttpy2 realisation of eq. (25) is
 one call.
 
 For a Kronecker-sum operator $A = \sum_i I \otimes \dots \otimes L \otimes \dots \otimes I$ such a $B^{-1}$
-comes from an exponential sum for $1/\lambda$: with $1/\lambda = \int_0^\infty e^{-\lambda t}\, dt$ and
+comes from an exponential sum for $1/\lambda$: with $1/\lambda = \int_0^\infty e^{-\lambda t}  dt$ and
 $t = e^s$, the trapezoidal (sinc) rule gives
 
-$$\frac{1}{\lambda} \;\approx\; h \sum_{q=-M}^{M} e^{s_q} \exp(-\lambda e^{s_q}), \qquad s_q = q h + \mathrm{shift},$$
-$$B^{-1} \;=\; h \sum_q e^{s_q}\, \exp(-e^{s_q} L) \otimes \dots \otimes \exp(-e^{s_q} L),$$
+$$\frac{1}{\lambda} \quad \approx\quad  h \sum_{q=-M}^{M} e^{s_q} \exp(-\lambda e^{s_q}), \qquad s_q = q h + \mathrm{shift},$$
+$$B^{-1} \quad =\quad  h \sum_q e^{s_q}  \exp(-e^{s_q} L) \otimes \dots \otimes \exp(-e^{s_q} L),$$
 
 each summand a rank-1 TT-matrix. This is the construction [RNO19] cites
 (Khoromskij, Constr. Approx. 30:599–620, 2009) and the one measured below.
@@ -1406,7 +1406,7 @@ except where the test is explicitly about two code paths agreeing.
 
 10. **The preconditioned iteration count is `κ`-independent.** `D=4` Laplacian,
     physical modes, `n = 32` and `n = 128`, manifold rank 1, sinc exponential
-    sum with $\rho_B = 41 / 51$. Oracle: $\lambda_1 = D\, 4 \sin^2(\pi/(2(n+1)))$, analytic.
+    sum with $\rho_B = 41 / 51$. Oracle: $\lambda_1 = D  4 \sin^2(\pi/(2(n+1)))$, analytic.
     Assert the preconditioned run reaches relative 1e-8 in `<= 25` iterations at
     both $n$ (measured 16 and 17, §6.3) **and** that the unpreconditioned run at
     `n = 128` does not reach 1e-3 in 200 (measured: not in 3000). The second

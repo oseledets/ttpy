@@ -535,3 +535,29 @@ def test_permute_returns_a_compressed_representation():
     dense = np.asarray(x.full())
     want = np.transpose(dense, order)
     assert rel(y.full(), want) < 1e-10
+
+
+def test_markdown_math_avoids_the_spacing_commands_github_eats():
+    """``\\,`` ``\;`` ``\\!`` inside math render as literal punctuation on GitHub.
+
+    GitHub applies markdown backslash-escaping *before* the math renderer
+    sees the formula, so a thin space becomes a comma, a medium space a
+    semicolon and a negative space an exclamation mark: the multicomponent
+    Smoluchowski equation on its example page came out reading
+    ``!! ... ! K(v - u;, u), n(u), du;`` until this was found.  Letter
+    commands (``\\quad``, ``\\cdots``, ``\\ ``) survive, so use those.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    math = re.compile(r"(\$\$.*?\$\$|\$[^$\n]+\$)", re.S)
+    bad = []
+    for path in list(root.glob("*.md")) + list(root.glob("docs/**/*.md")) \
+            + list(root.glob("examples/**/*.md")):
+        text = path.read_text()
+        for span in math.findall(text):
+            for hit in re.findall(r"\\[,;!:]", span):
+                bad.append(f"{path.relative_to(root)}: {hit} in {span[:60]!r}")
+    assert not bad, ("markdown eats these before KaTeX; use \\quad or \\ :\n"
+                     + "\n".join(bad[:10]))

@@ -85,7 +85,7 @@ which silently changes the operator being diagonalized.
 
 ### High-dimensional integrals
 
-**Sine integral.** $\int_{[0,1]^d} \sin(\sum x_i)\, dx = \mathrm{Im}[((e^i - 1)/i)^d]$ — closed form,
+**Sine integral.** $\int_{[0,1]^d} \sin(\sum x_i)  dx = \mathrm{Im}[((e^i - 1)/i)^d]$ — closed form,
 good to $d = 50$ and beyond.
 
 **Genz corner peak.** $\int (1 + \sum a_i x_i)^{-(d+1)}$ — one of the six Genz families,

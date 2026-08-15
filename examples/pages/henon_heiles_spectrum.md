@@ -9,10 +9,10 @@
 The spectral method of quantum molecular dynamics — the workhorse of MCTDH (Beck–Meyer). Instead of diagonalizing $H$, evolve a packet under the time-dependent Schrödinger equation
 
 $$
-i\,\frac{\partial\psi}{\partial t} = H\psi,
+i \frac{\partial\psi}{\partial t} = H\psi,
 \qquad
 H = \sum_{i=1}^{d} \frac{1}{2}\left(-\frac{\partial^2}{\partial q_i^2} + q_i^2\right)
-    + \lambda \sum_{i=1}^{d-1} \left(q_i^2\, q_{i+1} - \frac{q_{i+1}^3}{3}\right),
+    + \lambda \sum_{i=1}^{d-1} \left(q_i^2  q_{i+1} - \frac{q_{i+1}^3}{3}\right),
 \qquad \lambda = 0.111803,
 $$
 
@@ -22,16 +22,16 @@ $$
 a(t) = \langle \psi(0), \psi(t) \rangle .
 $$
 
-If $\psi(0) = \sum_l c_l\,\phi_l$ in the eigenbasis of $H$, then
+If $\psi(0) = \sum_l c_l \phi_l$ in the eigenbasis of $H$, then
 
 $$
-a(t) = \sum_l |c_l|^2\, e^{-i\lambda_l t},
+a(t) = \sum_l |c_l|^2  e^{-i\lambda_l t},
 $$
 
 so the windowed Fourier transform
 
 $$
-\sigma(\omega) = \mathrm{Re} \int_0^T a(t)\, w(t)\, e^{i\omega t}\, dt
+\sigma(\omega) = \mathrm{Re} \int_0^T a(t)  w(t)  e^{i\omega t}  dt
 $$
 
 peaks exactly at the eigenvalues $\lambda_l$ that the packet overlaps — the whole spectrum on an interval from **one** trajectory, where an eigensolver would need a block of that many states. The price is resolution: peaks are $\sim 2\pi/T$ wide, so close levels need long trajectories. That trade shows up as a *measured* event below: a quasi-degenerate multiplet whose spread is smaller than $2\pi/T$ lands under a single peak.
@@ -129,7 +129,7 @@ Reading it:
 ## Why believe it
 
 * **`eigb` on the same operator is the oracle** — not just for the ground state but for everything the packet can see: the same MPO object `A` goes into both the propagation and the block eigensolver, so any assembly bug hits both sides identically and any *method* discrepancy shows in the table.
-* **The transform + peak finder are tested against planted frequencies** — `tests/test_examples.py::test_spectrum_transform_recovers_planted_frequencies`: a synthetic $a(t) = \sum_l w_l\, e^{-i\lambda_l t}$ with $\lambda = (1.0,\ 2.3,\ 4.7)$ must produce exactly three peaks, each within $10^{-3}$ of its planted frequency (far better than the grid spacing), and nothing else above threshold.
+* **The transform + peak finder are tested against planted frequencies** — `tests/test_examples.py::test_spectrum_transform_recovers_planted_frequencies`: a synthetic $a(t) = \sum_l w_l  e^{-i\lambda_l t}$ with $\lambda = (1.0,\ 2.3,\ 4.7)$ must produce exactly three peaks, each within $10^{-3}$ of its planted frequency (far better than the grid spacing), and nothing else above threshold.
 * **The rank is checked, not assumed**: `defect_rel = 9.9e-08` at step 1 says the rank-12 manifold can follow $H\psi$ to eight digits for this packet.
 * The KSL machinery itself is pinned against a dense `expm` propagator in the companion test `test_ksl_paper_setup_matches_dense_propagation` (see the [paper-scale page](henon_heiles_ksl_paper.md)), and the compiled/interpreted complex-step parity is pinned in `tests/test_eigb_ksl.py`.
 

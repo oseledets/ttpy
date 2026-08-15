@@ -342,7 +342,7 @@ but it changes the behaviour of code written against early 2.0 builds.
 * **`ksl` refuses a stiff step instead of returning a number.** The S-steps of
   the projector splitting run backwards in time, so for a dissipative `A` they
   amplify; the following K-step shrinks the data but not the rounding error that
-  accumulated. Measured on $dy/dt = -(2^L+1)^2\,\mathrm{Laplace}\,y$: at $\tau\|A\| = 169$
+  accumulated. Measured on $dy/dt = -(2^L+1)^2 \mathrm{Laplace} y$: at $\tau\|A\| = 169$
   it returned $\|y\|$ = 3.3e+106 where the exact norm is 0.307. Now every local
   exponential records its growth factor, the history carries `max_growth` and
   `roundoff_floor`, exhausting the digits entirely is a `RuntimeError`, and

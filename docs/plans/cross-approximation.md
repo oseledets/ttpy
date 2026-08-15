@@ -494,7 +494,7 @@ Three rounds of measured work got it there (each profiled, best-of-5 timings,
    scattered batch actually needed removes the gap entirely. An explicit
    $M^{-1}$ cached per bond was tried first and **reverted**: multiplication
    by an inverse is not backward stable, the residual noise floor rises from
-   $\varepsilon$ to $\mathrm{cond}(M)\,\varepsilon$, and the pivot-acceptance threshold (calibrated for
+   $\varepsilon$ to $\mathrm{cond}(M) \varepsilon$, and the pivot-acceptance threshold (calibrated for
    a backward-stable residual) starts accepting duplicate pivots, which makes
    $M$ exactly singular — 6 tests caught it.
 
@@ -737,9 +737,9 @@ Degenerate inputs, `N = 200`, `r = 10` (E7 C):
 
 Honest counterweight on the last-but-one row: **our rank test is stricter than
 necessary and rejects a matrix teneva handles correctly.**
-$A = Q\,\mathrm{diag}(1, 10^{-2}, \dots, 10^{-18})$ is numerically
+$A = Q \mathrm{diag}(1, 10^{-2}, \dots, 10^{-18})$ is numerically
 full rank in the sense that matters here, and teneva
-returns a `B` accurate to 2e-16. Our `_check_rank` threshold $r\,\varepsilon$ on
+returns a `B` accurate to 2e-16. Our `_check_rank` threshold $r \varepsilon$ on
 $\mathrm{diag}(U)$ refuses it. The escape hatches exist (`rcond=`, `maxvol_qr`) and the
 cross path always passes an orthonormal `Q`, so this never bites inside ttpy2 —
 but a user calling `maxvol` directly on a badly scaled matrix will hit it.
@@ -1394,7 +1394,7 @@ P6 entirely and say so in the docstring.
 
 **Q4 — is `maxvol`'s rank test too strict?** §4.1 measured one case
 (`cond ≈ 1e18`, full rank) where teneva returns a correct factorisation and we
-raise. *Experiment:* sweep $A = Q\,\mathrm{diag}(1, \sigma, \dots, \sigma^{r-1})$ for
+raise. *Experiment:* sweep $A = Q \mathrm{diag}(1, \sigma, \dots, \sigma^{r-1})$ for
 $\sigma \in \{10^{-1} \dots 10^{-3}\}$ at `r = 10, 20, 50` and, for each, compare
 $\max|B[I] - I|$ and $\|B A[I] - A\|/\|A\|$ from the two implementations against the
 value of `rcond` that would have let ours through. If the post-condition

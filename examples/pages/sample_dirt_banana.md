@@ -19,7 +19,7 @@ $$
 The nonlinear term bends a thin conditional Gaussian into the banana visible above.  Sample-DIRT works on the unit square, so the example uses the smooth probit chart
 
 $$
-U = \Phi\!\left(X\oslash(1.25,1.15)\right) \in (0,1)^2.
+U = \Phi\left(X\oslash(1.25,1.15)\right) \in (0,1)^2.
 $$
 
 The training routine receives only samples of $U$.  The triangular construction above, and therefore the normalized analytic density, is kept outside the fit and used only for the final KL/TV oracle.
@@ -42,8 +42,8 @@ If $U_\star$ is a target sample and $\varepsilon\sim\mathcal N(0,I)$ is fresh no
 
 $$
 Z_\alpha
-= \alpha\,\Phi^{-1}(U_\star)
-+ \sqrt{1-\alpha^2}\,\varepsilon,
+= \alpha \Phi^{-1}(U_\star)
++ \sqrt{1-\alpha^2} \varepsilon,
 \qquad
 U_\alpha = \Phi(Z_\alpha).
 $$
@@ -76,7 +76,7 @@ If $p_\ell$ is the density of $Y_\ell$ relative to the uniform measure $\mu$ on 
 
 $$
 \mathcal J_\ell(a)
-= \frac12\,\mathbb E_\mu[a^2]
+= \frac12 \mathbb E_\mu[a^2]
 - \mathbb E_{Y_\ell}[a]
 + \mathbb E_\mu[a].
 $$

@@ -10,10 +10,11 @@ A population of particles carrying $d$ conserved components — the concentratio
 
 $$
 \frac{\partial n(\bar v,t)}{\partial t}
-= \frac12 \int_0^{v_1}\!\!\cdots\!\int_0^{v_d} K(\bar v - \bar u;\, \bar u)\, n(\bar v - \bar u)\, n(\bar u)\, d\bar u
-\;-\; n(\bar v) \int_0^{\infty}\!\!\cdots\!\int_0^{\infty} K(\bar u;\, \bar v)\, n(\bar u)\, d\bar u .
+= \frac12 \int_0^{v_1}\cdots\int_0^{v_d}
+  K(\bar v - \bar u,\ \bar u)\ n(\bar v - \bar u)\ n(\bar u)\ d\bar u
+\ -\ n(\bar v) \int_0^{\infty}\cdots\int_0^{\infty}
+  K(\bar u,\ \bar v)\ n(\bar u)\ d\bar u
 $$
-
 The gain term counts the particles of size $\bar v$ assembled from $\bar u$ and $\bar v - \bar u$; the loss term counts the ones of size $\bar v$ eaten by anything. On a grid of $N$ nodes per component the gain term is a $2d$-fold sum: $O(N^{2d})$ per time step, $10^{12}$ operations at the modest $d=2$, $N=1000$. That is the 215 580 s.
 
 ## Two facts, composed
@@ -22,7 +23,7 @@ The gain term counts the particles of size $\bar v$ assembled from $\bar u$ and 
 
 $$
 \tilde f_0 = \tfrac12 f_0,\quad \tilde g_0 = \tfrac12 g_0
-\;\Longrightarrow\;
+\quad \Longrightarrow\quad 
 (\tilde f * \tilde g)_i
 = \tfrac12 f_i g_0 + \tfrac12 f_0 g_i + \sum_{j=1}^{i-1} f_{i-j} g_j
 = \sum_{j=0}^{i} w_j^{(i)} f_{i-j} g_j ,
@@ -48,20 +49,20 @@ Cost: $O(d R^4 N \log N)$ — $2R^2$ forward transforms, $R^4$ inverse ones, one
 **The kernel has to be separable**, and enters as a list of rank-1 terms $K(\bar u;\bar v) = \sum_\alpha k^v_\alpha(\bar v) k^u_\alpha(\bar u)$. The gain then splits into one convolution per term, and — the part that is easy to miss — the loss term collapses from a $d$-fold integral *at every grid point* into one **scalar** quadrature per term:
 
 $$
-L_2(\bar v) = \sum_\alpha k^v_\alpha(\bar v) \int k^u_\alpha(\bar u)\, n(\bar u)\, d\bar u .
+L_2(\bar v) = \sum_\alpha k^v_\alpha(\bar v) \int k^u_\alpha(\bar u)  n(\bar u)  d\bar u .
 $$
 
 Time stepping is the paper's eq. (5), the explicit midpoint predictor–corrector, second order. The log panel of the animation prints the TT rank after *both* stages, which is where the method's real cost lives: the predictor inflates the ranks (every Hadamard product multiplies them) and the rounding pulls them back.
 
 ## Oracle
 
-For $K \equiv 1$ and $n_0 = ab\,e^{-a v_1 - b v_2}$ the paper's eq. (18) is exact:
+For $K \equiv 1$ and $n_0 = ab e^{-a v_1 - b v_2}$ the paper's eq. (18) is exact:
 
 $$
-n(v_1,v_2,t) = \frac{ab\,e^{-a v_1 - b v_2}}{(1+t/2)^2}\;
-I_0\!\left(2\sqrt{\frac{ab\,v_1 v_2\,t}{t+2}}\right),
+n(v_1,v_2,t) = \frac{ab e^{-a v_1 - b v_2}}{(1+t/2)^2}\quad 
+I_0\left(2\sqrt{\frac{ab v_1 v_2 t}{t+2}}\right),
 \qquad
-N(t) = \int\!\!\int n = \frac{1}{1+t/2}\ \text{exactly.}
+N(t) = \int\int n = \frac{1}{1+t/2}\ \text{exactly.}
 $$
 
 Both are checked every step, and the totals are what the log's `density`/`exact` columns compare.
@@ -85,7 +86,7 @@ Two remarks on the comparison. The paper's timings are its own machine and its o
 
 ## Additive kernel
 
-`--kernel additive` runs $K = \sum_i u_i + \sum_i v_i$ (rank 2). There is no analytic solution here, but there are two exact identities on the unbounded domain — the mass $\int (v_1+v_2)\,n$ is conserved and $N(t) = N_0 e^{-M_0 t}$ — and the script checks both. On the truncated box mass does leave through the top, which is the model, not a bug: at $V_{\max} = 40$, $T = 0.2$ the density falls by 33% while the mass drifts by 3.2e-3.
+`--kernel additive` runs $K = \sum_i u_i + \sum_i v_i$ (rank 2). There is no analytic solution here, but there are two exact identities on the unbounded domain — the mass $\int (v_1+v_2) n$ is conserved and $N(t) = N_0 e^{-M_0 t}$ — and the script checks both. On the truncated box mass does leave through the top, which is the model, not a bug: at $V_{\max} = 40$, $T = 0.2$ the density falls by 33% while the mass drifts by 3.2e-3.
 
 ## Ballistic kernel: a separable form that is not written by hand
 
@@ -107,9 +108,9 @@ ku_a = from_list(cores[:d-1] + [cores[d-1][:, :, a:a+1]])   # the u half
 kv_a = from_list([cores[d][a:a+1, :, :]] + cores[d+1:])     # the v half
 ```
 
-gives $\sum_\alpha k^u_\alpha(\bar u)\,k^v_\alpha(\bar v) = K(\bar u;\bar v)$ **identically**, entry by entry — it is a regrouping of the same TT contraction, not a second approximation. Measured on a dense $d=2$, $N=16$ case against the cross's own tensor: **3.2e-16**. All the error is the cross's, and `ballistic_kernel(..., info=d)` measures *that* on 4000 random nodes nobody looked at: at $\varepsilon = 10^{-6}$, **4.4e-7** relative and 4.5e-6 worst-case pointwise, against eq. (17) evaluated from the formula.
+gives $\sum_\alpha k^u_\alpha(\bar u) k^v_\alpha(\bar v) = K(\bar u;\bar v)$ **identically**, entry by entry — it is a regrouping of the same TT contraction, not a second approximation. Measured on a dense $d=2$, $N=16$ case against the cross's own tensor: **3.2e-16**. All the error is the cross's, and `ballistic_kernel(..., info=d)` measures *that* on 4000 random nodes nobody looked at: at $\varepsilon = 10^{-6}$, **4.4e-7** relative and 4.5e-6 worst-case pointwise, against eq. (17) evaluated from the formula.
 
-**Why $R$ is small, and why it does not grow with $N$.** $K$ is a function of two scalars, $K = F(S_u, S_v)$ with $S = \sum_i v_i$. The rank of the $\bar u\,|\,\bar v$ bond is therefore the $\varepsilon$-rank of the *two-variable* matrix $F(s,t)$ and of nothing else — a property of $F$, not of the grid, not of $V_{\max}$, and not of $d$. A dense SVD of $F$ sampled on the range of the sums puts that at **8** at $\varepsilon = 10^{-6}$, unchanged for $V_{\max}$ from 10 to 1000; the cross finds 6 or 7. The paper reports $R = 19..23$ (its Table 6) at the same accuracy.
+**Why $R$ is small, and why it does not grow with $N$.** $K$ is a function of two scalars, $K = F(S_u, S_v)$ with $S = \sum_i v_i$. The rank of the $\bar u | \bar v$ bond is therefore the $\varepsilon$-rank of the *two-variable* matrix $F(s,t)$ and of nothing else — a property of $F$, not of the grid, not of $V_{\max}$, and not of $d$. A dense SVD of $F$ sampled on the range of the sums puts that at **8** at $\varepsilon = 10^{-6}$, unchanged for $V_{\max}$ from 10 to 1000; the cross finds 6 or 7. The paper reports $R = 19..23$ (its Table 6) at the same accuracy.
 
 Bond rank and build time against the grid ($d = 2$, $\varepsilon = 10^{-6}$):
 
@@ -156,7 +157,7 @@ That is Fig. 2 of the paper, and the point of it is the comparison with the cons
 
 ### The route not taken
 
-Since $K = F(S_u, S_v)$, one can skip the $2d$-dimensional cross entirely: take the exact rank-2 `component_sum` for $S$, build a *matrix* skeleton $F \approx F(:,J)\,F(I,J)^{-1}\,F(I,:)$ on the range of the sums (the columns are then genuine scalar functions $F(\cdot, t_\beta)$, not tables), and lift each family into TT with one `multifuncrs` call over $S$. It works, and it gives the same physics — but it was measured against the plain cross and lost on all three counts, so it is not what ships:
+Since $K = F(S_u, S_v)$, one can skip the $2d$-dimensional cross entirely: take the exact rank-2 `component_sum` for $S$, build a *matrix* skeleton $F \approx F(:,J) F(I,J)^{-1} F(I,:)$ on the range of the sums (the columns are then genuine scalar functions $F(\cdot, t_\beta)$, not tables), and lift each family into TT with one `multifuncrs` call over $S$. It works, and it gives the same physics — but it was measured against the plain cross and lost on all three counts, so it is not what ships:
 
 | at $N = 400$, $\varepsilon = 10^{-6}$ | $R$ | factor ranks | build | solve | kernel error (Fro / max) | density |
 |---|---|---|---|---|---|---|

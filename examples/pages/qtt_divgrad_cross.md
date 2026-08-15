@@ -8,19 +8,19 @@ A conservative finite-difference discretization of $-\nabla\cdot(k\nabla u)=1$ o
 
 On $[0,1]^2$, find $u$ with
 
-$$-\nabla\cdot\big(k(x,y)\,\nabla u\big) = 1,$$
+$$-\nabla\cdot\big(k(x,y) \nabla u\big) = 1,$$
 
 where the coefficient is a smooth checkerboard lens of contrast 100:
 
-$$k(x,y) = 10^{\,\sin 3\pi x\,\sin 3\pi y}, \qquad 10^{-1} \le k \le 10^{1}.$$
+$$k(x,y) = 10^{ \sin 3\pi x \sin 3\pi y}, \qquad 10^{-1} \le k \le 10^{1}.$$
 
 The scheme is the standard conservative one: with $n = 2^b$ interior points per axis and $h = 1/(n+1)$, the one-dimensional backward difference $D = (I - S)/h$ (where $S$ is the down-shift matrix) gives the operator as a sum of two Kronecker products,
 
-$$A \;=\; D_x^{\top}\,\mathrm{diag}(k_x)\,D_x \;+\; D_y^{\top}\,\mathrm{diag}(k_y)\,D_y,$$
+$$A \quad =\quad  D_x^{\top} \mathrm{diag}(k_x) D_x \quad +\quad  D_y^{\top} \mathrm{diag}(k_y) D_y,$$
 
-with $k_x$, $k_y$ sampled at the *flux faces* $(x_i - h/2,\, y_j)$ and $(x_i,\, y_j - h/2)$.
+with $k_x$, $k_y$ sampled at the *flux faces* $(x_i - h/2,  y_j)$ and $(x_i,  y_j - h/2)$.
 
-Boundary conditions, stated rather than hidden: with $D$ alone the flux through the right and top faces is dropped, which makes the problem $u = 0$ on the left/bottom sides and $k\,\partial u/\partial n = 0$ (natural) on the right/top. The `--dirichlet` variant restores the missing flux with the rank-1 corner corrections $(k_{\mathrm{face}}/h^2)\, e_n e_n^{\top}$ per axis, clamping all four sides.
+Boundary conditions, stated rather than hidden: with $D$ alone the flux through the right and top faces is dropped, which makes the problem $u = 0$ on the left/bottom sides and $k \partial u/\partial n = 0$ (natural) on the right/top. The `--dirichlet` variant restores the missing flux with the rank-1 corner corrections $(k_{\mathrm{face}}/h^2)  e_n e_n^{\top}$ per axis, clamping all four sides.
 
 Everything lives in QTT: an index $0 \le i \lt 2^b$ is written in binary, so a 2-D grid function becomes a tensor with $d = 2b$ modes of size 2, and all the matrices above are QTT matrices with small ranks.
 

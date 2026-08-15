@@ -8,23 +8,23 @@ The showcase problem of Dektor's collocation paper (sec. 7.2) — phase separati
 
 On the torus $[0, 2\pi]^3$, the Allen–Cahn equation
 
-$$\frac{\partial u}{\partial t} = \alpha\,\Delta u + u - u^3, \qquad \alpha = 0.1,$$
+$$\frac{\partial u}{\partial t} = \alpha \Delta u + u - u^3, \qquad \alpha = 0.1,$$
 
 is the $L^2$ gradient flow of the Ginzburg–Landau free energy
 
-$$E[u] = \int \left[ \frac{\alpha}{2}\,|\nabla u|^2 + \frac{(1-u^2)^2}{4} \right] dx,$$
+$$E[u] = \int \left[ \frac{\alpha}{2} |\nabla u|^2 + \frac{(1-u^2)^2}{4} \right] dx,$$
 
 so solutions separate into plateaus at the double-well minima $u = \pm 1$ while $E$ decreases monotonically.
 
-Discretization, exactly as in the paper: Fourier pseudospectral collocation on the uniform grid $x_i = 2\pi i/n$. The one-axis second derivative is the real symmetric circulant $D_2 = F^{-1}\,\mathrm{diag}(-k^2)\,F$ with integer wavenumbers $k = -n/2, \dots, n/2 - 1$, and the operator is the Kronecker sum
+Discretization, exactly as in the paper: Fourier pseudospectral collocation on the uniform grid $x_i = 2\pi i/n$. The one-axis second derivative is the real symmetric circulant $D_2 = F^{-1} \mathrm{diag}(-k^2) F$ with integer wavenumbers $k = -n/2, \dots, n/2 - 1$, and the operator is the Kronecker sum
 
-$$A = \alpha\,(D_2 \otimes I \otimes I + I \otimes D_2 \otimes I + I \otimes I \otimes D_2)$$
+$$A = \alpha (D_2 \otimes I \otimes I + I \otimes D_2 \otimes I + I \otimes I \otimes D_2)$$
 
 — a TT-matrix of rank 2. The initial condition is the paper's eq. 7.2,
 
 $$u_0 = g(x_1,x_2,x_3) - g(2x_1,x_2,x_3) + g(x_1,2x_2,x_3) - g(x_1,x_2,2x_3),$$
 
-$$g = \frac{\big[e^{-\tan^2 x_1} + e^{-\tan^2 x_2} + e^{-\tan^2 x_3}\big]\,\sin(x_1+x_2+x_3)}{1 + e^{|\csc(-x_1/2)|} + e^{|\csc(-x_2/2)|} + e^{|\csc(-x_3/2)|}}.$$
+$$g = \frac{\big[e^{-\tan^2 x_1} + e^{-\tan^2 x_2} + e^{-\tan^2 x_3}\big] \sin(x_1+x_2+x_3)}{1 + e^{|\csc(-x_1/2)|} + e^{|\csc(-x_2/2)|} + e^{|\csc(-x_3/2)|}}.$$
 
 Why the *interpolatory* KSL exists at all: the classical projector-splitting KSL of Lubich–Oseledets needs the full right-hand side $Au + u - u^3$ projected **orthogonally** onto the tangent space of the rank-$r$ manifold, and the orthogonal projector needs the right-hand side as a TT object — but $u - u^3$ has no cheap TT representation (an entrywise cube cubes the ranks). `tt.ksl_deim` (ported from Alec Dektor's ttpy PR #102) replaces the orthogonal projector by an oblique, *interpolatory* one: at every substep the right-hand side is **evaluated entrywise on cross fibers selected by QDEIM**, which a pointwise nonlinearity supports at the cost of a numpy call on the sampled entries — here literally `lambda v: v - v ** 3`.
 
@@ -151,7 +151,7 @@ The same comparison, measured across grid sizes: `ksl_deim` (rank 16, $\tau = 0.
 
 All four rows are measured (the $n=64$ dense run was expected by extrapolation at $\approx 150$ s and measured at 164 s). The relative difference is TT-vs-dense at $T=2$ and sits at $\sim 5\cdot 10^{-3}$ throughout — that is the fixed-rank-manifold plus first-order-splitting error of `ksl_deim` against a tight reference, and it does *not* grow with $n$.
 
-The point of the table is the growth rates. Each doubling of $n$ multiplies the dense time by $\sim\!40$–45: the per-step cost grows with the $\sim 3n^4$ nonzeros of the pseudospectral operator, and the RK45 step count grows with the spectral stiffness $\propto n^2$ — roughly $n^6$ overall, on top of $O(n^3)$ state memory (at $n=64$ the sparse operator alone holds $\sim 5\cdot 10^7$ nonzeros). The TT time grows by a factor 1.2–1.6 per doubling — the integrator's work per step is linear in $n$ at fixed rank ($O(n r^2)$ per core) — so the crossover is already at $n=32$, and at $n=128$ the dense run extrapolates to $\approx 2$ hours (extrapolation, not measured) against a few TT seconds.
+The point of the table is the growth rates. Each doubling of $n$ multiplies the dense time by $\sim40$–45: the per-step cost grows with the $\sim 3n^4$ nonzeros of the pseudospectral operator, and the RK45 step count grows with the spectral stiffness $\propto n^2$ — roughly $n^6$ overall, on top of $O(n^3)$ state memory (at $n=64$ the sparse operator alone holds $\sim 5\cdot 10^7$ nonzeros). The TT time grows by a factor 1.2–1.6 per doubling — the integrator's work per step is linear in $n$ at fixed rank ($O(n r^2)$ per core) — so the crossover is already at $n=32$, and at $n=128$ the dense run extrapolates to $\approx 2$ hours (extrapolation, not measured) against a few TT seconds.
 
 And this is still only 3D, where the dense method exists at all. In the six-dimensional setting this integrator was built for — the $3{+}3$D Boltzmann equation of Dektor–Einkemmer — a single dense state at $n=32$ is $32^6 \approx 10^9$ entries ($\sim 8.6$ GB), and RK45 needs several copies of it: the dense column of this table simply does not exist there, while the TT column keeps scaling as $n r^2$ per dimension.
 

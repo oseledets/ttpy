@@ -8,17 +8,17 @@ A rank-2 tensor is recovered from observations of which 2% are corrupted by outl
 
 Given a rank-$r$ tensor train $T$ of shape $n^{\times d}$, observe $N$ entries at random multi-indices $i_1,\dots,i_N$ and let a small fraction of the values be corrupted:
 
-$$v_j = T_{i_j} + \varepsilon_j, \qquad \varepsilon_j = \pm\,100\,\max|T| \ \text{ for } \sim 2\% \text{ of the } j\text{'s}, \quad \varepsilon_j = 0 \text{ otherwise.}$$
+$$v_j = T_{i_j} + \varepsilon_j, \qquad \varepsilon_j = \pm 100 \max|T| \ \text{ for } \sim 2\% \text{ of the } j\text{'s}, \quad \varepsilon_j = 0 \text{ otherwise.}$$
 
 Both methods solve the same completion problem, differing only in the loss $\rho$:
 
-$$\min_{\mathrm{rank}\,X = r}\ \sum_{j=1}^{N} \rho\big(X_{i_j} - v_j\big).$$
+$$\min_{\mathrm{rank} X = r}\ \sum_{j=1}^{N} \rho\big(X_{i_j} - v_j\big).$$
 
 Alternating least squares owes its existence to one structural fact: freezing all cores but one turns a *quadratic* functional into a linear local problem. Change $\rho$ and that machinery is gone — there is no "alternating robust regression" with a closed-form core update. So ALS is stuck with $\rho(z) = z^2$, where an outlier of magnitude $100\max|T|$ enters with the *square* of its size and dominates the fit.
 
 The robust run uses the scaled log-cosh loss with width $w = 0.1\max|T|$,
 
-$$\rho(z) = w\,\log\cosh(z/w),$$
+$$\rho(z) = w \log\cosh(z/w),$$
 
 which is quadratic for $|z| \lt w$, asymptotically linear for $|z| \gt w$, and smooth everywhere — each outlier is paid only linearly. Riemannian descent does not care what $\rho$ is: `tt.rgd` needs only a differentiable functional, and the gradient comes from torch autodiff through the tangent-space parametrization of the fixed-rank manifold ([NRO22]), without ever forming the Euclidean gradient — whose TT rank would be $N$, the number of samples.
 
@@ -56,7 +56,7 @@ The ALS baseline is this package's own port of ttpy's `ttSparseALS`. It gets no 
                                   maxnsweeps=100, verbose=False, seed=seed)
 ```
 
-The robust functional is written as plain torch code over the TT cores. Note the form of log-cosh: the naive `log(cosh(z))` overflows once $|z|$ passes $\sim 710$ in float64 — and with outliers at 100× the scale divided by $w = 0.1\times$ the scale, $|z|$ reaches $\sim 1000$ on the corrupted entries — and an `inf` loss autodiffs to a NaN gradient. The identity $\log\cosh z = |z| + \log\!\big(1 + e^{-2|z|}\big) - \log 2$ is exact and safe at any magnitude:
+The robust functional is written as plain torch code over the TT cores. Note the form of log-cosh: the naive `log(cosh(z))` overflows once $|z|$ passes $\sim 710$ in float64 — and with outliers at 100× the scale divided by $w = 0.1\times$ the scale, $|z|$ reaches $\sim 1000$ on the corrupted entries — and an `inf` loss autodiffs to a NaN gradient. The identity $\log\cosh z = |z| + \log\big(1 + e^{-2|z|}\big) - \log 2$ is exact and safe at any magnitude:
 
 ```python
     x0 = tt.rand([n] * d, r=r).to("torch", "cpu", "float64")

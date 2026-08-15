@@ -16,7 +16,7 @@ recovers at rate $\gamma$.  The probability $p(x, t)$ of every one of the
 $3^N$ network states solves the chemical master equation
 
 $$
-\frac{dp}{dt} = A\, p,
+\frac{dp}{dt} = A  p,
 $$
 
 which is hopeless as a vector but short as a tensor: the generator is the
@@ -24,8 +24,8 @@ which is hopeless as a vector but short as a tensor: the generator is the
 ([DS24] eq. (12)),
 
 $$
-A \;=\; \sum_{n,\; m \sim n} \beta \,\bigl(J^{T} - I\bigr)\,\mathrm{diag}(s)\big|_n \,\otimes\, \mathrm{diag}(i)\big|_m
-\;+\; \sum_{n} \gamma\, \bigl(J^{T} - I\bigr)\,\mathrm{diag}(i)\big|_n,
+A \quad =\quad  \sum_{n,\quad  m \sim n} \beta  \bigl(J^{T} - I\bigr) \mathrm{diag}(s)\big|_n  \otimes  \mathrm{diag}(i)\big|_m
+\quad +\quad  \sum_{n} \gamma  \bigl(J^{T} - I\bigr) \mathrm{diag}(i)\big|_n,
 $$
 
 with $J$ the $3 \times 3$ shift and $s = (1, 0, 0)$, $i = (0, 1, 0)$ the

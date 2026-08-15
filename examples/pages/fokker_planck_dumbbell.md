@@ -17,7 +17,7 @@ Fokker–Planck equation ([DKO12] eq. (9)):
 $$
 \frac{\partial \psi}{\partial t} = -\mathcal{A}\psi,
 \qquad
-\mathcal{A}\psi = -\epsilon \, \Delta \psi + \nabla \cdot (\psi \, v),
+\mathcal{A}\psi = -\epsilon   \Delta \psi + \nabla \cdot (\psi   v),
 \qquad
 v = K q - \tfrac{1}{2}\nabla\phi,
 \qquad \epsilon = \tfrac{1}{2},
@@ -26,7 +26,7 @@ $$
 with the shear-flow velocity gradient
 
 $$
-K = \beta \, e_1 e_2^{T}
+K = \beta   e_1 e_2^{T}
 $$
 
 (only the entry $K_{12} = \beta$ is nonzero: the $x$-velocity grows linearly
@@ -34,7 +34,7 @@ in $y$), and the potential combining a Hookean spring with a bead–bead
 repulsion,
 
 $$
-\phi(q) = \frac{|q|^2}{2} + \frac{\alpha}{p^3} \exp\!\left(-\frac{|q|^2}{2p^2}\right),
+\phi(q) = \frac{|q|^2}{2} + \frac{\alpha}{p^3} \exp\left(-\frac{|q|^2}{2p^2}\right),
 $$
 
 with $\beta = 1$, $\alpha = 0.1$, $p = 0.5$ on $[-10, 10]^3$ — the setup of
@@ -42,7 +42,7 @@ with $\beta = 1$, $\alpha = 0.1$, $p = 0.5$ on $[-10, 10]^3$ — the setup of
 expression
 
 $$
-\tau_{ij}(t) = \int \psi(q, t)\, q_i \, \frac{\partial \phi}{\partial q_j} \, dq,
+\tau_{ij}(t) = \int \psi(q, t)  q_i   \frac{\partial \phi}{\partial q_j}   dq,
 \qquad
 \eta = \frac{\tau_{12}}{\beta},
 \qquad
@@ -78,11 +78,11 @@ Every term of the drift $v$ is separable: with
 $g(t) = \exp(-t^2/(2p^2))$ and $c = \alpha/(2p^5)$,
 
 $$
-v_1 = \beta y - \tfrac{x}{2} + c\, x\, g(x)g(y)g(z),
+v_1 = \beta y - \tfrac{x}{2} + c  x  g(x)g(y)g(z),
 \qquad
-v_2 = -\tfrac{y}{2} + c\, y\, g(x)g(y)g(z),
+v_2 = -\tfrac{y}{2} + c  y  g(x)g(y)g(z),
 \qquad
-v_3 = -\tfrac{z}{2} + c\, z\, g(x)g(y)g(z),
+v_3 = -\tfrac{z}{2} + c  z  g(x)g(y)g(z),
 $$
 
 so the whole operator is a short sum of Kronecker products of 1D matrices —
@@ -118,7 +118,7 @@ tolerance, which is why the tests can demand operator parity at the
 $10^{-10}$ level against a `scipy.sparse` rebuild.
 
 **The Kramers weights are explicit rank-2 tensors** — since
-$\partial_j \phi = q_j\,(1 - (\alpha/p^5)\, g(x)g(y)g(z))$, every weight is
+$\partial_j \phi = q_j (1 - (\alpha/p^5)  g(x)g(y)g(z))$, every weight is
 a product of univariate factors minus a rank-1 correction:
 
 ```python
@@ -182,7 +182,7 @@ Three independent oracles, none of which the paper had:
   random vector), the propagated states agree to $10^{-6}$, and the Kramers
   stress — the physical output — agrees to the same accuracy.
 * **The analytic $\beta = 0$ stationary state.**
-  $e^{-\phi} = e^{-|q|^2/2} \exp(-(\alpha/p^3)\, g(x)g(y)g(z))$ is an
+  $e^{-\phi} = e^{-|q|^2/2} \exp(-(\alpha/p^3)  g(x)g(y)g(z))$ is an
   exponential of a rank-1 function, smooth and of small TT rank;
   `tt.dmrg_cross` builds it to $10^{-10}$ from pointwise values and the
   propagated solution converges to it at the $O(h^2)$ rate above.

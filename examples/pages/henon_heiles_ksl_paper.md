@@ -11,10 +11,10 @@
 The time-dependent Schrödinger equation
 
 $$
-i\,\frac{\partial\psi}{\partial t} = H\psi,
+i \frac{\partial\psi}{\partial t} = H\psi,
 \qquad
 H = -\frac{1}{2}\Delta + \frac{1}{2}\sum_{k=1}^{f} q_k^2
-    + \lambda \sum_{k \lt f} \left(q_k^2\, q_{k+1} - \frac{q_{k+1}^3}{3}\right),
+    + \lambda \sum_{k \lt f} \left(q_k^2  q_{k+1} - \frac{q_{k+1}^3}{3}\right),
 \qquad \lambda = 0.111803,
 $$
 
@@ -26,10 +26,10 @@ $$
 a(t) = \langle \psi(t), \psi(0) \rangle .
 $$
 
-If $\psi(0) = \sum_l c_l\,\phi_l$ in the eigenbasis of $H$, then $a(t) = \sum_l |c_l|^2\, e^{-i\lambda_l t}$: a sum of pure oscillations at exactly the eigenvalues the packet overlaps. Its Fourier transform
+If $\psi(0) = \sum_l c_l \phi_l$ in the eigenbasis of $H$, then $a(t) = \sum_l |c_l|^2  e^{-i\lambda_l t}$: a sum of pure oscillations at exactly the eigenvalues the packet overlaps. Its Fourier transform
 
 $$
-|\hat a(\xi)| = \left|\int_0^T a(t)\, e^{i\xi t}\, dt\right|
+|\hat a(\xi)| = \left|\int_0^T a(t)  e^{i\xi t}  dt\right|
 $$
 
 therefore peaks at those eigenvalues — the vibrational spectrum à la MCTDH, from one trajectory, which is what Fig. 3 of the paper shows.
@@ -40,7 +40,7 @@ Three pieces make the discretized problem:
 * **Complex absorbing potential (CAP).** The Hamiltonian is made non-Hermitian by the cubic absorber of the paper,
 
   $$
-  W(q) = i\,\eta \sum_k \left((q_k - 6)_+^3 + (q_k + 6)_-^3\right), \qquad \eta = -1,
+  W(q) = i \eta \sum_k \left((q_k - 6)_+^3 + (q_k + 6)_-^3\right), \qquad \eta = -1,
   $$
 
   which ramps on over the outer 3 units on each side and eats the outgoing flux instead of letting it wrap around the box. Under $e^{-iHt}$ this drains the norm — visibly, in the log.

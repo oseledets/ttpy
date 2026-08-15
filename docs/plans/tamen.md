@@ -6,11 +6,11 @@ reference implementation `github.com/dolgov/tamen` (MATLAB, cell-array TT).
 
 ## What it is
 
-A solver for $dx/dt = A(t)\,x$, $x(0) = x_0$ that treats one *time interval* as
+A solver for $dx/dt = A(t) x$, $x(0) = x_0$ that treats one *time interval* as
 a single TT tensor with an extra time mode and solves the global space-time
 system by an AMEn iteration:
 
-$$B x = f, \qquad B = I_N \otimes S \;-\; (I_N \otimes P)\, A(t), \qquad f = x_0 \otimes (S e),$$
+$$B x = f, \qquad B = I_N \otimes S \quad -\quad  (I_N \otimes P)  A(t), \qquad f = x_0 \otimes (S e),$$
 
 where $S$/$P$ are the stiffness/mass matrices of the time discretization on
 $J$ nodes.  The paper's default is **Chebyshev spectral differentiation**
@@ -29,9 +29,9 @@ Two properties make it more than "amen_solve on a bigger system":
    the invariants are conserved **up to machine precision, independently of
    the TT truncation accuracy** (paper Sec. 3.4).  For skew-symmetric $A$ the
    2-norm is preserved by rescaling the projected initial state:
-   $\theta = \sqrt{\|x_0\|^2 - \|C^{*} x_0\|^2} \,/\, \|X^{*} x_0\|$ (paper eq. 5).
+   $\theta = \sqrt{\|x_0\|^2 - \|C^{*} x_0\|^2}  /  \|X^{*} x_0\|$ (paper eq. 5).
 2. **Adaptive intervals with rejections.** Per-interval error estimate
-   $E_{J,h}$; the next interval is $h\,(\varepsilon/E)^{1/q}$ with $q = J$ for the
+   $E_{J,h}$; the next interval is $h (\varepsilon/E)^{1/q}$ with $q = J$ for the
    Chebyshev scheme; an interval that misses the target is shrunk and redone.
 
 Complexity per interval: $O(d n (R r^3 + R^2 r^2))$ -- AMEn's own.
@@ -76,7 +76,7 @@ x_t, info = tamen(A, x0, T, eps,
 
 `x_t` is the space-time TT of the last interval (time mode last); `info`
 carries the interval history (accepted/rejected $h$, $E_{J,h}$, ranks) and
-the measured invariant drift -- which the tests pin at $< 10\,\varepsilon_{\mathrm{machine}}$.
+the measured invariant drift -- which the tests pin at $< 10 \varepsilon_{\mathrm{machine}}$.
 
 ## Acceptance (all against external truth)
 
@@ -119,7 +119,7 @@ Implemented as designed, with two deviations recorded here:
    re-solve compounded to $\|p\| \sim 10^{19}$ over 6 intervals while the embedded
    time-error estimate stayed quiet (both $J$ and $J/2$ solves share the same
    bad projection).  The re-solved iterate is therefore accepted only when
-   its residual in the *full* system is $\le 2\,\mathrm{res}(\mathrm{amen}) + \varepsilon$; otherwise
+   its residual in the *full* system is $\le 2 \mathrm{res}(\mathrm{amen}) + \varepsilon$; otherwise
    the endpoint comes from the amen iterate and the invariants are restored
    by an explicit Gram-solved shift along the $c_m$ ($O(\varepsilon)$ perturbation,
    machine-exact conservation either way).  On the CME the guard rejects
@@ -157,7 +157,7 @@ iterations to get right, all recorded in the code comments: a growth
 limiter after rejections (44% of attempts were wasted thrashing on the
 acceptance boundary), the inner Krylov tolerance scaled with the step
 budget, and -- the decisive one -- the incoherent-accumulation budget
-$\varepsilon\sqrt{\tau/T}$ instead of the worst-case L1 $\varepsilon\,\tau/T$, which
+$\varepsilon\sqrt{\tau/T}$ instead of the worst-case L1 $\varepsilon \tau/T$, which
 over-delivered by 500x at 10x the cost (n=1024: 1074 s / err 2.1e-7 /
 10022 steps for eps=1e-4 under L1 against 84 s / err 1.4e-5 / 1144 steps
 under sqrt).  At $n = 4096$ tamen reaches the same accuracy

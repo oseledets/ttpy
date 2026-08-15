@@ -12,7 +12,7 @@ $$-\Delta u = 1, \qquad u|_{\partial\Omega} = 0.$$
 
 Each of the three quads is a logically Cartesian mesh of $2^d \times 2^d$ nodes, addressed in **z-order**: the bits of the two grid indices are interleaved, so one TT mode of size 4 carries one *level* of both directions and a bond of the train separates scales rather than directions. On such a mesh the global stiffness matrix needs no assembly loop:
 
-$$K \;=\; \sum_{l_1, l_2 \in \{0,1\}^2} P_{l_1}^{\top}\,\mathrm{diag}(a_{l_1 l_2})\,P_{l_2},$$
+$$K \quad =\quad  \sum_{l_1, l_2 \in \{0,1\}^2} P_{l_1}^{\top} \mathrm{diag}(a_{l_1 l_2}) P_{l_2},$$
 
 where $P_l$ maps an element index to the node at its corner $l$ (identity or shift per direction, rank 2 in QTT) and $a_{l_1 l_2}$ is the vector, over elements, of the local integral between those corners.
 
@@ -32,7 +32,7 @@ def subdomains():
             np.array([rc, r23, R3, r13])]
 ```
 
-One patch system is the `assemble_on_quad` of qtt-laplace: the Jacobian entries are sampled at element centres by TT-cross (in z-order, via `zsplit_index`), combined into the transformed coefficients, and the sixteen $P_{l_1}^{\top}\,\mathrm{diag}\,P_{l_2}$ terms are summed — `placement(d)` supplies the corner operators built from `tt.zkron`:
+One patch system is the `assemble_on_quad` of qtt-laplace: the Jacobian entries are sampled at element centres by TT-cross (in z-order, via `zsplit_index`), combined into the transformed coefficients, and the sixteen $P_{l_1}^{\top} \mathrm{diag} P_{l_2}$ terms are summed — `placement(d)` supplies the corner operators built from `tt.zkron`:
 
 ```python
     det = field(lambda J: J[0, 0] * J[1, 1] - J[0, 1] * J[1, 0])
