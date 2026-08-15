@@ -7,14 +7,16 @@ install straight from this branch -- pure Python, no compiler needed:
 
 ```bash
 pip install "ttpy[fast] @ git+https://github.com/oseledets/ttpy@ttpy2"
+# or with uv:
+uv pip install "ttpy[fast] @ git+https://github.com/oseledets/ttpy@ttpy2"
 ```
 
 or, for development:
 
 ```bash
 git clone -b ttpy2 https://github.com/oseledets/ttpy && cd ttpy
-pip install -e ".[fast,test]"
-pytest -q          # ~1000 tests, a couple of minutes
+uv venv && uv pip install -e ".[fast,test]"    # or plain pip install -e
+uv run pytest -q   # ~1000 tests, a couple of minutes
 ```
 
 The `[fast]` extra ships numba-compiled sweeps for the KSL integrator
