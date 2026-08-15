@@ -2,7 +2,10 @@
 
 A port of the algorithm of L. Markeeva's ``qtt-laplace``
 (https://github.com/RerRayne/qtt-laplace), reimplemented on ttpy2's primitives
-rather than copied: the construction is hers, the code is ours.
+rather than copied: the construction is Markeeva's, the code is ours.
+The method is published as L. Markeeva, I. Tsybulin, I. Oseledets,
+*QTT-isogeometric solver in two dimensions*, J. Comput. Phys. 424:109835,
+2021 (doi:10.1016/j.jcp.2020.109835, arXiv:1802.02839).
 
 The idea
 --------
@@ -46,7 +49,7 @@ from ..core.vector import vector
 
 __all__ = ["placement", "assemble", "dirichlet_mask", "apply_mask",
            "local_stiffness_uniform", "local_entries", "node_grid",
-           "sew", "interface_blocks", "block_system"]
+           "sew", "interface_blocks", "block_system", "multipatch_system"]
 
 
 # --- element -> node ---------------------------------------------------------
@@ -67,7 +70,7 @@ def placement(d):
     corrupts exactly the interface nodes of a glued multi-patch problem, where
     that side is free -- the coupled energy then *falls* under refinement
     instead of converging from above (``docs/NUMERICS.md``).  Markeeva's own
-    ``W0`` (materialized densely from her repository) has the zero row.
+    ``W0`` (materialized densely from the qtt-laplace repository) has the zero row.
     """
     d = int(d)
     n = 2 ** d
@@ -304,3 +307,59 @@ def block_system(blocks, rhs, eps=1e-10):
         term = _tools.kron(rhs[i], vector.from_list([e.reshape(1, m, 1)]))
         vec = term if vec is None else (vec + term)
     return total, vec.round(eps)
+
+
+def multipatch_system(systems, interfaces, d, lam=0.5, eps=1e-10):
+    """Glue per-patch systems into one block train a single solver can see.
+
+    This is the top of the method: each patch contributes its own masked
+    stiffness and load, every shared edge contributes the four blocks of
+    :func:`interface_blocks`, and the whole thing becomes one TT operator
+    with a final mode of size ``len(systems)`` -- so a curved or non-convex
+    domain, cut into logically-Cartesian patches, is solved by one
+    :func:`tt.amen_solve` call rather than by an outer iteration over
+    subdomains.
+
+    Args:
+        systems: list of ``(A_i, f_i)`` per patch, already boundary-masked
+            (see :func:`apply_mask`).
+        interfaces: list of ``(i, j, side_i, side_j)``; ``side_*`` are the
+            side names of :func:`sew` (``'LEFT'``, ``'RIGHT'``, ``'TOP'``,
+            ``'BOTTOM'``) as seen from patch ``i`` and patch ``j``.
+        d: number of QTT levels per direction.
+        lam: penalty weight of the interface jump (``1/2`` in the original
+            qtt-laplace notebook, and the value its published energies were
+            produced with).
+        eps: rounding accuracy for the block algebra.
+
+    Returns:
+        ``(S, coupled, load)``: the block operator, the right-hand side to
+        solve against (it carries the interface terms) and the plain block
+        load.  The two right-hand sides are *not* interchangeable: the system
+        is driven by ``coupled``, while a Galerkin energy is
+        ``<u, load>`` -- pairing with ``coupled`` instead double-counts the
+        interface contribution.
+
+    Raises:
+        ValueError: on an out-of-range patch index in ``interfaces``.
+    """
+    m = len(systems)
+    blocks = [[None] * m for _ in range(m)]
+    load = [f.copy() for _, f in systems]
+    coupled = [f.copy() for _, f in systems]
+    for i, (a, _) in enumerate(systems):
+        blocks[i][i] = a
+    for (i, j, side_i, side_j) in interfaces:
+        if not (0 <= i < m and 0 <= j < m):
+            raise ValueError(
+                f"interface ({i}, {j}) is out of range for {m} patches")
+        pij, pji, pii, pjj = interface_blocks(d, side_i, side_j)
+        blocks[i][j] = (pij @ systems[j][0] - lam * pij).round(eps)
+        blocks[j][i] = (pji @ systems[i][0] - lam * pji).round(eps)
+        blocks[i][i] = (blocks[i][i] - lam * pii).round(eps)
+        blocks[j][j] = (blocks[j][j] - lam * pjj).round(eps)
+        coupled[i] = (coupled[i] + _tools.matvec(pij, load[j])).round(eps)
+        coupled[j] = (coupled[j] + _tools.matvec(pji, load[i])).round(eps)
+    s, load_tt = block_system(blocks, load, eps=eps)
+    _, coupled_tt = block_system(blocks, coupled, eps=eps)
+    return s, coupled_tt, load_tt

@@ -122,7 +122,7 @@ def mkron(a, *args):
 def zkron(ttA, ttB):
     """Kronecker product of TT-matrices in z-order (arXiv:1802.02839).
 
-    Contributed by Larisa Markeeva (ttpy, 2018), from her work on solving
+    Contributed by Larisa Markeeva (ttpy, 2018), from the work on solving
     equations on complicated domains in the QTT format via z-order curves.
     """
     al, bl = matrix.to_list(ttA), matrix.to_list(ttB)

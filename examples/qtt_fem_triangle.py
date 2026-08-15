@@ -11,16 +11,16 @@ meshed by a bilinear map of the unit square, each assembled in QTT z-order, and
 the three glued along their shared edges.
 
 This is the benchmark of L. Markeeva's ``qtt-laplace``
-(https://github.com/RerRayne/qtt-laplace) -- her ``SolutionOnTriangle``
-notebook, her geometry, her one-point element rule and her interface coupling.
-The algorithm is hers; this is a reimplementation on ttpy2, not a copy.
+(https://github.com/RerRayne/qtt-laplace) -- the ``SolutionOnTriangle``
+notebook: Markeeva's geometry, one-point element rule and interface coupling.
+The algorithm is Markeeva's; this is a reimplementation on ttpy2, not a copy.
 
 The reference is the energy ``int |grad u|^2``, and it comes from outside the
-tensor world: her repository ships a FEniCS convergence curve, which reaches
+tensor world: the qtt-laplace repository ships a FEniCS convergence curve, which reaches
 
     0.34034426  at 11253 dofs,  0.34037443 at 15882,  0.34039282 at 21787
 
-so the continuum value is ~0.3404.  Her own QTT column reads 0.34854914 at
+so the continuum value is ~0.3404.  The qtt-laplace QTT column reads 0.34854914 at
 3*4^2 nodes, 0.34180604 at 3*4^3 and 0.34073671 at 3*4^4, approaching it from
 above -- and those three numbers are what the run below has to reproduce.
 
@@ -29,11 +29,11 @@ centroid is a genuine curved-index map, so ``det J`` varies over the mesh and
 the coefficient fields are not constant.  The uniform square in
 ``tests/test_qtt_fem.py`` never exercises that.
 
-Reproduced, to her own precision
+Reproduced, to the reference's own precision
 --------------------------------
-    d=2:  0.34854914  (hers 0.34854914, agreement 2.1e-14)
-    d=3:  0.34180604  (hers 0.34180604, agreement 1.5e-09)
-    d=4:  0.34073671  (hers 0.34073671, agreement 1.6e-09)
+    d=2:  0.34854914  (reference 0.34854914, agreement 2.1e-14)
+    d=3:  0.34180604  (reference 0.34180604, agreement 1.5e-09)
+    d=4:  0.34073671  (reference 0.34073671, agreement 1.6e-09)
     d=5:  0.34051294  (vs FEniCS continuum 0.34039, rel 3.5e-04)
 
 approaching the continuum from above, as a Galerkin energy must.
@@ -45,8 +45,8 @@ it by construction, the identity does not -- and with a full identity the fake
 elements deposit their ``(0, .)``-corner contributions on the last row of
 nodes.  Under an all-Dirichlet mask (every test on the unit square) that is
 invisible.  On a glued problem those nodes are interface nodes, they are free,
-and the energy *falls* under refinement instead of rising.  Her ``W0``,
-materialized densely from her repository, has the zero row; ``placement`` now
+and the energy *falls* under refinement instead of rising.  The ``W0`` of qtt-laplace,
+materialized densely from that repository, has the zero row; ``placement`` now
 does too, and the module docstring records the measurement.
 """
 
@@ -60,19 +60,19 @@ warnings.simplefilter("ignore")
 import tt
 from tt.algs.amen import amen_solve
 from tt.algs.cross import cross
-from tt.algs.qtt_fem import (apply_mask, block_system, dirichlet_mask,
-                             interface_blocks, placement)
+from tt.algs.qtt_fem import (apply_mask, dirichlet_mask, multipatch_system,
+                             placement)
 from tt.core import tools as T
 
 R1 = np.array([0.0, 0.0])
 R2 = np.array([2.8, 0.3])
 R3 = np.array([2.0, 2.71828])
 
-#: her FEniCS curve, the finest three rows of examples/triangle_energy.txt
+#: the FEniCS curve of qtt-laplace, the finest three rows of examples/triangle_energy.txt
 FENICS = {11253: 0.34034426241362858, 15882: 0.34037442708539084,
           21787: 0.34039281527751902}
-#: her own QTT column, examples/triangle_tt_energy.txt
-HER_TT = {2: 0.34854913898796147, 3: 0.34180604253413738, 4: 0.34073671256641080}
+#: the QTT column of qtt-laplace, examples/triangle_tt_energy.txt
+QTTLAPLACE_TT = {2: 0.34854913898796147, 3: 0.34180604253413738, 4: 0.34073671256641080}
 
 
 def subdomains():
@@ -126,7 +126,7 @@ _QUAD_AREA = 4.0                     # of the reference square [-1,1]^2
 
 
 def patch_system(quad, d, eps):
-    """Her ``assemble_on_quad``: stiffness and load of one patch, in z-order."""
+    """``assemble_on_quad`` of qtt-laplace: stiffness and load of one patch, in z-order."""
     _pts, jac = corner_map(quad, d)
 
     def field(fn):
@@ -169,7 +169,7 @@ def solve(d, eps=1e-8, verbose=True):
     sysm = [patch_system(q, d, eps) for q in quads]
     t_asm = time.time() - t0
 
-    # her masks: the sides that lie on the true outer boundary
+    # the reference masks: the sides that lie on the true outer boundary
     masks = [dirichlet_mask("DN", "DN", d),
              dirichlet_mask("ND", "DN", d),
              dirichlet_mask("ND", "ND", d)]
@@ -179,34 +179,13 @@ def solve(d, eps=1e-8, verbose=True):
         A.append(aa)
         F.append(ff)
 
-    # the coupling, lambda = 1/2 as in her notebook
-    lam = 0.5
-    n = 3
-    B = [[None] * n for _ in range(n)]
-    for i in range(n):
-        B[i][i] = A[i]
-    G = [f.copy() for f in F]
-
-    def glue(i, j, side_i, side_j):
-        Pij, Pji, Pii, Pjj = interface_blocks(d, side_i, side_j)
-        B[i][j] = (Pij @ A[j] - lam * Pij).round(eps)
-        B[j][i] = (Pji @ A[i] - lam * Pji).round(eps)
-        B[i][i] = (B[i][i] - lam * Pii).round(eps)
-        B[j][j] = (B[j][j] - lam * Pjj).round(eps)
-        G[i] = (G[i] + T.matvec(Pij, F[j])).round(eps)
-        G[j] = (G[j] + T.matvec(Pji, F[i])).round(eps)
-
-    glue(0, 1, "RIGHT", "LEFT")
-    glue(1, 2, "TOP", "BOTTOM")
-    glue(2, 0, "LEFT", "TOP")
-
-    # The system is driven by the *coupled* right-hand side -- it carries the
-    # interface terms -- while the energy pairs the solution with the original
-    # load, because int |grad u|^2 = u^T f for the Galerkin solution.  Her
-    # notebook does the same, through a pair of names that read the other way
-    # round (its `F` is built from `ggg` and its `G` from `fff`).
-    S, load = block_system(B, F, eps=eps * 0.01)
-    _, coupled = block_system(B, G, eps=eps * 0.01)
+    # one call: the three patch systems and the three shared edges become a
+    # single block train (tt.algs.qtt_fem.multipatch_system)
+    S, coupled, load = multipatch_system(
+        list(zip(A, F)),
+        [(0, 1, "RIGHT", "LEFT"), (1, 2, "TOP", "BOTTOM"),
+         (2, 0, "LEFT", "TOP")],
+        d, lam=0.5, eps=eps * 0.01)
 
     t0 = time.time()
     u = amen_solve(S, coupled, coupled, eps, nswp=40, verb=0, kickrank=8)
@@ -219,8 +198,8 @@ def solve(d, eps=1e-8, verbose=True):
         line = (f"  d={d}  dofs {dofs:>9,d}  rank(S)={max(S.r):4d}  "
                 f"asm {t_asm:6.2f}s  solve {t_solve:6.2f}s  "
                 f"energy {energy:.8f}  vs FEniCS {abs(energy - ref) / ref:8.2e}")
-        if d in HER_TT:
-            line += f"  vs her TT {abs(energy - HER_TT[d]) / HER_TT[d]:.2e}"
+        if d in QTTLAPLACE_TT:
+            line += f"  vs qtt-laplace {abs(energy - QTTLAPLACE_TT[d]) / QTTLAPLACE_TT[d]:.2e}"
         print(line, flush=True)
     return energy
 
@@ -229,8 +208,8 @@ def main(argv):
     ds = [int(v) for v in argv[1:]] or [2, 3, 4, 5, 6]
     print(__doc__.split("Why a triangle")[0].strip())
     print()
-    print(f"  FEniCS reference (her repository): {FENICS[21787]:.8f} at 21787 dofs")
-    print(f"  her QTT column: " + ", ".join(f"d={k}: {v:.8f}" for k, v in HER_TT.items()))
+    print(f"  FEniCS reference (qtt-laplace): {FENICS[21787]:.8f} at 21787 dofs")
+    print(f"  qtt-laplace QTT column: " + ", ".join(f"d={k}: {v:.8f}" for k, v in QTTLAPLACE_TT.items()))
     print()
     for d in ds:
         solve(d)

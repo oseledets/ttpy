@@ -126,6 +126,7 @@ What is implemented, against the 1.x baseline:
 | dynamics | `ksl` | `ksl` with compiled float64/complex128 sweeps + step-adaptive `ksl_adaptive` |
 | Riemannian toolbox | — | tangent-space machinery + `rgd` with torch autodiff |
 | elliptic QTT | — | BPX multilevel preconditioner (`tt.algs.qtt_ell`) |
+| complex domains | — | multipatch QTT finite elements in z-order (`tt.algs.qtt_fem`), after [Markeeva–Tsybulin–Oseledets, JCP 2021](https://doi.org/10.1016/j.jcp.2020.109835) |
 | sampling / densities | — | `tt.transport`: Sample-DIRT densities and Rosenblatt transports |
 | backends | numpy | numpy and torch, CPU/CUDA/MPS |
 | install | f2py + Fortran toolchain | pure-python wheel |
@@ -349,6 +350,14 @@ other people's methods and codes:
   preconditioning for elliptic
   PDEs*](https://doi.org/10.1007/s10208-020-09446-z), Found. Comput. Math.
   20, 2020.
+* **QTT finite elements on complex domains** (`tt.algs.qtt_fem`):
+  L. Markeeva, I. Tsybulin, I. Oseledets, *QTT-isogeometric solver in two
+  dimensions*, [J. Comput. Phys. 424:109835, 2021](https://doi.org/10.1016/j.jcp.2020.109835)
+  ([arXiv:1802.02839](https://arxiv.org/abs/1802.02839)); reimplemented from
+  the reference code [`qtt-laplace`](https://github.com/RerRayne/qtt-laplace),
+  whose published energies it reproduces.  The `zkron` / `zkronv` /
+  `zmeshgrid` / `zaffine` z-order toolkit and the flexible-GMRES variant are
+  Markeeva's contributions to ttpy (2018).
 * **Maxvol**: A. Mikhalev, I. Oseledets, [*Rectangular maximum-volume
   submatrices and their applications*](https://doi.org/10.1016/j.laa.2017.10.014),
   Linear Algebra Appl. 538, 2018

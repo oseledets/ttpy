@@ -577,7 +577,7 @@ This is almost certainly what "Markeev PhD" refers to. **The dissertation itself
 was not found**: no Skoltech defence page (the obvious URL 404s), nothing in
 `search.rsl.ru`, dissercat or `site:mipt.ru`, no Google Scholar thesis entry.
 Marked **not verified**. Independent confirmation that this is the right author:
-the attached TT-IGA paper cites her as its ref. [17], "Markeeva et al. further
+the attached TT-IGA paper cites that work as its ref. [17], "Markeeva et al. further
 demonstrated high efficiency in 2D using the QTT format on uniform parametric
 grids."
 
@@ -1133,7 +1133,7 @@ repository's `img/bench.jpg`), plus a manufactured solution of our choosing.
 not read here, so the strict reference for a first version has to be a
 manufactured solution and the `O(log n)` rank claim.
 
-**ttpy2 pieces.** The `zkron` family (**exists**, and is her code); new: **P8**
+**ttpy2 pieces.** The `zkron` family (**exists**, contributed by Markeeva); new: **P8**
 — `W0`/`W1`, `P[lx,ly]`, `integrate_basis`, `assemble_on_quad`, interface sewing,
 boundary conditions. ~400 lines, and it is a re-derivation, not a port: M4 shows
 the source does not run, and it has no licence.

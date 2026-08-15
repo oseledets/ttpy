@@ -180,3 +180,25 @@ def test_a_curved_element_map_goes_through_the_cross_path():
     for key, ref in want.items():
         v = np.asarray(got[key].full()).reshape(-1)
         assert np.abs(v - ref).max() < 1e-10, f"{key}: {v[:3]} vs {ref}"
+
+
+def test_multipatch_system_reproduces_the_published_triangle_energy():
+    """The public multipatch solver against the qtt-laplace energy column.
+
+    The whole path -- three bilinearly-mapped patches, z-order assembly,
+    boundary masks, interface gluing, one amen_solve -- must land on the
+    energies published with the original implementation
+    (``triangle_tt_energy.txt`` of github.com/RerRayne/qtt-laplace), which
+    is an oracle produced by a different code on a different stack.
+    """
+    import pathlib
+    import sys
+    root = pathlib.Path(__file__).resolve().parent.parent / "examples"
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from qtt_fem_triangle import QTTLAPLACE_TT, solve
+
+    for d in (2, 3):
+        energy = solve(d, eps=1e-8, verbose=False)
+        ref = QTTLAPLACE_TT[d]
+        assert abs(energy - ref) / ref < 1e-8, (d, energy, ref)

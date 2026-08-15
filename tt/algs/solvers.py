@@ -20,7 +20,7 @@ right preconditioner ``M_j`` may change from one Krylov step to the next
 ``z_j = M_j^{-1} v_j`` next to the orthonormal ``v_j`` and expanding the
 correction in the ``z``'s -- expanding it in the ``v``'s is only correct when
 ``M`` never changes.  The flexible variant was contributed to ttpy by Larisa
-Markeeva (develop branch, ``new_gmres``, 2018), part of her work on solving
+Markeeva (develop branch, ``new_gmres``, 2018), part of the work on solving
 equations on complicated domains in the QTT format via z-order curves; it is
 ported here with the ``Z``-basis stored explicitly.
 
