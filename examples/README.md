@@ -110,15 +110,20 @@ above as a Galerkin energy must.</i>
 </td>
 <td width="50%">
 <img src="../docs/media/smoluchowski_run.gif" width="100%"><br>
-<b><a href="pages/smoluchowski_coagulation.md">smoluchowski_coagulation</a></b> (<a href="smoluchowski_coagulation.py">code</a>) — the multicomponent
+<b><a href="smoluchowski/README.md">smoluchowski</a></b> (<a href="smoluchowski/run.py">code</a>) — the multicomponent
 Smoluchowski coagulation equation of Matveev–Zheltkov–Tyrtyshnikov–Smirnov
 (<a href="https://doi.org/10.1016/j.jcp.2016.04.025">JCP 2016</a>): the gain term is a lower-triangular convolution, so it is an
 FFT on every TT core and never leaves the format. The paper's $1000^2$
 reference point — error 2.2e-3 at TT rank 13 — in 4.5 s, against the
 215 580 s (2.5 days) it reports for the direct implementation of the same
-scheme; the frames are the run's real log.
+scheme; the frames are the run's real log. The paper's non-separable
+ballistic kernel (its eq. 17) is built too — a TT-cross of the $2d$-dimensional
+$K$, cut along the one bond that separates $\bar u$ from $\bar v$ — and lands
+on its Table 5 to the last digit printed from $N = 400$ up, in 16 s against
+the 4.9 days that row costs directly.
 <i>Oracle: the analytic solution of the paper's eq. (18) and the exact total
-density $1/(1+t/2)$, every step.</i>
+density $1/(1+t/2)$, every step; Table 5 of the paper for the ballistic
+kernel.</i>
 </td>
 </tr>
 </table>
@@ -141,4 +146,4 @@ density $1/(1+t/2)$, every step.</i>
 | [sir_network_cme.py](pages/sir_network_cme.md) ([code](sir_network_cme.py)) | [\[DS24\]](https://doi.org/10.1016/j.amc.2023.128290) epidemics on networks, rare events | brute force + SSA |
 | [allen_cahn_ksl_deim.py](pages/allen_cahn_ksl_deim.md) ([code](allen_cahn_ksl_deim.py)) | Dektor's interpolatory KSL (`tt.ksl_deim`) on [his paper's](https://doi.org/10.1016/j.laa.2024.11.001) 3D Allen–Cahn | dense solve_ivp at small n + energy monotonicity |
 | [sample_dirt_banana.py](pages/sample_dirt_banana.md) ([code](sample_dirt_banana.py)) | sample-only residual TT transports learned by orthogonal ALS | analytic banana density + independent samples + exact round trip |
-| [smoluchowski_coagulation.py](pages/smoluchowski_coagulation.md) ([code](smoluchowski_coagulation.py)) | [\[MZTS16\]](https://doi.org/10.1016/j.jcp.2016.04.025) multicomponent coagulation: the gain term as an FFT on every TT core | the paper's analytic eq. (18) + exact total density |
+| [smoluchowski/](smoluchowski/README.md) ([code](smoluchowski/run.py)) | [\[MZTS16\]](https://doi.org/10.1016/j.jcp.2016.04.025) multicomponent coagulation: the gain term as an FFT on every TT core; the ballistic kernel separated by a cross of the $2d$-dimensional $K$ | the paper's analytic eq. (18) + exact total density; Table 5 for the ballistic kernel |

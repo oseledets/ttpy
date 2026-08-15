@@ -538,7 +538,7 @@ def test_divgrad_cross_assembly_matches_scipy_sparse():
         assert err < 1e-7, f"dirichlet={dirichlet}: {err:.2e}"
 
 
-# --- examples/smoluchowski_coagulation.py ------------------------------------
+# --- examples/smoluchowski/ ------------------------------------
 
 def test_smoluchowski_example_reproduces_the_analytic_solution():
     """The showcase script's own run loop against the paper's eq. (18).
@@ -551,7 +551,12 @@ def test_smoluchowski_example_reproduces_the_analytic_solution():
     """
     pytest.importorskip("scipy.special")
     _examples_path()
-    from smoluchowski_coagulation import run
+    import pathlib
+    import sys
+    d = pathlib.Path(__file__).resolve().parent.parent / "examples" / "smoluchowski"
+    if str(d) not in sys.path:
+        sys.path.insert(0, str(d))
+    from run import run
 
     _, report = run(N=200, vmax=20.0, T=1.0, tau=0.05, eps=1e-8)
     assert report["error"] < 5e-3, report
@@ -567,10 +572,49 @@ def test_smoluchowski_example_additive_kernel_keeps_its_two_identities():
     stays an order below the density decay it is measured against.
     """
     _examples_path()
-    from smoluchowski_coagulation import run
+    import pathlib
+    import sys
+    d = pathlib.Path(__file__).resolve().parent.parent / "examples" / "smoluchowski"
+    if str(d) not in sys.path:
+        sys.path.insert(0, str(d))
+    from run import run
 
     _, report = run(N=200, vmax=40.0, T=0.2, tau=0.01, eps=1e-8,
                     kernel_name="additive")
     decay = abs(report["density"] - report["density_0"]) / report["density_0"]
     assert report["error"] < 0.1 * decay, report      # mass drift vs decay
     assert report["density_error"] < 1e-2, report     # vs N_0 exp(-M_0 t)
+
+
+def test_smoluchowski_example_ballistic_kernel_reproduces_table_5():
+    """Ballistic kernel (eq. 17) against Table 5 of the paper.
+
+    The cheapest row of that table -- ``N = 100``, ``V_max = 10``,
+    ``tau = 0.05``, total density at ``t = 1`` equal to 0.1847 -- run through
+    the script's own loop, kernel included: the separable form is built by
+    TT-cross at ``eps`` and cut along the ``u | v`` bond, and nothing in the
+    run knows the number it is being compared against.
+
+    Measured here: 0.1839 at TT rank 11 in 2.4 s, from a ``R = 6``-term
+    kernel accurate to 4.4e-7.  The 0.46% gap to the paper is a modelling
+    difference and not solver error -- the paper starts the grid at
+    ``V_min > 0`` and dissipates everything below it (its eq. (4)), while
+    ``ballistic_kernel`` clips the component sums at one grid step.  The
+    paper's own table moves by 5% between this row and its converged one, so
+    the threshold here is deliberately tighter than that spread.
+    """
+    _examples_path()
+    import pathlib
+    import sys
+    d = pathlib.Path(__file__).resolve().parent.parent / "examples" / "smoluchowski"
+    if str(d) not in sys.path:
+        sys.path.insert(0, str(d))
+    from run import run
+
+    _, report = run(N=100, vmax=10.0, T=1.0, tau=0.05, eps=1e-6,
+                    kernel_name="ballistic")
+    assert abs(report["density"] - 0.1847) / 0.1847 < 2e-2, report
+    assert report["rank"] <= 25, report
+    # the kernel's own diagnostics: a handful of terms, accurate to eps
+    assert report["kernel"]["rank"] <= 12, report["kernel"]
+    assert report["kernel"]["err"] < 1e-5, report["kernel"]

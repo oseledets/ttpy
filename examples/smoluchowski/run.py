@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """Multicomponent Smoluchowski coagulation in TT, at the scale of the paper.
 
-    python examples/smoluchowski_coagulation.py                      # Table 1, N = 1000
-    python examples/smoluchowski_coagulation.py --N 2000 --tau 0.05  # Table 1, N = 2000
-    python examples/smoluchowski_coagulation.py --kernel additive --T 0.2 --tau 0.005
-    python examples/smoluchowski_coagulation.py --gif docs/media/smoluchowski_run.gif
+    python examples/smoluchowski/run.py                      # Table 1, N = 1000
+    python examples/smoluchowski/run.py --N 2000 --tau 0.05  # Table 1, N = 2000
+    python examples/smoluchowski/run.py --kernel additive --T 0.2 --tau 0.005
+    python examples/smoluchowski/run.py --gif docs/media/smoluchowski_run.gif
 
 The two-component coagulation equation
 
@@ -14,7 +14,7 @@ The two-component coagulation equation
 on a uniform ``N x N`` grid over ``[0, V_max]^2``, integrated by the explicit
 midpoint scheme of Matveev-Zheltkov-Tyrtyshnikov-Smirnov (JCP 316:164-179,
 2016) with the gain term evaluated by their Algorithm 1: the low-rank
-FFT convolution of :mod:`tt.algs.smoluchowski`.
+FFT convolution of :mod:`examples/smoluchowski/solver.py`.
 
 Why the grid is not small
 -------------------------
@@ -50,14 +50,27 @@ Kernels
                                               identities: the mass
                                               ``int (v_1+v_2) n`` is conserved
                                               and ``N(t) = N_0 exp(-M_0 t)``.
+``--kernel ballistic`` eq. (17) of the paper -- not separable at all; built to
+                                              ``eps`` by a TT-cross of the
+                                              ``2d``-dimensional ``K`` and cut
+                                              along the ``u | v`` bond, see
+                                              ``solver.ballistic_kernel``.  The
+                                              oracle is Table 5 of the paper.
 
-The ballistic kernel of the paper's eq. (17),
-``K = ((sum u_i)^{1/3} + (sum v_i)^{1/3})^2 sqrt(1/sum u_i + 1/sum v_i)``,
-is **not implemented**: it is not separable, and using it here would require
-first building a separable approximation of the ``2d``-dimensional ``K`` by
-cross approximation and then splitting it into ``(kv, ku)`` pairs.  That
-approximation, and the error it introduces, is a piece of work this example
-does not do, so it is recorded as missing rather than faked.
+Table 5 of the paper (ballistic, ``t in [0, 1]``, ``tau = 0.05``, total
+density at ``t = 1``) is the external check on ``--kernel ballistic``:
+
+    N       V_max    paper    here
+    100     10       0.1847   0.1839
+    200     20       0.1922   0.1917
+    400     100      0.1943   0.1943
+    800     200      0.1942   0.1943
+    1600    200      0.1945   0.1945
+    3200    200      0.1944   0.1946
+
+The paper's TT runs take 212 s to 2828 s and its direct method 1684 s at
+``N = 100`` and 425 182 s (4.9 days) at ``N = 400``; the same rows here take
+2.7 s to 173 s.
 
 The ``--gif`` output is the run itself: the left panel is the log lines below
 as they are printed, the right panel is the mass concentration
@@ -73,8 +86,10 @@ import time
 
 import numpy as np
 
+sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent))
+
 import tt
-from tt.algs.smoluchowski import (additive_kernel, coagulation_rhs,
+from solver import (additive_kernel, ballistic_kernel, coagulation_rhs,
                                   component_sum, constant_kernel,
                                   trapezoidal_weights)
 from tt.core.vector import vector
@@ -112,7 +127,7 @@ class Analytic:
 def midpoint_step(n, kernel, tau, h, eps, rmax):
     """One step of eq. (5), with the intermediate stage kept visible.
 
-    Identical to :func:`tt.algs.smoluchowski.predictor_corrector_step`; spelled
+    Identical to :func:`examples/smoluchowski/solver.py.predictor_corrector_step`; spelled
     out here only so the log can show what the ranks do *inside* the step --
     the predictor inflates them (every Hadamard product multiplies ranks) and
     the rounding of the corrector pulls them back.
@@ -129,18 +144,23 @@ def run(d=2, N=1000, vmax=100.0, T=10.0, tau=0.1, eps=1e-6, rmax=None,
     if d != 2:
         raise SystemExit("this example is written for d = 2 (the analytic "
                          "solution and the Fig. 1 panel are 2-D); the solver "
-                         "in tt.algs.smoluchowski is dimension-agnostic")
+                         "in examples/smoluchowski/solver.py is dimension-agnostic")
     h = vmax / (N - 1)
     n0, x = exponential_ic(N, h)
     modes = [N] * d
+    kernel_info = {}
     if kernel_name == "constant":
         kernel = constant_kernel(modes)
     elif kernel_name == "additive":
         kernel = additive_kernel(modes, h)
+    elif kernel_name == "ballistic":
+        t_k = time.perf_counter()
+        kernel = ballistic_kernel(modes, h, eps=eps, rmax=rmax,
+                                  info=kernel_info)
+        kernel_info["seconds"] = time.perf_counter() - t_k
     else:
         raise SystemExit(f"unknown kernel {kernel_name!r}: "
-                         "'constant' or 'additive' (see the module docstring "
-                         "for why 'ballistic' is not offered)")
+                         "'constant', 'additive' or 'ballistic'")
 
     w = trapezoidal_weights(modes, h)
     s = component_sum(modes, h)
@@ -160,6 +180,13 @@ def run(d=2, N=1000, vmax=100.0, T=10.0, tau=0.1, eps=1e-6, rmax=None,
           + (f", rmax={rmax}" if rmax else ""))
     print(f"grid step h = {h:.6g};  n_0 = exp(-v1-v2):  "
           f"N(0) = {dens0:.6f}, M(0) = {mass0:.6f}")
+    if kernel_info:
+        print(f"ballistic kernel by TT-cross: R = {kernel_info['rank']} pairs "
+              f"(ranks {kernel_info['ranks']}), floor = "
+              f"{kernel_info['floor']:.4g}, error vs eq. (17) "
+              f"{kernel_info['err']:.2e} (max {kernel_info['err_max']:.2e}) "
+              f"on 4000 random nodes, {kernel_info['fun_eval']} evaluations, "
+              f"{kernel_info['seconds']:.2f} s")
     for line in LOG_HEADER:
         print(line, flush=True)
 
@@ -189,12 +216,20 @@ def run(d=2, N=1000, vmax=100.0, T=10.0, tau=0.1, eps=1e-6, rmax=None,
             err_n = float(np.linalg.norm(np.asarray(n.full()) - ref)
                           / np.linalg.norm(ref))
         else:
-            dens_ref = dens0 * np.exp(-mass0 * t)
+            # both non-constant kernels conserve the total mass exactly on the
+            # unbounded domain; only the additive one also has a closed form
+            # for the total density
             err_n = float(abs(float(tt.dot(w, s * n)) - mass0) / mass0)
+            dens_ref = (dens0 * np.exp(-mass0 * t)
+                        if kernel_name == "additive" else float("nan"))
         err_dens = abs(dens - dens_ref) / dens_ref
 
+        # eq. (17) has no closed form for the density: print the two columns
+        # that would compare against one as empty rather than as NaN
+        ref_col = f"{dens_ref:10.6f}" if np.isfinite(dens_ref) else f"{'--':>10}"
+        err_col = f"{err_dens:8.2e}" if np.isfinite(err_dens) else f"{'--':>8}"
         line = (f"{k:5d}/{nsteps:<5d} {t:6.3f}   {r_half:4d}    {r_new:4d}  "
-                f"{dens:10.6f} {dens_ref:10.6f}  {err_dens:8.2e}  "
+                f"{dens:10.6f} {ref_col}  {err_col}  "
                 f"{err_n:8.2e}  {dt * 1e3:8.1f}")
         lines.append(line)
         print(line, flush=True)
@@ -204,7 +239,10 @@ def run(d=2, N=1000, vmax=100.0, T=10.0, tau=0.1, eps=1e-6, rmax=None,
 
     tail = ("err(n) is the relative Frobenius error against eq. (18)"
             if exact is not None else
-            "err(n) is the drift of the conserved mass int (v1+v2) n")
+            "err(n) is the drift of the conserved mass int (v1+v2) n"
+            + ("; there is no closed form for the density of eq. (17), "
+               "hence the empty 'exact' column"
+               if kernel_name == "ballistic" else ""))
     print(f"\n{tail}; ms/step excludes the diagnostics.")
     print(f"solver time {solver_seconds:.1f} s for {nsteps} steps "
           f"({solver_seconds / nsteps * 1e3:.1f} ms/step), "
@@ -213,12 +251,27 @@ def run(d=2, N=1000, vmax=100.0, T=10.0, tau=0.1, eps=1e-6, rmax=None,
         print("paper Table 1 for this problem (V_max=100, T=10): "
               "N=1000, tau=0.1 -> TT 1024 s, direct 215580 s, error 2.2e-3; "
               "N=2000, tau=0.05 -> TT 2492 s, error 5.0e-4")
+    if kernel_name == "ballistic":
+        table5 = {(100, 10.0): 0.1847, (200, 20.0): 0.1922,
+                  (400, 100.0): 0.1943, (800, 200.0): 0.1942,
+                  (1600, 200.0): 0.1945, (3200, 200.0): 0.1944}
+        ref = table5.get((N, float(vmax)))
+        if ref is not None and abs(T - 1.0) < 1e-12 and abs(tau - 0.05) < 1e-12:
+            print(f"paper Table 5 for this row (N={N}, V_max={vmax:g}, t=1): "
+                  f"{ref:.4f}  vs  {dens:.4f} here "
+                  f"({abs(dens - ref) / ref:.2%} relative); "
+                  f"paper ranks R=12..18, here {int(max(n.r))}")
+        else:
+            print("paper Table 5 (t=1, tau=0.05) covers N/V_max = 100/10, "
+                  "200/20, 400/100, 800/200, 1600/200, 3200/200; this row is "
+                  "not one of them, so there is no external number to quote")
 
     if gif:
         render_gif(frames, gif, d, N, vmax, tau, eps, kernel_name)
     return n, {"error": err_n, "density_error": err_dens, "density": dens,
                "rank": int(max(n.r)), "seconds": solver_seconds,
-               "steps": nsteps, "density_0": dens0, "mass_0": mass0}
+               "steps": nsteps, "density_0": dens0, "mass_0": mass0,
+               "kernel": kernel_info}
 
 
 # --- the animation -----------------------------------------------------------
@@ -244,7 +297,7 @@ def render_gif(frames, path, d, N, vmax, tau, eps, kernel_name, nlines=28):
         axl.text(0.012, 0.985, "\n".join(shown), transform=axl.transAxes,
                  va="top", ha="left", family="monospace", fontsize=7.4,
                  color="#c8d4dc", linespacing=1.3)
-        axl.set_title("examples/smoluchowski_coagulation.py", fontsize=8,
+        axl.set_title("examples/smoluchowski/run.py", fontsize=8,
                       family="monospace", color="#333333")
 
         # right: Fig. 1 of the paper, the mass concentration
@@ -295,7 +348,7 @@ def main(argv=None):
     p.add_argument("--eps", type=float, default=1e-6, help="TT rounding accuracy")
     p.add_argument("--rmax", type=int, default=None, help="hard TT rank cap")
     p.add_argument("--kernel", default="constant",
-                   choices=("constant", "additive"))
+                   choices=("constant", "additive", "ballistic"))
     p.add_argument("--gif", default=None, help="write the two-panel animation here")
     p.add_argument("--view", type=float, default=30.0,
                    help="upper bound of the animated window in v")

@@ -10,14 +10,18 @@ Every check here has an oracle that does not come from this module:
   ``O(h^2 + tau^2)``;
 * the additive kernel against the two identities it satisfies exactly on an
   unbounded domain -- mass ``int (v_1 + v_2) n`` is conserved and the total
-  density decays as ``N_0 exp(-M_0 t)``.
+  density decays as ``N_0 exp(-M_0 t)``;
+* the ballistic kernel of the paper's eq. (17) against its own closed form
+  evaluated node by node (the cross-approximated separable form must
+  reproduce it), and the coagulation it drives against Table 5 of the paper.
 """
 
 import numpy as np
 import pytest
 
 import tt
-from tt.algs.smoluchowski import (additive_kernel, coagulation_rhs,
+from smoluchowski_solver_shim import (additive_kernel, ballistic_kernel,
+                                  coagulation_rhs,
                                   component_sum, constant_kernel, solve,
                                   trapezoidal_convolution,
                                   trapezoidal_weights)
@@ -286,6 +290,131 @@ def test_additive_kernel_conserves_mass_and_decays_density():
     assert int(max(n.r)) <= 30, list(n.r)
 
 
+# --- (e) the ballistic kernel, eq. (17) --------------------------------------
+
+def ballistic_dense(x, floor):
+    """Eq. (17) on the full ``d = 2`` grid, straight from the formula.
+
+    Written here from the paper, independently of the module under test: an
+    explicit meshgrid over ``(u_1, u_2, v_1, v_2)``, the two component sums
+    clipped at ``floor``, no tensor train anywhere.
+    """
+    u1, u2, v1, v2 = np.meshgrid(x, x, x, x, indexing="ij")
+    su = np.maximum(u1 + u2, floor)
+    sv = np.maximum(v1 + v2, floor)
+    return (su ** (1 / 3) + sv ** (1 / 3)) ** 2 * np.sqrt(1 / su + 1 / sv)
+
+
+def test_ballistic_bond_cut_reassembles_the_kernel_exactly():
+    """``sum_a ku_a(u) kv_a(v) == K(u; v)`` entry by entry.
+
+    This is the check on the *cut*, which is the only step of
+    :func:`ballistic_kernel` that could silently be wrong: the cross is an
+    approximation to ``eps``, but regrouping its cores at the ``u | v`` bond
+    is an identity, so the reassembled pairs must agree with the cross's own
+    tensor to round-off and with eq. (17) to the cross's accuracy.
+
+    Measured: 3.2e-16 against the cross's tensor, 7.7e-9 against eq. (17)
+    at ``eps = 1e-8`` (worst pointwise 6.6e-8).
+    """
+    N, vmax, eps = 16, 10.0, 1e-8
+    h = vmax / (N - 1)
+    x = h * np.arange(N)
+    info = {}
+    kernel = ballistic_kernel([N, N], h, eps=eps, info=info)
+    assert len(kernel) == info["rank"]
+    assert info["floor"] == h
+
+    got = np.zeros((N,) * 4)
+    for kv, ku in kernel:
+        got += np.multiply.outer(np.asarray(ku.full()).reshape(N, N),
+                                 np.asarray(kv.full()).reshape(N, N))
+    ref = ballistic_dense(x, h)
+    assert rel(got, ref) < 100 * eps, rel(got, ref)
+    assert np.max(np.abs(got - ref) / ref) < 1e-6
+    # the same number, measured by the function itself on nodes it did not use
+    assert info["err"] < 100 * eps and info["err_max"] < 1e-6
+
+
+def test_ballistic_kernel_rank_is_moderate_and_flat_in_N():
+    """``K = F(sum u, sum v)`` is a function of two scalars, so the rank of
+    the ``u | v`` bond is the epsilon-rank of the two-variable matrix ``F``
+    and cannot grow with the grid.
+
+    The oracle is that epsilon-rank, computed independently by a dense SVD of
+    ``F(s, t)`` sampled on the range of the sums -- no tensor train, no cross.
+    Measured: SVD rank 8 at ``eps = 1e-6`` (and 8 for ``V_max`` from 10 to
+    1000), bond rank 6 at ``N = 100`` and 7 at ``N = 1000``, against the
+    paper's Table 6 value ``R = 19..23`` at the same accuracy.
+    """
+    eps, vmax = 1e-6, 100.0
+    ranks = {}
+    for N in (100, 1000):
+        h = vmax / (N - 1)
+        info = {}
+        ballistic_kernel([N, N], h, eps=eps, info=info)
+        ranks[N] = info["rank"]
+        # the independent oracle: epsilon-rank of F(s, t) on the sum range
+        s = np.unique(np.concatenate([np.geomspace(h, 2 * vmax, 128),
+                                      np.linspace(h, 2 * vmax, 128)]))
+        f = ((s[:, None] ** (1 / 3) + s[None, :] ** (1 / 3)) ** 2
+             * np.sqrt(1 / s[:, None] + 1 / s[None, :]))
+        sv = np.linalg.svd(f, compute_uv=False)
+        svd_rank = int(np.sum(sv / sv[0] > eps))
+        assert svd_rank <= 12, svd_rank
+        assert ranks[N] <= svd_rank + 2, (ranks[N], svd_rank)
+
+    assert ranks[100] < 40 and ranks[1000] < 40, ranks
+    assert ranks[1000] <= ranks[100] + 5, ranks
+
+
+def test_ballistic_coagulation_is_much_faster_than_the_constant_kernel():
+    """Fig. 2 of the paper: the ballistic kernel drives "much faster dynamics".
+
+    Same grid, same initial datum, same horizon -- only the kernel differs.
+    The constant kernel has the exact law ``N(t) = 1/(1 + t/2)``, so at
+    ``t = 1`` it is at 0.667 of its start; the ballistic one must be well
+    below that, and the ranks must stay where the paper's do (R = 12..18).
+
+    Measured: 0.1839 ballistic vs 0.6667 constant, max rank 11.
+    """
+    N, vmax, tau, T = 100, 10.0, 0.05, 1.0
+    h = vmax / (N - 1)
+    n0, _ = exponential_ic(N, h)
+    w = trapezoidal_weights([N, N], h)
+    nsteps = int(round(T / tau))
+
+    n_const = solve(n0, constant_kernel([N, N]), h, tau, nsteps, eps=1e-6)
+    n_ball = solve(n0, ballistic_kernel([N, N], h, eps=1e-6), h, tau, nsteps,
+                   eps=1e-6)
+    d_const = float(tt.dot(w, n_const))
+    d_ball = float(tt.dot(w, n_ball))
+
+    assert abs(d_const - 1.0 / (1.0 + T / 2.0)) < 1e-2, d_const
+    assert d_ball < 0.5 * d_const, (d_ball, d_const)
+    assert int(max(n_ball.r)) <= 25, list(n_ball.r)
+
+
+def test_ballistic_density_matches_table_5_of_the_paper():
+    """External oracle: Table 5, total density at ``t = 1``, ``tau = 0.05``.
+
+    ``N = 100, V_max = 10 -> 0.1847`` is the cheapest row of that table.  The
+    residual gap is not solver error: the paper keeps the kernel finite by
+    starting the grid at ``V_min > 0`` and dissipating everything below it
+    (its eq. (4)), while :func:`ballistic_kernel` clips the component sums at
+    one grid step instead.  Measured here: 0.1839, i.e. 0.46% below theirs,
+    which is why the threshold is 2e-2 rather than the 5e-2 a pure
+    "same ballpark" check would need.
+    """
+    N, vmax, tau, T = 100, 10.0, 0.05, 1.0
+    h = vmax / (N - 1)
+    n0, _ = exponential_ic(N, h)
+    n = solve(n0, ballistic_kernel([N, N], h, eps=1e-6), h, tau,
+              int(round(T / tau)), eps=1e-6)
+    dens = float(tt.dot(trapezoidal_weights([N, N], h), n))
+    assert abs(dens - 0.1847) / 0.1847 < 2e-2, dens
+
+
 # --- building blocks ---------------------------------------------------------
 
 def test_component_sum_is_the_sum_of_the_coordinates():
@@ -307,6 +436,18 @@ def test_trapezoidal_weights_integrate_a_polynomial_exactly():
     assert abs(float(tt.dot(w, s)) - 8.0) < 1e-12
 
 
-def test_exported_on_the_tt_namespace():
-    assert tt.smoluchowski_solve is solve
-    assert "smoluchowski_solve" in tt.__all__
+def test_the_primitive_is_in_the_package_and_the_model_is_not():
+    """The split is deliberate: a Volterra convolution is a TT primitive,
+    coagulation is an application.
+
+    ``tt.algs.convolution`` ships with the package; the kernels, the
+    right-hand side and the time stepping live in
+    ``examples/smoluchowski/solver.py`` and are imported from there, like
+    every other example.
+    """
+    from tt.algs import convolution
+    assert hasattr(convolution, "trapezoidal_convolution")
+    assert not hasattr(tt, "smoluchowski_solve")
+    import smoluchowski_solver_shim as model
+    assert hasattr(model, "solve") and hasattr(model, "coagulation_rhs")
+

@@ -14,7 +14,7 @@ if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
 from solver import *          # noqa: F401,F403
-from solver import (additive_kernel, coagulation_rhs, constant_kernel,  # noqa: F401
-                    predictor_corrector_step, solve)
+from solver import (additive_kernel, ballistic_kernel, coagulation_rhs,  # noqa: F401
+                    constant_kernel, predictor_corrector_step, solve)
 from tt.algs.convolution import (component_sum, trapezoidal_convolution,  # noqa: F401
                                  trapezoidal_weights)
