@@ -243,7 +243,12 @@ dominates; teaching the solver to accept a factored operator is the next item.
 This package is a rewrite of [ttpy](https://github.com/oseledets/ttpy), which
 carried the TT format in Python for over a decade on a Fortran core
 (`tt-fort`); everything here is measured against it and owes its shape to it,
-and to everyone who contributed to it over the years.  The algorithms
+and to everyone who contributed to it over the years -- among them Tigran
+Saluev, Daniel Bershatsky, Alexander Novikov, Pavel Kharyuk, Larisa Markeeva,
+Rafael Ballester-Ripoll, Dishi Liu, Maxim Rakhuba and Alec Dektor, whose
+interpolatory projector-splitting integrator (DEIM-KSL, PR #102) is first in
+line to port.  The ledger of 1.x-branch contributions and their fate here is
+[docs/plans/legacy-contributions.md](docs/plans/legacy-contributions.md).  The algorithms
 themselves come from the literature, and several are reimplementations of
 other people's methods and codes:
 
