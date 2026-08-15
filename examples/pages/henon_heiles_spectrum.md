@@ -148,6 +148,26 @@ The default run takes about 36 s in the repository venv on a Mac laptop (34 s pr
 $ pytest tests/test_examples.py::test_spectrum_transform_recovers_planted_frequencies
 ```
 
+## The same run at $d=8$: beyond any dense oracle
+
+`python examples/henon_heiles_spectrum.py 8 10 16` runs the identical
+pipeline at $10^8$ basis states, where no dense eigensolver can follow.
+Measured on 8 cores of a shared h200 (100 s total, `eigb`'s 12 lowest
+levels in 29 s at TT ranks the block sweep chooses itself):
+
+| peak $\omega$ | height | nearest eigb | difference |
+|---|---|---|---|
+| 3.9900 | 4.57 | 3.9900 | 4.4e-06 |
+| 4.9814 | 8.08 | 4.9814 | -5.8e-05 |
+| 5.9701 | 7.10 | — | beyond the 12 computed levels |
+
+The 4.98 peak covers the *eight* quasi-degenerate levels
+4.9640–4.9836 (spread 0.020, below the $2\pi/T = 0.031$ resolution) —
+the same multiplet effect as at $d=4$, now with a denser ladder.  At this
+size the two TT methods are each other's only referee: the trajectory
+transform and the block eigensolver agree to $10^{-5}$ from completely
+different algorithms.
+
 ## References
 
 * I. V. Oseledets, DSc dissertation, Sec. 3.8 — this exact scheme (evolution + autocorrelation + FFT) for the Hénon–Heiles potential, there with a Strang-split QTT propagator; the KSL integrator replaces the step-and-round splitting.

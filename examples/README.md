@@ -33,10 +33,13 @@ are the run's real log.  The resulting spectrum is
 <td>
 <img src="../docs/media/henon_heiles_spectrum.png" width="100%"><br>
 <b><a href="pages/henon_heiles_spectrum.md">henon_heiles_spectrum</a></b> (<a href="henon_heiles_spectrum.py">code</a>) — the same
-spectral method at teaching size: coherent packet, autocorrelation, windowed
-FFT; every peak is cross-checked against <code>eigb</code> on the same
-operator (ground state agrees to 1.2e-5).
-<i>Oracle: eigb + the quasi-degenerate multiplet structure.</i>
+spectral method with the eigensolver as the cross-check, at $d=8$ ($10^8$
+states, beyond any dense oracle): coherent packet, autocorrelation, windowed
+FFT; the ground state agrees with <code>eigb</code> to 4.4e-6 and the
+8-fold multiplet at 4.96–4.98 sits under one peak, matching to 5.8e-5.
+100 s end to end, eigb's 12 levels in 29 s.
+<i>Oracle: eigb on the same operator — two TT methods checking each other
+where neither has a dense referee.</i>
 </td>
 <td>
 <img src="../docs/media/fokker_planck_viscometric.png" width="100%"><br>
