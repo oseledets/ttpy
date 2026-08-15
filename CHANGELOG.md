@@ -10,6 +10,16 @@
   and its unit tests remain part of ttypy.
 
 ### Added
+- ``tt.algs.smoluchowski`` and ``tt.smoluchowski_solve``: the multicomponent
+  Smoluchowski coagulation equation in TT (Matveev-Zheltkov-Tyrtyshnikov-
+  Smirnov, JCP 316:164-179, 2016).  The gain term is a lower-triangular
+  trapezoidal convolution evaluated by their Algorithm 1 -- per-mode FFT on
+  every TT core, elementwise product, one rounding, ``O(d R^4 N log N)`` --
+  with separable kernels given as lists of rank-1 ``(kv, ku)`` terms, and the
+  paper's second-order predictor-corrector in time.
+- ``examples/smoluchowski_coagulation.py`` and its gallery page: the paper's
+  ``1000^2`` reference point (error 2.2e-3 at TT rank 13) in 4.5 s, against
+  the 215580 s it reports for the direct implementation of the same scheme.
 - ``tt.lobpcg_solve``: a fixed-rank SPD linear solver with one-site energy
   sweeps, central block-Jacobi PCG, and one transported recycled direction per
   core.  It performs no rank enrichment, truncation, or SVD and reports the
