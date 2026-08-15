@@ -120,27 +120,40 @@ def mkron(a, *args):
 
 
 def zkron(ttA, ttB):
-    """Kronecker product of TT-matrices in z-order (arXiv:1802.02839)."""
+    """Kronecker product of TT-matrices in z-order (arXiv:1802.02839).
+
+    Contributed by Larisa Markeeva (ttpy, 2018), from her work on solving
+    equations on complicated domains in the QTT format via z-order curves.
+    """
     al, bl = matrix.to_list(ttA), matrix.to_list(ttB)
     out = [np.kron(bk.to_numpy(B), bk.to_numpy(A)) for A, B in zip(al, bl)]
     return matrix.from_list(_like(out, ttA.tt))
 
 
 def zkronv(ttA, ttB):
-    """Kronecker product of TT-vectors in z-order."""
+    """Kronecker product of TT-vectors in z-order.
+
+    Contributed by Larisa Markeeva (ttpy, 2018); see :func:`zkron`.
+    """
     al, bl = ttA.cores, ttB.cores
     out = [np.kron(bk.to_numpy(B), bk.to_numpy(A)) for A, B in zip(al, bl)]
     return vector.from_list(_like(out, ttA))
 
 
 def zmeshgrid(d):
-    """Meshgrid in z-order; ``4**d`` nodes."""
+    """Meshgrid in z-order; ``4**d`` nodes.
+
+    Contributed by Larisa Markeeva (ttpy, 2018); see :func:`zkron`.
+    """
     lin, one = xfun(2, d), ones(2, d)
     return zkronv(lin, one), zkronv(one, lin)
 
 
 def zaffine(c0, c1, c2, d):
-    """``c0 + c1*ex + c2*ey`` in z-ordering, ``d`` QTT cores."""
+    """``c0 + c1*ex + c2*ey`` in z-ordering, ``d`` QTT cores.
+
+    Contributed by Larisa Markeeva (ttpy, 2018); see :func:`zkron`.
+    """
     xx, yy = zmeshgrid(d)
     hx = [bk.to_numpy(c).copy() for c in xx.cores]
     hy = [bk.to_numpy(c) for c in yy.cores]

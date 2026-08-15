@@ -12,9 +12,17 @@ is that the accuracy of the ``j``-th matvec only needs to be
 application has to be.  That is what makes the method usable: the ranks stay
 small exactly when the residual is small, which is when the vectors would
 otherwise be most expensive.  ``A`` is therefore not a matrix here but a closure
-``A(x, eps)`` that promises ``||A(x, eps) - A x|| <= eps ||A x||``; a
-preconditioner that changes from step to step is equally welcome, which is what
-"flexible" means.
+``A(x, eps)`` that promises ``||A(x, eps) - A x|| <= eps ||A x||``.
+
+"Flexible" means more than inexact matvecs: with the ``prec`` argument the
+right preconditioner ``M_j`` may change from one Krylov step to the next
+(FGMRES, Saad 1993).  That requires keeping the preconditioned basis
+``z_j = M_j^{-1} v_j`` next to the orthonormal ``v_j`` and expanding the
+correction in the ``z``'s -- expanding it in the ``v``'s is only correct when
+``M`` never changes.  The flexible variant was contributed to ttpy by Larisa
+Markeeva (develop branch, ``new_gmres``, 2018), part of her work on solving
+equations on complicated domains in the QTT format via z-order curves; it is
+ported here with the ``Z``-basis stored explicitly.
 
 The small least squares problem
 -------------------------------
@@ -108,8 +116,15 @@ def _scalar(v):
 
 
 def GMRES(A, u_0, b, eps=1e-6, maxit=100, m=20, callback=None, verbose=0, *,
-          return_history=False):
+          prec=None, return_history=False):
     """Flexible restarted GMRES in the TT format.
+
+    Flexible variant contributed by Larisa Markeeva to ttpy (develop branch,
+    2018); ported here.  Passing ``prec`` turns the method into FGMRES
+    (Saad 1993): the preconditioned vectors ``z_j = prec(v_j)`` are stored as
+    their own basis and the correction is expanded in them, so ``prec`` is
+    free to be a different operator at every Krylov step -- an inner iterative
+    solve, an alternating sweep, anything.
 
     Args:
         A: The operator, as a closure ``A(x, eps)`` returning an approximation
@@ -126,6 +141,13 @@ def GMRES(A, u_0, b, eps=1e-6, maxit=100, m=20, callback=None, verbose=0, *,
             restart cycle.
         verbose: ``0`` silent, ``1`` one line per cycle, ``2`` one line per step.
             The history is recorded in full regardless.
+        prec: Optional right preconditioner, a closure ``prec(x, eps)``
+            returning an approximation of ``M^{-1} x`` accurate to relative
+            ``eps`` (called with ``eps`` as a keyword, like ``A``).  It may
+            change between calls -- this is flexible GMRES, so the correction
+            is built from the stored ``z_j = prec(v_j)``, not from the
+            orthonormal basis.  The returned ``x`` solves ``A x = b`` directly;
+            no un-preconditioning step is left to the caller.
         return_history: Also return the :class:`GmresHistory`.
 
     Returns:
@@ -195,6 +217,7 @@ def GMRES(A, u_0, b, eps=1e-6, maxit=100, m=20, callback=None, verbose=0, *,
 
         t_cycle = time.perf_counter()
         basis = [(1.0 / resnorm) * r]
+        zbasis = [] if prec is not None else None    # FGMRES: z_j = M_j^{-1} v_j
         hess = np.zeros((m + 1, m), dtype=cdtype)
         curr_beta = resnorm
         used, broke = 0, False
@@ -213,7 +236,12 @@ def GMRES(A, u_0, b, eps=1e-6, maxit=100, m=20, callback=None, verbose=0, *,
             if verbose > 1:
                 print(f"it = {hist.iterations + 1} delta = {delta:.3e}")
 
-            w = A(basis[j], eps=delta)
+            if prec is None:
+                z = basis[j]
+            else:
+                z = prec(basis[j], eps=delta)
+                zbasis.append(z)
+            w = A(z, eps=delta)
             hist.iterations += 1
             used = j + 1
             for i in range(j + 1):
@@ -239,9 +267,13 @@ def GMRES(A, u_0, b, eps=1e-6, maxit=100, m=20, callback=None, verbose=0, *,
             basis.append((1.0 / hess[j + 1, j].real) * w)
 
         coefs = y[:used].real if cdtype is np.float64 else y[:used]
-        upd = coefs[0] * basis[0]
+        # FGMRES expands the correction in the preconditioned basis: the
+        # Arnoldi relation is  A Z_used = V_{used+1} H,  so the projected
+        # solution lives in span(Z), not span(V).
+        span = basis if zbasis is None else zbasis
+        upd = coefs[0] * span[0]
         for i in range(1, used):
-            upd = upd + coefs[i] * basis[i]
+            upd = upd + coefs[i] * span[i]
         x = (x + upd).round(eps)
 
         cycle += 1

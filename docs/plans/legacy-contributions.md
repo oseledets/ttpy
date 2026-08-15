@@ -28,9 +28,24 @@ and what happens to it.  Nothing on this list may be silently dropped.
    `tt-fort`); **Ported**: `tt/algs/qtt_fft.py` (`tt.qtt_fft1`), unitary in both
    directions, Dishi Liu's `inverse` and `bitReverse` options verbatim,
    pinned against `numpy.fft` in `tests/test_qtt_fft.py`.
-3. **Flexible GMRES** — Larisa Markeeva, 2018 (`develop`, `new_gmres`):
-   a rewritten flexible-preconditioning GMRES.  Our `tt/algs/solvers.py`
-   GMRES predates it; diff the two before touching that file again.
+3. **Flexible GMRES** — Larisa Markeeva, 2018 (`develop`, `new_gmres`,
+   commits `90adf42..600b891`): a rewritten flexible GMRES, part of her
+   work on solving equations on complicated domains in QTT via z-order
+   curves (the `zkron`/`zaffine`/`zmeshgrid` family in `tt/core/tools.py`
+   is hers too, same line of work, now credited in the docstrings).
+   The diff (done 2026-08-15): her rewrite added `maxit`, `callback`, the
+   per-step relaxation printout and an incremental Givens QR; the relaxed
+   `A(x, eps)` closure our GMRES has *is* her notion of "flexible", and
+   our version already carries it with the legacy bugs fixed (loop instead
+   of recursion, `u_0` not mutated, complex-safe small solve, measured
+   residual).  What her code did **not** have is the Z-basis of Saad's
+   FGMRES — the update was expanded in the orthonormal V-basis, so an
+   actually iteration-varying preconditioner would have been silently
+   wrong.  **Ported**: `prec=` keyword of `GMRES` in `tt/algs/solvers.py`
+   stores `z_j = M_j^{-1} v_j` and expands the correction in them, with
+   her credit in the docstring; tests in `tests/test_solvers.py` (variable
+   preconditioner beats plain GMRES on the QTT Laplacian, fixed/identity
+   preconditioner parity, externally recomputed residual).
 4. **`tt_qr`** — Qbit-, 2018 (`develop`): explicit TT orthogonalization as
    a public function.  ttpy 2 exposes this via `tt.core._ops.orthogonalize`
    internally; a public wrapper with the 1.x name belongs in the compat
