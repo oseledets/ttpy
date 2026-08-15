@@ -436,6 +436,53 @@ def test_sir_cme_matches_brute_force_at_small_n():
     assert np.linalg.norm(pf_d - pd) / np.linalg.norm(pd) < 1e-6
 
 
+# --- examples/allen_cahn_ksl_deim.py -----------------------------------------
+
+def test_allen_cahn_ksl_deim_matches_dense_solve_ivp():
+    """Dektor sec. 7.2 (arXiv:2402.18721) at n=8 on the *full* manifold.
+
+    Rank 8 is the TT-rank bound of an 8^3 tensor, so the fixed-rank manifold
+    is the whole space and the only gap to the dense RK45 solve of the same
+    pseudospectral ODE is the first-order time discretization of the
+    interpolatory splitting.  On top of the error bound, the discrete
+    Ginzburg-Landau energy -- written with the quadratic form of the same
+    spectral Laplacian, so the semidiscrete ODE is exactly its gradient
+    flow -- must not increase between checkpoints (1e-10 headroom for noise).
+    """
+    pytest.importorskip("tt.algs.ksl_deim")
+    from scipy.integrate import solve_ivp
+    _examples_path()
+    from allen_cahn_ksl_deim import (dense_operator, energy, grid,
+                                     initial_condition, laplacian3d,
+                                     nonlinearity, pad_to_rank)
+    from tt.algs.ksl_deim import ksl_deim
+
+    n, r, T, tau = 8, 8, 0.5, 2e-3
+    A = laplacian3d(n)
+    y = pad_to_rank(initial_condition(n), r)
+    assert list(y.r) == [1, 8, 8, 1]
+    _, h = grid(n)
+
+    Ad = dense_operator(n)
+    ref = solve_ivp(lambda t, u: Ad @ u + u - u ** 3, [0.0, T],
+                    np.asarray(y.full()).flatten("F"),
+                    method="RK45", rtol=1e-8, atol=1e-10, t_eval=[T]).y[:, -1]
+
+    nsteps = int(round(T / tau))
+    energies = [energy(np.asarray(y.full()), h)]
+    for k in range(nsteps):
+        y = ksl_deim(A, nonlinearity, y, tau)
+        if (k + 1) % 25 == 0:
+            energies.append(energy(np.asarray(y.full()), h))
+    assert list(y.r) == [1, 8, 8, 1]                # fixed-rank integrator
+
+    err = rel(np.asarray(y.full()).flatten("F"), ref)
+    assert err < 2e-2, f"first-order scheme off the dense oracle: {err:.2e}"
+    e = np.array(energies)
+    assert np.all(np.diff(e) <= 1e-10), (
+        f"Ginzburg-Landau energy increased: {e}")
+
+
 # --- examples/qtt_divgrad_cross.py -------------------------------------------
 
 def test_divgrad_cross_assembly_matches_scipy_sparse():

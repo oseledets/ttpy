@@ -70,6 +70,20 @@ recovers the tensor — six orders of magnitude apart on held-out entries.
 <i>Oracle: dense ground truth on unobserved entries.</i>
 </td>
 </tr>
+<tr>
+<td width="50%">
+<img src="../docs/media/allen_cahn_deim.gif" width="100%"><br>
+<b>allen_cahn_ksl_deim</b> (<a href="allen_cahn_ksl_deim.py">code</a>) — Dektor's
+interpolatory projector-splitting integrator (<code>tt.ksl_deim</code>, ported
+from ttpy PR #102) on the 3D Allen–Cahn equation of his paper (LAA 2025,
+sec. 7.2): the cubic nonlinearity $u-u^3$ is evaluated only on QDEIM-selected
+cross fibers — the case the orthogonal-projector KSL cannot afford — with the
+paper's Fourier pseudospectral Laplacian as a rank-2 TT-matrix; the animation
+is the central slice separating into the $\pm 1$ phases.
+<i>Oracle: dense solve_ivp of the same ODE at small n, plus monotone decay of
+the Ginzburg–Landau energy along the whole run.</i>
+</td>
+</tr>
 </table>
 
 ## All examples
@@ -88,9 +102,4 @@ recovers the tensor — six orders of magnitude apart on held-out entries.
 | [henon_heiles_ksl_paper.py](pages/henon_heiles_ksl_paper.md) ([code](henon_heiles_ksl_paper.py)) | [LOV15] Fig. 3, quantum dynamics at paper scale | the paper; dense expm at f=2 |
 | [fokker_planck_dumbbell.py](pages/fokker_planck_dumbbell.md) ([code](fokker_planck_dumbbell.py)) | [DKO12] sec. 4.2, polymer rheology in TT | three independent oracles |
 | [sir_network_cme.py](pages/sir_network_cme.md) ([code](sir_network_cme.py)) | [DS24] epidemics on networks, rare events | brute force + SSA |
-| [sample_dirt_2d_gallery.py](sample_dirt_2d_gallery.py) | deep inverse Rosenblatt transport, 2-D gallery | known densities |
-| [sample_dirt_correlated_gaussian.py](sample_dirt_correlated_gaussian.py) | DIRT on a correlated Gaussian | analytic density |
-| [sample_dirt_predator_prey.py](sample_dirt_predator_prey.py) | DIRT posterior, predator–prey ODE | reference sampler |
-| [sample_dirt_lorenz96.py](sample_dirt_lorenz96.py) | DIRT posterior, Lorenz-96 | reference sampler |
-| [sample_dirt_corner_mixture.py](sample_dirt_corner_mixture.py) | DIRT on a hard corner mixture | known density |
-| [sample_dirt_optimizer_benchmark.py](sample_dirt_optimizer_benchmark.py) | DIRT fitting variants, measured | held-out likelihood |
+| [allen_cahn_ksl_deim.py](allen_cahn_ksl_deim.py) | Dektor's interpolatory KSL (`tt.ksl_deim`) on his paper's 3D Allen–Cahn | dense solve_ivp at small n + energy monotonicity |
