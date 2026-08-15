@@ -73,7 +73,7 @@ recovers the tensor — six orders of magnitude apart on held-out entries.
 <tr>
 <td width="50%">
 <img src="../docs/media/allen_cahn_deim.gif" width="100%"><br>
-<b>allen_cahn_ksl_deim</b> (<a href="allen_cahn_ksl_deim.py">code</a>) — Dektor's
+<b><a href="pages/allen_cahn_ksl_deim.md">allen_cahn_ksl_deim</a></b> (<a href="allen_cahn_ksl_deim.py">code</a>) — Dektor's
 interpolatory projector-splitting integrator (<code>tt.ksl_deim</code>, ported
 from ttpy PR #102) on the 3D Allen–Cahn equation of his paper (LAA 2025,
 sec. 7.2): the cubic nonlinearity $u-u^3$ is evaluated only on QDEIM-selected
@@ -102,4 +102,4 @@ the Ginzburg–Landau energy along the whole run.</i>
 | [henon_heiles_ksl_paper.py](pages/henon_heiles_ksl_paper.md) ([code](henon_heiles_ksl_paper.py)) | [LOV15] Fig. 3, quantum dynamics at paper scale | the paper; dense expm at f=2 |
 | [fokker_planck_dumbbell.py](pages/fokker_planck_dumbbell.md) ([code](fokker_planck_dumbbell.py)) | [DKO12] sec. 4.2, polymer rheology in TT | three independent oracles |
 | [sir_network_cme.py](pages/sir_network_cme.md) ([code](sir_network_cme.py)) | [DS24] epidemics on networks, rare events | brute force + SSA |
-| [allen_cahn_ksl_deim.py](allen_cahn_ksl_deim.py) | Dektor's interpolatory KSL (`tt.ksl_deim`) on his paper's 3D Allen–Cahn | dense solve_ivp at small n + energy monotonicity |
+| [allen_cahn_ksl_deim.py](pages/allen_cahn_ksl_deim.md) ([code](allen_cahn_ksl_deim.py)) | Dektor's interpolatory KSL (`tt.ksl_deim`) on his paper's 3D Allen–Cahn | dense solve_ivp at small n + energy monotonicity |
