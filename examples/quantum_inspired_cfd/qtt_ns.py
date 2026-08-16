@@ -73,7 +73,7 @@ def _periodic_d2(d, h, order):
 class Operators:
     """The z-order derivative and Laplacian MPOs on the 2^d x 2^d torus."""
 
-    def __init__(self, d, box=2.0 * np.pi, order=8, eps=1e-12):
+    def __init__(self, d, box=2.0 * np.pi, order=8, eps=1e-12, reg=1e-6):
         self.d = d
         self.N = 2 ** d
         self.box = box
@@ -98,10 +98,17 @@ class Operators:
         # projection needs, and which amen handles too.
         self.Lap_proj = ((self.Dx @ self.Dx + self.Dy @ self.Dy) * (-1.0)).round(eps)
         self.ex, self.ey = tt.zmeshgrid(d)
-        # mean-pinning term e e^T / N^2 (rank 1): makes the periodic Poisson
-        # operator nonsingular by fixing the otherwise-free constant mode.
-        ones_mat = tt.matrix.from_list([np.ones((1, 4, 4, 1)) for _ in range(d)])
-        self.Lap_reg = (self.Lap_proj + ones_mat * (1.0 / self.N ** 2)).round(eps)
+        # Tikhonov shift: the central Laplacian has a constant and three
+        # checkerboard null modes, so a bare solve is singular and amen's local
+        # Jacobi preconditioner hits singular diagonal blocks.  Adding reg*I
+        # lifts every eigenvalue by reg -- the operator becomes strictly SPD and
+        # the local blocks invertible.  The physical solution is untouched: the
+        # divergence (an 8th-order central derivative) has no component on any
+        # null mode, so those modes carry no pressure regardless of reg.  reg =
+        # 1e-6 keeps Taylor-Green accurate to ~1e-8 and the shear robust; the residual
+        # divergence after a projection is ~reg*||phi|| ~ 1e-5, well below the flow.
+        eye = tt.matrix.from_list([np.eye(4).reshape(1, 4, 4, 1) for _ in range(d)])
+        self.Lap_reg = (self.Lap_proj + eye * reg).round(eps)
 
     def field(self, fun, eps=1e-10):
         """Sample ``fun(x, y)`` into a z-order QTT vector on the grid."""
@@ -145,7 +152,8 @@ def make_projector(ops, solver="amen", eps=1e-8, rmax=40, tol=1e-8):
                               nswp=20, verb=0, rmax=rmax, local_prec="c")
         if solver == "lobpcg":
             x0 = phi_guess[0] if phi_guess[0] is not None else feasible(ops.d, rmax)
-            return tt.lobpcg_solve(ops.Lap_reg, rhs, x0, tol, nswp=60, verb=0)
+            return tt.lobpcg_solve(ops.Lap_reg, rhs, x0, tol, nswp=60, verb=0,
+                                   local_prec="c")
         raise ValueError(solver)
 
     def project(u, v):
