@@ -46,7 +46,7 @@ def run(d=5, n=6, r=2, outlier_frac=0.02, per_dof=40, seed=0):
     truth_held = dense[tuple(held.T)]
 ```
 
-The ALS baseline is this package's own port of ttpy's `ttSparseALS`. It gets no loss argument because there is nothing to pass — the square loss is the only one for which its closed-form core updates exist. Both methods see identical `idx`/`vals`:
+The ALS baseline gets no loss argument because there is nothing to pass — the square loss is the only one for which its closed-form core updates exist. Both methods see identical `idx`/`vals`:
 
 ```python
     with warnings.catch_warnings():
@@ -106,7 +106,7 @@ The figure column is what the README plot above records; the rerun column is a f
 * Inside the example itself, the oracle is the dense ground truth on 50 000 entries neither method observed — not any self-reported fit.
 * `tests/test_riemannian_autodiff.py::test_rgd_logcosh_completion_recovers_the_target` pins the same machinery in a regime with a known answer: log-cosh completion of an on-manifold rank-2 target, where the minimum is zero at the target by construction; the recovered tensor must match the dense truth to `1e-6`, the Armijo sequence must be monotone, and the history bookkeeping must be consistent.
 * `tests/test_riemannian_autodiff.py::test_rgd_reports_a_budget_stop_honestly` checks that a budget stop is reported as `maxit` with `converged=False` — relevant here, since the run above ends exactly that way.
-* The ALS baseline is pinned separately in `tests/test_ports.py` (the `ttSparseALS` section) against exact recovery of clean low-rank data — its failure here is not a broken port.
+* The ALS baseline is pinned separately in `tests/test_ports.py` against exact recovery of clean low-rank data, so its failure on outliers here is a property of the square loss, not of the implementation.
 
 ## Run it
 
@@ -122,4 +122,3 @@ Requires the torch backend (`pip install torch`); time measured on one developme
 
 * A. Novikov, M. Rakhuba, I. Oseledets, "Automatic differentiation for Riemannian optimization on low-rank matrix and tensor-train manifolds", *SIAM J. Sci. Comput.* 44(2):A843–A869, 2022, arXiv:2103.14974.
 * C. Lubich, I. V. Oseledets, B. Vandereycken, "Time integration of tensor trains", *SIAM J. Numer. Anal.* 53(2):917–941, 2015 — the tangent-space machinery in `tt.algs.riemannian`.
-* Reference implementations surveyed for the machinery: `github.com/Bihaqo/t3f` (autodiff; read, not copied); the ALS baseline is this package's own port of ttpy's `ttSparseALS`.

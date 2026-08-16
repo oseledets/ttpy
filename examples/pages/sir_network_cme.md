@@ -84,8 +84,7 @@ cores count *non-infected* people: the automaton state is how many of
 $e - i$ have been seen so far, capped at $H = N - I^*$; a state that stays
 below the cap means more than $I^*$ infected.  The delicate part is the
 acceptance condition in the last core — exactly the place where an
-off-by-one at $I = I^*$ hides (this one was caught by the brute-force
-oracle in the tests and fixed; the commit records it):
+off-by-one at $I = I^*$ would hide:
 
 ```python
     # accept iff the total count of non-infected people is <= H - 1
@@ -148,9 +147,8 @@ the explicit indicator TT.  Its docstring carries the honesty rule about
   applied to a random vector against a state-by-state loop over every
   transition of [DS24] eq. (2) (parity $10^{-12}$); the explicit indicator
   TTs against direct counting — `If[flat_f(s)] == ninf` and
-  `Xf[flat_f(s)] == (1.0 if ninf > istar else 0.0)` for *every* state $s$,
-  which is the check that caught the off-by-one in the exceedance
-  automaton; and the Crank–Nicolson TT run against the same scheme on the
+  `Xf[flat_f(s)] == (1.0 if ninf > istar else 0.0)` for *every* state $s$;
+  and the Crank–Nicolson TT run against the same scheme on the
   `scipy.sparse` generator (distribution parity $10^{-6}$).
 * **Gillespie SSA.**  A plain per-trajectory SSA in the example gives the
   Monte-Carlo view of $E[I(t)]$ — agreement within Monte-Carlo error — and
@@ -182,8 +180,7 @@ The acceptance version is
 
 * S. Dolgov, D. Savostyanov, "Tensor product approach to modelling
   epidemics on networks", Applied Mathematics and Computation 460:128290,
-  2024, arXiv:2209.03756 [DS24].  Reference implementation:
-  github.com/savostyanov/ttsir (MATLAB; read for the operator and
-  observable factorizations, eqs. 12/22/28, not copied).
+  2024, arXiv:2209.03756 [DS24]; reference implementation
+  github.com/savostyanov/ttsir (MATLAB).
 * D. T. Gillespie, "Exact stochastic simulation of coupled chemical
   reactions", J. Phys. Chem. 81:2340–2361, 1977 — the SSA.

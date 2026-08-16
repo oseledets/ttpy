@@ -133,7 +133,7 @@ The propagation loop is one KSL sweep per step with $\tau = -ih$, recording one 
             acorr[k + 1] = tt.dot(psi0, y)
 ```
 
-At the local block sizes of this run the exponentials go through the package's EXPOKIT-style Krylov substepping (`expmv_krylov`) at relative accuracy $10^{-8}$ — the same algorithm and tolerance the paper takes from Expokit itself. (The compiled complex128 KSL kernels of `tt/algs/_ksl_fast.py` — see `docs/PERFORMANCE.md` § 3b — cover the small-block exact-exponential regime; blocks this size take the interpreted Krylov path.)
+At the local block sizes of this run the exponentials go through the package's EXPOKIT-style Krylov substepping (`expmv_krylov`) at relative accuracy $10^{-8}$ — the same algorithm and tolerance the paper takes from Expokit itself.
 
 Finally the transform of Fig. 3, zero-padded 8× for a smooth plot ( `ifft` carries the $e^{+i\xi t}$ sign that turns $e^{-i\lambda t}$ autocorrelations into peaks at $+\lambda$):
 

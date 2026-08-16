@@ -30,7 +30,7 @@ $$
 
 peaks exactly at the eigenvalues $\lambda_l$ that the packet overlaps — the whole spectrum on an interval from **one** trajectory, where an eigensolver would need a block of that many states. The price is resolution: peaks are $\sim 2\pi/T$ wide, so close levels need long trajectories. That trade shows up as a *measured* event below: a quasi-degenerate multiplet whose spread is smaller than $2\pi/T$ lands under a single peak.
 
-The discretization is an $n$-function harmonic-oscillator product basis per mode (Galerkin, not DVR — this example and `tests/hamiltonians.py` share the same single source of truth). The propagator is the projector-splitting KSL integrator of [LOV15] at fixed TT rank; the step $\tau = -ih$ promotes the whole sweep to complex128. On small local blocks that sweep runs the compiled complex kernels of `tt/algs/_ksl_fast.py` (`docs/PERFORMANCE.md` § 3b: the kernels are dtype-generic, and the compiled complex step is pinned to the interpreted path at $2.8\times 10^{-15}$ on a Hénon–Heiles step); at the block sizes of this example it takes the interpreted Krylov path.
+The discretization is an $n$-function harmonic-oscillator product basis per mode (Galerkin, not DVR). The propagator is the projector-splitting KSL integrator of [LOV15] at fixed TT rank; the step $\tau = -ih$ promotes the whole sweep to complex128.
 
 ## The code, walked through
 
