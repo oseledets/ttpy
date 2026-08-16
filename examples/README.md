@@ -178,7 +178,19 @@ manufactured problem isolates when the fixed-rank stationary point is exactly
 the solution.
 <i>Oracle: a manufactured $f=Ax_{\star}$ of known rank, plus the true residual.</i>
 </td>
-<td width="50%"></td>
+<td width="50%">
+<img src="../docs/media/qi_cfd_taylor_green.png" width="100%"><br>
+<b><a href="quantum_inspired_cfd/README.md">quantum_inspired_cfd</a></b> (<a href="quantum_inspired_cfd/run.py">code</a>) — the
+"quantum-inspired" turbulence solver of Gourianov et al.
+(<a href="https://doi.org/10.1038/s43588-021-00181-1">Nature Comput. Sci. 2022</a>),
+reclaimed as QTT: incompressible Navier–Stokes with each velocity component an
+interleaved-bit (z-order) tensor train, 8th-order central differences, RK2, and
+Chorin projection whose pressure Poisson is solved by <code>amen_solve</code> or
+<code>lobpcg_solve</code>, all at bounded bond dimension. Validated on the
+analytic Taylor–Green vortex.
+<i>Oracle: the analytic Taylor–Green decay $e^{-4\nu t}$, and an identical dense
+finite-difference scheme (matched to $2\cdot10^{-14}$).</i>
+</td>
 </tr>
 </table>
 
@@ -202,3 +214,4 @@ the solution.
 | [allen_cahn_ksl_deim.py](pages/allen_cahn_ksl_deim.md) ([code](allen_cahn_ksl_deim.py)) | Dektor's interpolatory KSL (`tt.ksl_deim`) on [his paper's](https://doi.org/10.1016/j.laa.2024.11.001) 3D Allen–Cahn | dense solve_ivp at small n + energy monotonicity |
 | [sample_dirt_banana.py](pages/sample_dirt_banana.md) ([code](sample_dirt_banana.py)) | sample-only residual TT transports learned by orthogonal ALS | analytic banana density + independent samples + exact round trip |
 | [smoluchowski/](smoluchowski/README.md) ([code](smoluchowski/run.py)) | [\[MZTS16\]](https://doi.org/10.1016/j.jcp.2016.04.025) multicomponent coagulation: the gain term as an FFT on every TT core; the ballistic kernel separated by a cross of the $2d$-dimensional $K$ | the paper's analytic eq. (18) + exact total density; Table 5 for the ballistic kernel |
+| [quantum_inspired_cfd/](quantum_inspired_cfd/README.md) ([code](quantum_inspired_cfd/run.py)) | [\[Gourianov22\]](https://doi.org/10.1038/s43588-021-00181-1) incompressible Navier–Stokes entirely in QTT: z-order velocity, 8th-order central differences, RK2, Chorin projection via `amen_solve`/`lobpcg_solve` | analytic Taylor–Green decay + identical dense scheme |
