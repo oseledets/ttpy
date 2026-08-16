@@ -159,41 +159,50 @@ def make_projector(ops, solver="amen", eps=1e-8, rmax=40, tol=1e-8):
     return project
 
 
-def _advect(a, b, c, e, eps, rmax):
-    """Cross-approximate ``a*b + c*e`` at bounded rank.
+def _advect(a, b, c, e, eps, rmax, cross, y0=None):
+    """The bilinear advection term ``a*b + c*e`` at bounded rank.
 
-    The plain Hadamard ``a*b`` has rank ``r_a r_b`` before rounding; on a
-    turbulent field that intermediate is the bottleneck.  ``multifuncrs``
-    samples the bilinear combination on adaptively chosen fibers and returns
-    it already at rank ``<= rmax``, never forming the ``r^2`` product.
+    ``cross=False`` (default) forms the two Hadamard products (intermediate
+    rank ``r_a r_b``) and rounds -- fastest in the moderate-rank regime of
+    these examples (measured: naive wins up to bond ~90).  ``cross=True`` calls
+    ``multifuncrs``, which samples the combination on adaptively chosen fibers
+    and never forms the ``r^2`` product; warm-started from ``y0`` it converges
+    in a sweep or two, and pays off only at the much larger bond dimensions of
+    the paper's saturated regime (chi ~ 200).
     """
+    if not cross:
+        return (a * b + c * e).round(eps, rmax=rmax)
     return tt.multifuncrs([a, b, c, e],
                           lambda P: P[:, 0] * P[:, 1] + P[:, 2] * P[:, 3],
-                          eps=eps, rmax=rmax, verb=0)
+                          eps=eps, rmax=rmax, verb=0, y0=y0)
 
 
-def _rhs(ops, u, v, nu, eps, rmax, cross=False):
+def _rhs(ops, u, v, nu, eps, rmax, cross=False, cache=None, tag=""):
     """The convection-diffusion right-hand side (no pressure)."""
     ux, uy = tt.matvec(ops.Dx, u), tt.matvec(ops.Dy, u)
     vx, vy = tt.matvec(ops.Dx, v), tt.matvec(ops.Dy, v)
-    if cross:
-        adv_u = _advect(u, ux, v, uy, eps, rmax)
-        adv_v = _advect(u, vx, v, vy, eps, rmax)
-    else:
-        adv_u = (u * ux + v * uy).round(eps, rmax=rmax)
-        adv_v = (u * vx + v * vy).round(eps, rmax=rmax)
+    y0u = cache.get(tag + "u") if cache is not None else None
+    y0v = cache.get(tag + "v") if cache is not None else None
+    adv_u = _advect(u, ux, v, uy, eps, rmax, cross, y0u)
+    adv_v = _advect(u, vx, v, vy, eps, rmax, cross, y0v)
+    if cache is not None:
+        cache[tag + "u"], cache[tag + "v"] = adv_u, adv_v
     du = (tt.matvec(ops.Lap, u) * nu - adv_u).round(eps, rmax=rmax)
     dv = (tt.matvec(ops.Lap, v) * nu - adv_v).round(eps, rmax=rmax)
     return du, dv
 
 
-def step(ops, u, v, dt, nu, project, eps=1e-8, rmax=40):
-    """One second-order (Heun) projection step, all in QTT at bond <= rmax."""
-    du1, dv1 = _rhs(ops, u, v, nu, eps, rmax)
+def step(ops, u, v, dt, nu, project, eps=1e-8, rmax=40, cross=False, cache=None):
+    """One second-order (Heun) projection step, all in QTT at bond <= rmax.
+
+    Pass a persistent ``cache`` dict (and ``cross=True``) to warm-start the
+    cross-approximated advection term from step to step.
+    """
+    du1, dv1 = _rhs(ops, u, v, nu, eps, rmax, cross, cache, "1")
     u1 = (u + du1 * dt).round(eps, rmax=rmax)
     v1 = (v + dv1 * dt).round(eps, rmax=rmax)
     u1, v1 = project(u1, v1)
-    du2, dv2 = _rhs(ops, u1, v1, nu, eps, rmax)
+    du2, dv2 = _rhs(ops, u1, v1, nu, eps, rmax, cross, cache, "2")
     u2 = (u + (du1 + du2) * (0.5 * dt)).round(eps, rmax=rmax)
     v2 = (v + (dv1 + dv2) * (0.5 * dt)).round(eps, rmax=rmax)
     return project(u2, v2)
