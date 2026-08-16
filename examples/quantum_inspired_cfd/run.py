@@ -97,7 +97,7 @@ def taylor_green(d=6, nu=0.05, T=0.5, chi=30, order=8, solver="amen",
                     nu * (Lap @ V) - (U * (Dx @ V) + V * (Dy @ V)))
 
         def dproj(U, V):
-            phi = np.linalg.solve(Lr, Dx @ U + Dy @ V)
+            phi = np.linalg.solve(Lr, -(Dx @ U + Dy @ V))   # SPD: -Lap phi = -div
             return U - Dx @ phi, V - Dy @ phi
 
     times, ener, ranks = [0.0], [float(E0)], [max(max(u.r), max(v.r))]

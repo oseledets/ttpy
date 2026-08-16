@@ -90,11 +90,13 @@ class Operators:
         self.Lap = (tt.zkron(d2, eye) + tt.zkron(eye, d2)).round(eps)
         # The projection Poisson operator is the *composition* of the same
         # central first-difference operators the divergence and gradient use,
-        # Lap_proj = Dx Dx + Dy Dy.  Because it is exactly div(grad(.)) in this
-        # discretization, a projected field is discretely divergence-free to
-        # the accuracy of the pressure solve -- and, being high-order central,
-        # it keeps the projection at the order of the momentum stencil.
-        self.Lap_proj = (self.Dx @ self.Dx + self.Dy @ self.Dy).round(eps)
+        # so it is exactly div(grad(.)) and a projected field is discretely
+        # divergence-free.  The central Dx is skew-symmetric, so Dx Dx is
+        # negative semidefinite; we store the SPD (positive) form
+        # -(Dx Dx + Dy Dy) and solve it against -div, so the pressure solve is
+        # a genuine SPD energy minimization -- which the fixed-rank lobpcg
+        # projection needs, and which amen handles too.
+        self.Lap_proj = ((self.Dx @ self.Dx + self.Dy @ self.Dy) * (-1.0)).round(eps)
         self.ex, self.ey = tt.zmeshgrid(d)
         # mean-pinning term e e^T / N^2 (rank 1): makes the periodic Poisson
         # operator nonsingular by fixing the otherwise-free constant mode.
@@ -119,13 +121,13 @@ def _divergence(ops, u, v, eps, rmax):
 def make_projector(ops, solver="amen", eps=1e-8, rmax=40, tol=1e-8):
     """Return ``project(u, v) -> (u, v)`` enforcing ``div V = 0`` in QTT.
 
-    Solves ``Lap phi = div V`` with the requested toolbox solver and subtracts
-    ``grad phi``.  ``solver="amen"`` (default) is the rank-adaptive
-    ``amen_solve``: its local preconditioner carries the periodic Laplacian's
-    ``O(4^d)`` conditioning without trouble to large ``d``.  ``solver="lobpcg"``
-    (fixed-rank ``lobpcg_solve``) stays on the bounded-rank manifold but has no
-    strong preconditioner, so on this ill-conditioned periodic operator it
-    stalls -- it would want a BPX-style preconditioner (cf. ``bpx_elliptic``).
+    Solves the SPD system ``-Lap phi = -div V`` and subtracts ``grad phi``.
+    ``solver="amen"`` (default) is the rank-adaptive ``amen_solve``;
+    ``solver="lobpcg"`` is the fixed-rank ``lobpcg_solve``, which stays on the
+    bounded-rank manifold of the flow.  Both need the operator positive
+    definite, which is why the projection Poisson is stored in the SPD form
+    ``-(Dx Dx + Dy Dy)`` (the central ``Dx`` is skew, so ``Dx Dx`` alone is
+    negative semidefinite).
     """
     phi_guess = [None]
 
@@ -148,7 +150,7 @@ def make_projector(ops, solver="amen", eps=1e-8, rmax=40, tol=1e-8):
 
     def project(u, v):
         div = _divergence(ops, u, v, eps, rmax)
-        phi = solve_poisson(div)
+        phi = solve_poisson((div * (-1.0)).round(eps, rmax=rmax))   # SPD: -Lap phi = -div
         phi_guess[0] = phi
         u = (u - tt.matvec(ops.Dx, phi)).round(eps, rmax=rmax)
         v = (v - tt.matvec(ops.Dy, phi)).round(eps, rmax=rmax)
@@ -157,12 +159,29 @@ def make_projector(ops, solver="amen", eps=1e-8, rmax=40, tol=1e-8):
     return project
 
 
-def _rhs(ops, u, v, nu, eps, rmax):
+def _advect(a, b, c, e, eps, rmax):
+    """Cross-approximate ``a*b + c*e`` at bounded rank.
+
+    The plain Hadamard ``a*b`` has rank ``r_a r_b`` before rounding; on a
+    turbulent field that intermediate is the bottleneck.  ``multifuncrs``
+    samples the bilinear combination on adaptively chosen fibers and returns
+    it already at rank ``<= rmax``, never forming the ``r^2`` product.
+    """
+    return tt.multifuncrs([a, b, c, e],
+                          lambda P: P[:, 0] * P[:, 1] + P[:, 2] * P[:, 3],
+                          eps=eps, rmax=rmax, verb=0)
+
+
+def _rhs(ops, u, v, nu, eps, rmax, cross=False):
     """The convection-diffusion right-hand side (no pressure)."""
     ux, uy = tt.matvec(ops.Dx, u), tt.matvec(ops.Dy, u)
     vx, vy = tt.matvec(ops.Dx, v), tt.matvec(ops.Dy, v)
-    adv_u = (u * ux + v * uy).round(eps, rmax=rmax)
-    adv_v = (u * vx + v * vy).round(eps, rmax=rmax)
+    if cross:
+        adv_u = _advect(u, ux, v, uy, eps, rmax)
+        adv_v = _advect(u, vx, v, vy, eps, rmax)
+    else:
+        adv_u = (u * ux + v * uy).round(eps, rmax=rmax)
+        adv_v = (u * vx + v * vy).round(eps, rmax=rmax)
     du = (tt.matvec(ops.Lap, u) * nu - adv_u).round(eps, rmax=rmax)
     dv = (tt.matvec(ops.Lap, v) * nu - adv_v).round(eps, rmax=rmax)
     return du, dv

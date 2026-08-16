@@ -61,6 +61,23 @@ def test_projection_makes_the_velocity_divergence_free():
     assert div.norm() < 1e-5
 
 
+def test_lobpcg_projection_converges_on_the_spd_poisson():
+    """The projection Poisson is stored SPD (-(Dx^2+Dy^2)), so the fixed-rank
+    lobpcg energy minimization converges -- guards against the sign/definiteness
+    regression that froze it (max_dx=0) on the negative-semidefinite form."""
+    d = 5
+    ops = qtt_ns.Operators(d, box=2 * np.pi, order=8)
+    u = ops.field(lambda x, y: np.sin(x) * np.cos(y) + 0.3 * np.cos(2 * x))
+    v = ops.field(lambda x, y: np.cos(3 * y) * np.sin(x))
+    project = qtt_ns.make_projector(ops, solver="lobpcg", eps=1e-10,
+                                    rmax=30, tol=1e-9)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        u, v = project(u, v)
+        div = qtt_ns._divergence(ops, u, v, 1e-12, 30)
+    assert div.norm() < 1e-5
+
+
 def test_taylor_green_energy_follows_the_analytic_decay():
     """E(t)/E0 must track exp(-4 nu t): the exact TGV solution."""
     res = ns_run.taylor_green(d=6, nu=0.05, T=0.4, chi=30, dense_check=False)
