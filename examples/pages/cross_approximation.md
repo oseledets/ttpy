@@ -7,7 +7,12 @@ them by sampling the integrand along one-dimensional fibers, adaptively
 chosen, and reconstructing the whole tensor from those fibers -- so the number
 of evaluations grows with the dimension, not with the volume.
 
-![Ising integrals by TT-cross](../../docs/media/cross_ising.png)
+![the cross sweeping on C_16](../../docs/media/cross_run.gif)
+
+The animation is a real run on $C_{16}$ (a 15-dimensional integral, a grid of
+$1.6\times10^{27}$ nodes): each sweep grows the tensor-train rank by one per
+bond and drives the largest residual pivot down toward the requested accuracy,
+touching a few hundred thousand fibers in all.
 
 ## The problem
 
@@ -70,6 +75,8 @@ number of evaluations `y.history.fun_eval` and the ranks `y.history.ranks`
 are recorded so the run can report what it cost.
 
 ## What comes out
+
+![Ising integrals by TT-cross](../../docs/media/cross_ising.png)
 
 At $n = 65$ Gauss--Legendre nodes per axis, `eps = 1e-8`:
 

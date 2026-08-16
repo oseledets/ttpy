@@ -1,6 +1,6 @@
-# Multicomponent coagulation: two and a half days of direct summation in four seconds
+# Multicomponent Smoluchowski coagulation in the tensor-train format
 
-[`examples/smoluchowski/run.py`](run.py) reproduces the reference experiment of Matveev–Zheltkov–Tyrtyshnikov–Smirnov ([JCP 2016](https://doi.org/10.1016/j.jcp.2016.04.025)) — the two-component Smoluchowski coagulation equation on a $1000^2$ grid — reaching the paper's error 2.2e-3 at TT rank 13 in **4.5 s**, where the paper reports 1024 s for the same TT scheme and **215 580 s (2.5 days)** for the direct implementation of that scheme.
+[`examples/smoluchowski/run.py`](run.py) reproduces the reference experiment of Matveev–Zheltkov–Tyrtyshnikov–Smirnov ([JCP 2016](https://doi.org/10.1016/j.jcp.2016.04.025)) — the two-component Smoluchowski coagulation equation on a $1000^2$ grid — reaching the paper's error 2.2e-3 at TT rank 13, with the whole coagulation kept inside the tensor-train format.
 
 ![The run as its own log: ranks, density and error against the analytic solution, next to the coagulating cloud](../../docs/media/smoluchowski_run.gif)
 
@@ -15,7 +15,7 @@ $$
 \ -\ n(\bar v) \int_0^{\infty}\cdots\int_0^{\infty}
   K(\bar u,\ \bar v)\ n(\bar u)\ d\bar u
 $$
-The gain term counts the particles of size $\bar v$ assembled from $\bar u$ and $\bar v - \bar u$; the loss term counts the ones of size $\bar v$ eaten by anything. On a grid of $N$ nodes per component the gain term is a $2d$-fold sum: $O(N^{2d})$ per time step, $10^{12}$ operations at the modest $d=2$, $N=1000$. That is the 215 580 s.
+The gain term counts the particles of size $\bar v$ assembled from $\bar u$ and $\bar v - \bar u$; the loss term counts the ones of size $\bar v$ eaten by anything. On a grid of $N$ nodes per component the gain term is a $2d$-fold sum: $O(N^{2d})$ per time step, $10^{12}$ operations at the modest $d=2$, $N=1000$ — the direct route the tensor-train scheme replaces.
 
 ## Two facts, composed
 
@@ -71,18 +71,14 @@ Both are checked every step, and the totals are what the log's `density`/`exact`
 
 Paper setup: $d=2$, $K\equiv 1$, $V_{\max} = 100$, $T = 10$, $a=b=1$, $\varepsilon = 10^{-6}$. Measured here (numpy backend, one core of an M-series laptop) against Table 1 of the paper:
 
-| $N$ | $\tau$ | error, here | error, paper | rank, here | rank, paper | time, here | TT, paper | direct, paper |
-|---|---|---|---|---|---|---|---|---|
-| 100 | 0.1 | 6.3e-2 | 1.4e-1 | 11 | — | 0.4 s | — | ~22 s¹ |
-| 500 | 0.1 | 4.1e-3 | — | 13 | — | 2.1 s | — | 12 225 s |
-| 1000 | 0.1 | **2.24e-3** | 2.2e-3 | **13** | 13 | **4.5 s** | 1 024 s | **215 580 s** |
-| 2000 | 0.05 | 6.03e-4 | 5.0e-4 | 12 | — | 12.7 s | 2 492 s | — |
+| $N$ | $\tau$ | error, here | error, paper | rank, here | rank, paper | time, here |
+|---|---|---|---|---|---|---|
+| 100 | 0.1 | 6.3e-2 | 1.4e-1 | 11 | — | 0.4 s |
+| 500 | 0.1 | 4.1e-3 | — | 13 | — | 2.1 s |
+| 1000 | 0.1 | **2.24e-3** | 2.2e-3 | **13** | 13 | **4.5 s** |
+| 2000 | 0.05 | 6.03e-4 | 5.0e-4 | 12 | — | 12.7 s |
 
-¹ extrapolated from the paper's own $O(N^4)$ direct timings, not measured.
-
-The error column is the relative Frobenius distance to eq. (18) on the whole grid; the total density is an order more accurate again (1.8e-4 at $N = 1000$), because its leading quadrature errors cancel. The scheme's advertised $O(h^2 + \tau^2)$ is visible directly: halving $h$ and $\tau$ together on $V_{\max}=20$, $T=1$ divides the error by 3.69 and then 3.86.
-
-Two remarks on the comparison. The paper's timings are its own machine and its own decade, so the 230× against its TT run is not a claim about the algorithm — the algorithm is the same one. The 48 000× against the direct implementation *is*, and it is the number that matters: it is the same scheme, the same grid, the same answer, and it is the difference between a coffee break and a long weekend.
+The error column is the relative Frobenius distance to eq. (18) on the whole grid; the total density is an order more accurate again (1.8e-4 at $N = 1000$), because its leading quadrature errors cancel. The scheme's advertised $O(h^2 + \tau^2)$ is visible directly: halving $h$ and $\tau$ together on $V_{\max}=20$, $T=1$ divides the error by 3.69 and then 3.86. The error and the rank are the paper's own — the same scheme, the same grid, the same answer — reproduced with the whole tensor never leaving the TT format.
 
 ## Additive kernel
 
@@ -147,7 +143,7 @@ Table 5 is the total density at $t = 1$ for $n_0 = e^{-v_1-v_2}$, $\tau = 0.05$.
 | 1600 | 200 | 0.1945 | **0.1945** | 0.00% | 7 | 17 | 68.2 s |
 | 3200 | 200 | 0.1944 | **0.1946** | 0.10% | 7 | 19 | 173.2 s |
 
-The paper's own TT runs take 212 s to 2828 s across these rows, its solution ranks are 12–18 (ours 11–19), and its *direct* method takes 1 684 s at $N = 100$ and **425 182 s — 4.9 days — at $N = 400$**, the row that costs 16 s here.
+The paper's solution ranks are 12–18 across these rows (ours 11–19).
 
 The two coarsest rows are where the clip and the paper's $V_{\min}$ disagree, and they disagree by less than the 5% by which the paper's own table moves between $N = 100$ and its converged value. From $N = 400$ on, the two constructions land on the same number to the last digit printed.
 
@@ -157,14 +153,14 @@ That is Fig. 2 of the paper, and the point of it is the comparison with the cons
 
 ### The route not taken
 
-Since $K = F(S_u, S_v)$, one can skip the $2d$-dimensional cross entirely: take the exact rank-2 `component_sum` for $S$, build a *matrix* skeleton $F \approx F(:,J) F(I,J)^{-1} F(I,:)$ on the range of the sums (the columns are then genuine scalar functions $F(\cdot, t_\beta)$, not tables), and lift each family into TT with one `multifuncrs` call over $S$. It works, and it gives the same physics — but it was measured against the plain cross and lost on all three counts, so it is not what ships:
+Since $K = F(S_u, S_v)$, one can skip the $2d$-dimensional cross entirely: take the exact rank-2 `component_sum` for $S$, build a *matrix* skeleton $F \approx F(:,J) F(I,J)^{-1} F(I,:)$ on the range of the sums (the columns are then genuine scalar functions $F(\cdot, t_\beta)$, not tables), and lift each family into TT with one `multifuncrs` call over $S$. It works, and it gives the same physics — but measured against the plain cross it came out worse on rank and on kernel accuracy, so it is not what ships:
 
-| at $N = 400$, $\varepsilon = 10^{-6}$ | $R$ | factor ranks | build | solve | kernel error (Fro / max) | density |
-|---|---|---|---|---|---|---|
-| $2d$-cross + bond cut | **7** | 11 / 11 | **0.54 s** | **15.0 s** | **3.8e-7** / 3.5e-6 | 0.1943 |
-| sum-skeleton + `multifuncrs` | 8 | 15 / 10 | 1.42 s | 18.8 s | 1.6e-6 / 1.3e-5 | 0.1943 |
+| at $N = 400$, $\varepsilon = 10^{-6}$ | $R$ | factor ranks | kernel error (Fro / max) | density |
+|---|---|---|---|---|
+| $2d$-cross + bond cut | **7** | 11 / 11 | **3.8e-7** / 3.5e-6 | 0.1943 |
+| sum-skeleton + `multifuncrs` | 8 | 15 / 10 | 1.6e-6 / 1.3e-5 | 0.1943 |
 
-The gap widens with $d$, because the skeleton route has to resolve $R$ functions jointly in one block-TT while the cross truncates the whole thing at once: at $d = 5$, $N = 100$ the cross builds in 0.56 s at $R = 5$ with factor ranks 9, the skeleton in 10.0 s at $R = 8$ with factor ranks 14. The skeleton argument survives anyway — as the *explanation* of why $R \approx 8$, and as the independent oracle the rank test checks the cross against.
+The gap widens with $d$, because the skeleton route has to resolve $R$ functions jointly in one block-TT while the cross truncates the whole thing at once: at $d = 5$, $N = 100$ the cross reaches $R = 5$ with factor ranks 9, the skeleton $R = 8$ with factor ranks 14. The skeleton argument survives anyway — as the *explanation* of why $R \approx 8$, and as the independent oracle the rank test checks the cross against.
 
 Other limits worth stating plainly: the scheme is second order and no better, so three digits in the profile need a fine grid rather than a tighter `eps`; the ranks are held down by rounding and by nothing else (no theorem promises they stay small — the printed rank is the only monitor); the grid must be uniform, because the FFT convolution *is* the uniform grid; and nothing enforces $n \ge 0$.
 

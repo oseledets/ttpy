@@ -160,13 +160,12 @@ the explicit indicator TT.  Its docstring carries the honesty rule about
   is the acceptance case of tAMEn (`docs/plans/tamen.md`), the
   spectral-in-time AMEn integrator that conserves linear invariants — here
   $\sum_x p(x) = 1$ — to machine precision *independently of the TT
-  truncation accuracy*, which no solve-and-round scheme does.  The measured
-  comparison on this very problem (from `docs/plans/tamen.md`; dense-`expm`
-  oracle):
-
-  | problem | tamen | ksl |
-  |---|---|---|
-  | SIR CME, $N=7$ chain, $T=30$ | 0.8 s, err 9.2e-7, $\sum p$ drift 3.6e-14 | 1.8–19.5 s, err stuck at ~1e-3 (fixed-rank modelling error), drift 2–5e-4 |
+  truncation accuracy*, which no solve-and-round scheme does.  Measured on
+  this very problem against a dense-`expm` oracle ($N = 7$ chain, $T = 30$),
+  tAMEn holds the invariant to a drift of $\sim 3\times 10^{-14}$ at error
+  $\sim 10^{-6}$, where a fixed-rank KSL step drifts by $\sim 10^{-4}$ and
+  stalls at the $\sim 10^{-3}$ of its fixed-rank modelling error — tAMEn is
+  the integrator suited to this class of conservation-law problems.
 
 ## Run it
 

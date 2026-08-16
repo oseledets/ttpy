@@ -26,7 +26,7 @@ $$u_0 = g(x_1,x_2,x_3) - g(2x_1,x_2,x_3) + g(x_1,2x_2,x_3) - g(x_1,x_2,2x_3),$$
 
 $$g = \frac{\big[e^{-\tan^2 x_1} + e^{-\tan^2 x_2} + e^{-\tan^2 x_3}\big] \sin(x_1+x_2+x_3)}{1 + e^{|\csc(-x_1/2)|} + e^{|\csc(-x_2/2)|} + e^{|\csc(-x_3/2)|}}.$$
 
-Why the *interpolatory* KSL exists at all: the classical projector-splitting KSL of Lubich–Oseledets needs the full right-hand side $Au + u - u^3$ projected **orthogonally** onto the tangent space of the rank-$r$ manifold, and the orthogonal projector needs the right-hand side as a TT object — but $u - u^3$ has no cheap TT representation (an entrywise cube cubes the ranks). `tt.ksl_deim` (ported from Alec Dektor's ttpy PR #102) replaces the orthogonal projector by an oblique, *interpolatory* one: at every substep the right-hand side is **evaluated entrywise on cross fibers selected by QDEIM**, which a pointwise nonlinearity supports at the cost of a numpy call on the sampled entries — here literally `lambda v: v - v ** 3`.
+Why the *interpolatory* KSL exists at all: the classical projector-splitting KSL of Lubich–Oseledets needs the full right-hand side $Au + u - u^3$ projected **orthogonally** onto the tangent space of the rank-$r$ manifold, and the orthogonal projector needs the right-hand side as a TT object — but $u - u^3$ has no cheap TT representation (an entrywise cube cubes the ranks). `tt.ksl_deim` replaces the orthogonal projector by an oblique, *interpolatory* one: at every substep the right-hand side is **evaluated entrywise on cross fibers selected by QDEIM**, which a pointwise nonlinearity supports at the cost of a numpy call on the sampled entries — here literally `lambda v: v - v ** 3`.
 
 ## The code, walked through
 
@@ -138,22 +138,20 @@ $ python examples/allen_cahn_ksl_deim.py 16 16 0.005 2
 vs dense solve_ivp oracle (same D2, same start): relative error 4.67e-03
 ```
 
-## Against the dense method
+## Checked against the dense method
 
-The same comparison, measured across grid sizes: `ksl_deim` (rank 16, $\tau = 0.005$, 400 steps to $T = 2$) against `scipy.integrate.solve_ivp` (RK45, `rtol=1e-8`, `atol=1e-10`) on the full $n^3$ ODE built from the *same* spectral $D_2$ by `scipy.sparse` Kronecker sums, both started from the same rank-16 initial condition. One development laptop, repo venv; TT timing excludes a one-step warm-up.
+The same run is cross-checked across grid sizes against `scipy.integrate.solve_ivp` (RK45, `rtol=1e-8`, `atol=1e-10`) on the full $n^3$ ODE built from the *same* spectral $D_2$ by `scipy.sparse` Kronecker sums, both started from the same rank-16 initial condition:
 
-| $n$ | dense size $n^3$ | dense `solve_ivp` | TT `ksl_deim` | relative difference |
-|---:|---:|---:|---:|---:|
-| 8  | 512     | 0.01 s | 0.71 s | 4.2e-03 |
-| 16 | 4 096   | 0.09 s | 1.34 s | 4.7e-03 |
-| 32 | 32 768  | 3.7 s  | 1.6 s  | 5.4e-03 |
-| 64 | 262 144 | 164 s  | 2.5 s  | 4.8e-03 |
+| $n$ | dense size $n^3$ | relative difference |
+|---:|---:|---:|
+| 8  | 512     | 4.2e-03 |
+| 16 | 4 096   | 4.7e-03 |
+| 32 | 32 768  | 5.4e-03 |
+| 64 | 262 144 | 4.8e-03 |
 
-All four rows are measured (the $n=64$ dense run was expected by extrapolation at $\approx 150$ s and measured at 164 s). The relative difference is TT-vs-dense at $T=2$ and sits at $\sim 5\cdot 10^{-3}$ throughout — that is the fixed-rank-manifold plus first-order-splitting error of `ksl_deim` against a tight reference, and it does *not* grow with $n$.
+The relative difference is TT-vs-dense at $T=2$ and sits at $\sim 5\cdot 10^{-3}$ throughout — the fixed-rank-manifold plus first-order-splitting error of `ksl_deim` against a tight reference — and it does *not* grow with $n$.
 
-The point of the table is the growth rates. Each doubling of $n$ multiplies the dense time by $\sim40$–45: the per-step cost grows with the $\sim 3n^4$ nonzeros of the pseudospectral operator, and the RK45 step count grows with the spectral stiffness $\propto n^2$ — roughly $n^6$ overall, on top of $O(n^3)$ state memory (at $n=64$ the sparse operator alone holds $\sim 5\cdot 10^7$ nonzeros). The TT time grows by a factor 1.2–1.6 per doubling — the integrator's work per step is linear in $n$ at fixed rank ($O(n r^2)$ per core) — so the crossover is already at $n=32$, and at $n=128$ the dense run extrapolates to $\approx 2$ hours (extrapolation, not measured) against a few TT seconds.
-
-And this is still only 3D, where the dense method exists at all. In the six-dimensional setting this integrator was built for — the $3{+}3$D Boltzmann equation of Dektor–Einkemmer — a single dense state at $n=32$ is $32^6 \approx 10^9$ entries ($\sim 8.6$ GB), and RK45 needs several copies of it: the dense column of this table simply does not exist there, while the TT column keeps scaling as $n r^2$ per dimension.
+And this is still only 3D, where the dense state exists at all. In the six-dimensional setting this integrator was built for — the $3{+}3$D Boltzmann equation of Dektor–Einkemmer — a single dense state at $n=32$ is $32^6 \approx 10^9$ entries ($\sim 8.6$ GB), and RK45 needs several copies of it: the dense reference of this table simply does not exist there, while the TT solution keeps scaling as $n r^2$ per dimension.
 
 ## Why believe it
 

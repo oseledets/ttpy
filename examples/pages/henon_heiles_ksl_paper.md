@@ -1,6 +1,6 @@
 # The 10-D Hénon–Heiles spectrum at paper scale
 
-[`examples/henon_heiles_ksl_paper.py`](../henon_heiles_ksl_paper.py) reproduces Fig. 3 of Lubich–Oseledets–Vandereycken (SINUM 2015) end to end — the vibrational spectrum of the 10-dimensional Hénon–Heiles Hamiltonian by fixed-rank TT-KSL time integration — in 877 s where the paper's own run took 4425 s and MCTDH took 54354 s.
+[`examples/henon_heiles_ksl_paper.py`](../henon_heiles_ksl_paper.py) reproduces Fig. 3 of Lubich–Oseledets–Vandereycken (SINUM 2015) end to end — the vibrational spectrum of the 10-dimensional Hénon–Heiles Hamiltonian by fixed-rank TT-KSL time integration, at the paper's full scale.
 
 ![The run as its own log: |a(t)| building up while the CAP drains the norm](../../docs/media/lov15_run.gif)
 
@@ -155,7 +155,7 @@ Finally the transform of Fig. 3, zero-padded 8× for a smooth plot ( `ifft` carr
 
 The GIF above is the run's real log, and its numbers are the result:
 
-* **877 s** for the 6000 steps on 8 cores of a (shared) h200 node, 110–155 ms/step — against **4425 s** for the paper's own TT-KSL run and **54354 s** for MCTDH, both on 2015 hardware.
+* **6000 KSL steps** at $f = 10$ and rank 18, carried entirely in the TT format — the full paper-scale problem, about 15 minutes on 8 cores (110–155 ms/step).
 * The norm decays monotonically from 1 to **0.5913** at $T = 60$ (0.9098 at $t=5$, 0.7531 at $t=25$, …): the CAP is absorbing, exactly as the non-Hermitian $H$ says it must.
 * $|a(t)|$ recurs in decaying bursts and settles near $10^{-4}$; its transform is the comb of sharp peaks under an envelope with its maximum near $\xi \approx 25$ (peak height $|\hat a| \approx 0.31$) — the shape of Fig. 3 of the paper.
 
@@ -174,7 +174,7 @@ $ python examples/henon_heiles_ksl_paper.py 10 32 18 60 0.01
 $ python examples/henon_heiles_ksl_paper.py 10 32 18 60 0.01 out.npz   # save
 ```
 
-The paper setup is 6000 KSL steps: 877 s (about 15 minutes) on 8 cores of an h200 in the recorded run. The acceptance test is fast:
+The paper setup is 6000 KSL steps, about 15 minutes on 8 cores in the recorded run. The acceptance test is fast:
 
 ```console
 $ pytest tests/test_examples.py::test_ksl_paper_setup_matches_dense_propagation

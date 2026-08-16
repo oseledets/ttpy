@@ -22,10 +22,9 @@ with no preconditioner; the animation is the iterate after every sweep.
 <img src="../docs/media/lov15_run.gif" width="100%"><br>
 <b><a href="pages/henon_heiles_ksl_paper.md">henon_heiles_ksl_paper</a></b> (<a href="henon_heiles_ksl_paper.py">code</a>) — Fig. 3 of
 Lubich–Oseledets–Vandereycken (<a href="https://doi.org/10.1137/140976546">SINUM 2015</a>) end to end: the 10-D Hénon–Heiles
-spectrum by KSL time integration, sine-DVR, complex absorbing potential;
-877 s where the paper reports 4425 s (and 54354 s for MCTDH); the frames
-are the run's real log.  The resulting spectrum is
-<a href="../docs/media/lov15_fig3.png">here</a>.
+spectrum by KSL time integration, sine-DVR, complex absorbing potential, at
+the paper's full scale; the frames are the run's real log.  The resulting
+spectrum is <a href="../docs/media/lov15_fig3.png">here</a>.
 <i>Oracle: the paper's own figure; f=2 pinned against dense expm.</i>
 </td>
 </tr>
@@ -74,8 +73,8 @@ recovers the tensor — six orders of magnitude apart on held-out entries.
 <td width="50%">
 <img src="../docs/media/allen_cahn_deim.gif" width="100%"><br>
 <b><a href="pages/allen_cahn_ksl_deim.md">allen_cahn_ksl_deim</a></b> (<a href="allen_cahn_ksl_deim.py">code</a>) — Dektor's
-interpolatory projector-splitting integrator (<code>tt.ksl_deim</code>, ported
-from ttpy PR #102) on the 3D Allen–Cahn equation of his paper
+interpolatory projector-splitting integrator (<code>tt.ksl_deim</code>) on the
+3D Allen–Cahn equation of his paper
 (<a href="https://doi.org/10.1016/j.laa.2024.11.001">LAA 2025</a>,
 sec. 7.2): the cubic nonlinearity $u-u^3$ is evaluated only on QDEIM-selected
 cross fibers — the case the orthogonal-projector KSL cannot afford — with the
@@ -114,13 +113,11 @@ above as a Galerkin energy must.</i>
 Smoluchowski coagulation equation of Matveev–Zheltkov–Tyrtyshnikov–Smirnov
 (<a href="https://doi.org/10.1016/j.jcp.2016.04.025">JCP 2016</a>): the gain term is a lower-triangular convolution, so it is an
 FFT on every TT core and never leaves the format. The paper's $1000^2$
-reference point — error 2.2e-3 at TT rank 13 — in 4.5 s, against the
-215 580 s (2.5 days) it reports for the direct implementation of the same
-scheme; the frames are the run's real log. The paper's non-separable
+reference point — error 2.2e-3 at TT rank 13 — reproduced with the whole
+tensor kept in TT; the frames are the run's real log. The paper's non-separable
 ballistic kernel (its eq. 17) is built too — a TT-cross of the $2d$-dimensional
 $K$, cut along the one bond that separates $\bar u$ from $\bar v$ — and lands
-on its Table 5 to the last digit printed from $N = 400$ up, in 16 s against
-the 4.9 days that row costs directly.
+on its Table 5 to the last digit printed from $N = 400$ up.
 <i>Oracle: the analytic solution of the paper's eq. (18) and the exact total
 density $1/(1+t/2)$, every step; Table 5 of the paper for the ballistic
 kernel.</i>
@@ -128,7 +125,7 @@ kernel.</i>
 </tr>
 <tr>
 <td width="50%">
-<img src="../docs/media/cross_ising.png" width="100%"><br>
+<img src="../docs/media/cross_run.gif" width="100%"><br>
 <b><a href="pages/cross_approximation.md">cross_approximation</a></b> (<a href="ising_integrals.py">code</a>) — a
 high-dimensional Ising susceptibility integral, no separable form and no
 product quadrature that fits: <code>tt.dmrg_cross</code> samples the integrand
