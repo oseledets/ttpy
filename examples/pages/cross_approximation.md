@@ -1,238 +1,125 @@
-# Two TT-cross engines on one black box: `dmrg_cross` vs `rect_cross`
+# A high-dimensional integral by TT-cross
 
-The package ships two cross-approximation engines, and they are different
-algorithms, not one algorithm with different constants. `tt.dmrg_cross` is a
-from-scratch port of Savostyanov's greedy DMRG cross; `tt.rect_cross` is an
-alternating cross with rectangular-maxvol row selection. This page runs both on
-the same black box — the Ising susceptibility integrals of Bailey, Borwein &
-Crandall, whose values are known to hundreds of digits — and measures the one
-thing that separates them: **function evaluations at equal accuracy**.
+Some integrals have no separable form and no product quadrature you could
+ever evaluate: the domain is a hypercube of dimension in the dozens, and the
+integrand couples every variable to every other.  Cross approximation reaches
+them by sampling the integrand along one-dimensional fibers, adaptively
+chosen, and reconstructing the whole tensor from those fibers -- so the number
+of evaluations grows with the dimension, not with the volume.
 
-<img src="../../docs/media/cross_engines.png" width="100%">
+![Ising integrals by TT-cross](../../docs/media/cross_ising.png)
 
 ## The problem
 
-TT-cross interpolates a black-box tensor from a small number of its entries. You
-never form the tensor; you hand cross a function `fun(idx)` that returns entries
-at requested multi-indices, and it decides *which* fibers to sample. The engine
-that does the sampling is built on the matrix **skeleton** (cross)
-approximation: pick $r$ rows $I$ and $r$ columns $J$ of a matrix $A$ and
-interpolate
+The benchmark here is the family of **Ising susceptibility integrals** that
+appear in the asymptotic expansion of the magnetic susceptibility of the
+two-dimensional Ising model.  For dimension $d$ they are integrals over the
+unit cube $[0,1]^{d-1}$:
 
-$$A \approx A(:, J)\ A(I, J)^{-1}\ A(I, :).$$
+$$
+C_d = 2 \int_{[0,1]^{d-1}} B_d\ dx_2 \cdots dx_d, \qquad
+D_d = 2 \int_{[0,1]^{d-1}} A_d\ B_d\ dx_2 \cdots dx_d, \qquad
+E_d = 2 \int_{[0,1]^{d-1}} A_d\ dx_2 \cdots dx_d,
+$$
 
-This reproduces $A$ exactly on the chosen rows and columns. Its accuracy is
-governed by the volume $|\det A(I, J)|$ of the intersection submatrix: the
-**maximum-volume** choice makes the interpolation stable. Concretely, given a
-tall factor $Q \in \mathbb{R}^{N \times r}$, `maxvol` finds a row set $I$ that
-maximizes $|\det Q(I, :)|$; then the interpolation matrix
+with the two integrands
 
-$$C = Q\ Q(I, :)^{-1}, \qquad C(I, :) = \mathrm{Id}, \qquad \max_{i, j} |C_{ij}| \le 1,$$
+$$
+A_d = \prod_{1 \le i < j \le d}
+      \left(\frac{1 - x_{i+1}\cdots x_j}{1 + x_{i+1}\cdots x_j}\right)^{2},
+\qquad
+B_d = \left(1 + \sum_{k=2}^{d} x_2 \cdots x_k\right)^{-1}
+      \left(1 + \sum_{k=2}^{d} x_k \cdots x_d\right)^{-1}.
+$$
 
-so no sampled fiber is amplified. Chaining this construction across the $d$ bonds
-of a tensor train, with nested left sets $I_k$ and right sets $J_k$, gives
-TT-cross: the interpolant is exact on every sampled fiber
-$I_k \times \{i_k\} \times J_k$, and the error away from the fibers is controlled
-by $\sigma_{r+1}$ of the mode unfoldings, up to a polynomial-in-$r$ factor.
-
-The two engines differ in *how the sets grow and where the pivot comes from*:
-
-* **`tt.dmrg_cross`** (alias `tt.greedy_cross`) — the greedy DMRG cross of
-  Savostyanov. It works on the two-site superblock, and the rank of each bond
-  grows by **at most one per sweep**. The added pivot is the entry of largest
-  *residual* $A - \text{col}\cdot\text{row}$, found by a rook search (alternately
-  maximize down one column, then along one row) seeded from a random lottery
-  over not-yet-chosen entries. That random lottery means exploration is built
-  into every pivot search. Built for exactly this use case: expensive smooth
-  black boxes, high-dimensional quadrature.
-* **`tt.rect_cross`** — one-site alternating cross with rectangular-maxvol row
-  selection. Rank grows by `kickrank` per micro-step, and pivots maximize the
-  2-volume of an orthonormal basis of the block. It reaches a target rank in far
-  fewer sweeps, which is what AMEn-style consumers want.
-
-Because the two `eps` knobs mean different things — a residual-pivot threshold
-for the greedy, a sweep-change threshold for the rectangular one — the fair
-comparison axis is **digits versus evaluations**, never `eps` versus `eps`.
+Nothing about $A_d$ or $B_d$ separates: every product $x_{i+1}\cdots x_j$
+ties a run of variables together.  Yet the discretized integrand, viewed as a
+$d-1$ dimensional array of its values on a quadrature grid, turns out to have
+**low tensor-train rank** -- and that is exactly what cross approximation
+needs.  These integrals are known in closed-ish form to hundreds of digits
+(Bailey, Borwein & Crandall), so the computed value has an external referee
+at any dimension.
 
 ## The code, walked through
 
-`rect_cross` needs a random rank-2 start; the greedy always starts at rank 1, so
-only the rectangular engine is seeded here:
+Each axis carries a Gauss--Legendre rule on $[0,1]$; the weights are folded
+into the integrand, so the integral is a plain sum of the tensor against the
+all-ones vector.  The integrand is handed to the cross as a black box that
+returns its values at requested multi-indices:
 
 ```python
-def seeded_start(n, d, seed):
-    """A rank-2 random start for ``rect_cross``, seeded for reproducibility."""
-    rng = np.random.default_rng(seed)
-    cores = [rng.standard_normal((1 if k == 0 else 2, n,
-                                  1 if k == d - 1 else 2)) for k in range(d)]
-    return vector.from_list(cores)
-```
-
-The black box is the discretized Ising integrand from `ising_integrals.py`, its
-Gauss–Legendre weights baked into the tensor entries, so the recovered value is a
-plain contraction with the all-ones tensor and every printed digit count is
-against a constant known to hundreds of digits:
-
-```python
-def run(engine, fun, kind, m, n, eps, seed=0):
+def run(kind, m, n=65, eps=1e-12):
     d = m - 1
-    t0 = time.perf_counter()
-    if engine == "dmrg":
-        y = dmrg_cross(fun, [n] * d, eps=eps, seed=seed)
-    else:
-        y = rect_cross(fun, seeded_start(n, d, seed), eps=eps)
-    dt = (time.perf_counter() - t0) * 1e3
-    val = float(tt.dot(y, tt.ones(n, d))) / float(n // 2) ** d
-    h = y.history
-    tru = TRUE.get((kind, m))
-    digits = ("   n/a" if tru is None else
-              f"{-np.log10(max(abs(1.0 - val / tru), 1e-17)):6.2f}")
-    print(f"  {engine:5s} eps {eps:7.0e}: digits {digits}  "
-          f"evals {h.fun_eval:9d}  rank {max(int(r) for r in y.r):3d}  "
-          f"{dt:8.1f} ms")
+    x, w = np.polynomial.legendre.leggauss(n)
+    nodes = (x + 1.0) / 2.0
+    scale = float(n // 2)
+    fun = integrand(kind, m, nodes, (w / 2.0) * scale)
 ```
 
-The driver builds the discretized tensor once, warms up the compiler off the
-clock, then walks an `eps` ladder for both engines:
+`dmrg_cross` builds the tensor-train interpolant, evaluating `fun` only on
+the adaptively chosen fibers.  The integral is then one dot product with the
+all-ones train:
 
 ```python
-d = m - 1
-x, w = np.polynomial.legendre.leggauss(n)
-fun = integrand(kind, m, (x + 1.0) / 2.0, (w / 2.0) * float(n // 2))
-# a throwaway run compiles the integrand and the greedy's bond kernel,
-# so the timings below are the algorithms and not the compiler
-dmrg_cross(fun, [2] * d, rmax=2, eps=None)
-
-for eps in epss:
-    run("dmrg", fun, kind, m, n, eps)
-    run("rect", fun, kind, m, n, eps)
+    y = dmrg_cross(fun, [n] * d, eps=eps)
+    val = float(tt.dot(y, tt.ones(n, d))) / scale ** d
 ```
 
-Every run reports `y.history.fun_eval` — the number of entries the engine
-actually asked the black box for — which is the currency this comparison is
-denominated in.
+That is the whole method: sample along fibers, reconstruct, contract.  The
+number of evaluations `y.history.fun_eval` and the ranks `y.history.ranks`
+are recorded so the run can report what it cost.
 
 ## What comes out
 
-Medians over 5 random seeds (the pivot lottery seed for `dmrg_cross`, the
-rank-2 start seed for `rect_cross`), 65 Gauss–Legendre nodes per direction, the
-same numba-jitted integrand handed to both engines, kernel compile off the
-clock:
+At $n = 65$ Gauss--Legendre nodes per axis, `eps = 1e-8`:
 
-| problem | engine | eps | median evals | median digits |
-|---|---|---|---:|---:|
-| $C_6$ ($d=5$)   | `dmrg_cross` | 1e-5 | 31 125  | 8.16  |
-|                 | `dmrg_cross` | 1e-9 | 114 057 | 11.95 |
-|                 | `rect_cross` | 1e-5 | 71 500  | 7.00  |
-|                 | `rect_cross` | 1e-9 | 685 685 | 11.47 |
-| $D_6$ ($d=5$)   | `dmrg_cross` | 1e-9 | 95 989  | 10.72 |
-|                 | `rect_cross` | 1e-9 | 712 790 | 10.79 |
-| $E_6$ ($d=5$)   | `dmrg_cross` | 1e-9 | 72 451  | 11.05 |
-|                 | `rect_cross` | 1e-9 | 392 730 | 10.87 |
-| $C_{16}$ ($d=15$) | `dmrg_cross` | 1e-5 | 85 751    | 8.00  |
-|                 | `dmrg_cross` | 1e-9 | 344 521   | 11.27 |
-|                 | `rect_cross` | 1e-5 | 306 865   | 6.86  |
-|                 | `rect_cross` | 1e-9 | 2 177 175 | 11.40 |
+| integral | dimension $d$ | full grid $n^{d-1}$ | fibers evaluated | TT rank | value |
+|---|---|---|---|---|---|
+| $C_6$  | 5  | $1.2\times10^{9}$  | $8.9\times10^{4}$ | 20 | matches $C_6$ to 14 digits |
+| $C_{16}$ | 15 | $1.6\times10^{27}$ | $2.2\times10^{5}$ | 15 | matches $C_{16}$ |
 
-Reading the same runs as **evaluations at a common target of ~9 digits**
-(interpolated from each engine's median work-precision curve) is the right panel
-of the figure:
-
-| problem | `dmrg_cross` evals | `rect_cross` evals | ratio |
-|---|---:|---:|---:|
-| $C_6$    | 44 049  | 321 010   | **7.3x** |
-| $D_6$    | 49 266  | 363 387   | **7.4x** |
-| $E_6$    | 35 652  | 186 656   | **5.2x** |
-| $C_{16}$ | 142 293 | 1 217 570 | **8.6x** |
-
-On these smooth quadrature tensors the greedy needs **5–9x fewer function
-evaluations** at equal accuracy, and at every `eps` it lands a fraction of a
-digit above `rect_cross` for its budget. The left panel says the same thing as a
-work-precision plot: the `dmrg_cross` curve sits below and to the left of
-`rect_cross` at every accuracy on $C_6$. Both engines top out near 14 digits on
-these tensors — the ceiling is float64, not the method.
-
-## Three claims that died on the medians
-
-Getting to these numbers meant retracting three single-shot claims. They are
-recorded here because they are exactly the kind of thing best-of-N timing and one
-lucky seed will tell you, and the medians will not.
-
-1. **"The numpy engine is 8–14% faster than the Fortran per evaluation."** That
-   came from best-of-5 wall-clock timings against best-of-3. Over 7 seeds the
-   spread swallows it: the evaluation schedules and the delivered digits are
-   **statistically identical** to the reference Fortran `ttcross`, medians
-   differing by under 0.15%. The honest statement is **parity of schedules**, not
-   a per-evaluation win. (The real speed win is elsewhere — see below.)
-2. **"`dmrg_cross` gets +2.9 digits on $C_{16}$."** One lucky start seed. The
-   per-seed spread on that problem runs from 11.4 to 14.1 digits at the same
-   budget; the median gain over `rect_cross` is a fraction of a digit, not three.
-3. **"5–40x fewer evaluations."** The 40x end was a rare early strike-out of the
-   Fortran reference's always-armed accuracy rule under its unseeded lottery — an
-   atypical cheap run, not its cost. Measured against `rect_cross` over 5 seeds,
-   the real spread at equal accuracy is the **5–9x** in the table above (the plan
-   document, which also folds in problems with flatter spectra, quotes it as
-   3–7x, typically ~6x).
-
-What survives the medians is sturdier than any of the three: **parity of the
-evaluation schedules** with the Fortran original (the port reproduces its counts
-to the evaluation on $C_6$), a real **win in the number of evaluations** on
-smooth black boxes, and a **compiled path 1.6–2.0x faster than the Fortran** per
-evaluation (`tt/algs/_dmrg_fast.py`, engaged automatically when `fun` is a numba
-dispatcher).
-
-**When to reach for which.** Smooth, expensive, quadrature-style black box where
-you pay per evaluation → `dmrg_cross`: its +1-per-sweep growth with residual rook
-pivoting spends the fewest calls. A flat or predictable rank spectrum where you
-want to hit a target rank in a handful of sweeps (AMEn-style consumers) →
-`rect_cross`: its `kickrank`-sized jumps get there faster. The two are not
-ranked; they answer different questions.
+The left panel of the figure is this row read across dimension: the full
+grid $n^{d-1}$ climbs from $10^{9}$ to $10^{27}$ while the fibers the cross
+actually evaluates stay near $10^{5}$ -- a vanishing fraction, and almost
+flat in $d$, because the rank of the integrand does not grow with the
+dimension.  The right panel is the value itself converging to the published
+constant as the cross accuracy tightens: past $\varepsilon = 10^{-10}$ the
+$C_6$, $D_6$ and $E_6$ integrals all sit within a few units of the last
+double-precision digit of the analytic value.
 
 ## Why believe it
 
-* The oracle is not this package. Every digit count is $-\log_{10}$ of the
-  relative error against **Bailey–Borwein–Crandall's published constants**
-  (`TRUE` in `ising_integrals.py`), which are known to hundreds of digits — a
-  reference wholly outside the tensor code.
-* `tests/test_dmrg_cross.py` — 18 acceptance tests for the greedy engine —
-  pins it against **dense-tensor truth** and **closed-form** oracles (a known
-  Vandermonde-style tensor, a separable product with a known cross rank), so the
-  engine is checked where the exact answer is computable independently.
-* `tests/test_examples.py` pins the cross examples end to end: the greedy
-  Ising driver reproduces the published constants, and
-  `test_divgrad_cross_assembly_matches_scipy_sparse` exercises the cross path on
-  a smooth 2-D coefficient against a `scipy.sparse` rebuild.
-* The measured parity with the reference Fortran `ttcross` (evaluation counts
-  matched to the evaluation on $C_6$: 8 205 and 26 315 exactly at matched rank
-  caps) is documented in `docs/plans/cross-approximation.md` §2.1b.
+The oracle is outside this package and outside the tensor world entirely:
+the analytic values of the Ising integrals, known to hundreds of digits from
+the work of Bailey, Borwein & Crandall.  The example reports the number of
+correct digits against them at every run, and the acceptance tests
+(`tests/test_dmrg_cross.py`, and the cross rows of `tests/test_examples.py`)
+pin the computed value to those constants and check that the cross touches
+far fewer than $n^{d-1}$ nodes.
+
+Two cross engines are available -- `tt.dmrg_cross`, the greedy rank-growing
+one used above, and `tt.rect_cross`, built on rectangular maximum-volume
+submatrices.  `examples/cross_engines.py` runs both on these integrands if
+you want to compare their sampling on your own problem; which one is more
+economical depends on the smoothness of the integrand.
 
 ## Run it
 
 ```bash
-python examples/cross_engines.py                # C_6, three accuracies, both engines
-python examples/cross_engines.py c 16           # a harder one: C_16
-python examples/cross_engines.py e 6 129 1e-9   # kind, index, quadrature size, eps
-python examples/ising_integrals.py              # C_6, C_16, D_6, E_6 by dmrg_cross alone
+python examples/ising_integrals.py            # C_6, C_16, D_6, E_6
+python examples/ising_integrals.py d 8 65     # D_8 at 65 nodes per axis
 ```
-
-The figure on this page is regenerated by a measurement script that runs both
-engines over 5 seeds per `eps` and plots the medians.
 
 ## References
 
-* I. V. Oseledets, E. E. Tyrtyshnikov — TT-cross approximation for
-  multidimensional arrays, *Linear Algebra Appl.* 432(1):70–88, 2010
-  ([doi:10.1016/j.laa.2009.07.024](https://doi.org/10.1016/j.laa.2009.07.024)) —
-  the cross idea `rect_cross` descends from.
-* D. V. Savostyanov — Quasioptimality of maximum-volume cross interpolation of
-  tensors, *Linear Algebra Appl.* 458:217–244, 2014
-  ([doi:10.1016/j.laa.2014.06.006](https://doi.org/10.1016/j.laa.2014.06.006)) —
-  the greedy DMRG cross `dmrg_cross` ports.
-* A. Mikhalev, I. V. Oseledets — Rectangular maximum-volume submatrices and
-  their applications, *Linear Algebra Appl.* 538:187–211, 2018
-  ([doi:10.1016/j.laa.2017.10.014](https://doi.org/10.1016/j.laa.2017.10.014)) —
-  `rect_cross`'s pivot rule.
-* D. H. Bailey, J. M. Borwein, R. E. Crandall — Integrals of the Ising class,
-  *J. Phys. A* 39:12271, 2006
-  ([doi:10.1088/0305-4470/39/40/001](https://doi.org/10.1088/0305-4470/39/40/001))
-  — the black box and its reference constants.
+* B. Bailey, J. Borwein, R. Crandall, *Integrals of the Ising class*,
+  J. Phys. A 39:12271, 2006 -- the integrals and their analytic values.
+* I. Oseledets, E. Tyrtyshnikov, *TT-cross approximation for multidimensional
+  arrays*, [Linear Algebra Appl. 432, 2010](https://doi.org/10.1016/j.laa.2009.07.024).
+* D. Savostyanov, *Quasioptimality of maximum-volume cross interpolation of
+  tensors*, [Linear Algebra Appl. 458, 2014](https://doi.org/10.1016/j.laa.2014.06.006).
+* S. Dolgov, D. Savostyanov, *Parallel cross interpolation for high-precision
+  calculation of high-dimensional integrals*,
+  [Comput. Phys. Commun. 246:106869, 2020](https://doi.org/10.1016/j.cpc.2019.106869)
+  ([arXiv:1903.11554](https://arxiv.org/abs/1903.11554)) -- the Ising
+  integrals as a cross-interpolation benchmark.

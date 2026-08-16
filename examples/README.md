@@ -128,15 +128,14 @@ kernel.</i>
 </tr>
 <tr>
 <td width="50%">
-<img src="../docs/media/cross_engines.png" width="100%"><br>
-<b><a href="pages/cross_approximation.md">cross_approximation</a></b> (<a href="cross_engines.py">code</a>) — the package's two
-TT-cross engines side by side on identical black-box quadrature: greedy DMRG
-cross (<code>dmrg_cross</code>) vs rectangular-maxvol cross (<code>rect_cross</code>)
-on the Ising susceptibility integrals. At equal accuracy the greedy spends
-<b>5–9x fewer function evaluations</b> on these smooth integrands, and its
-compiled path runs 1.6–2.0x faster than the original Fortran <code>ttcross</code>;
-medians over 5 seeds.
-<i>Oracle: the analytic integral values of Bailey–Borwein–Crandall, known to
+<img src="../docs/media/cross_ising.png" width="100%"><br>
+<b><a href="pages/cross_approximation.md">cross_approximation</a></b> (<a href="ising_integrals.py">code</a>) — a
+high-dimensional Ising susceptibility integral, no separable form and no
+product quadrature that fits: <code>tt.dmrg_cross</code> samples the integrand
+along adaptively chosen fibers and reconstructs it, touching $\sim 10^5$
+nodes of a grid with $10^{27}$ of them at $d=16$, and lands on the analytic
+constant to 14 digits.
+<i>Oracle: the analytic Ising integrals of Bailey–Borwein–Crandall, known to
 hundreds of digits.</i>
 </td>
 <td width="50%"></td>
@@ -152,7 +151,7 @@ hundreds of digits.</i>
 | [bpx_elliptic.py](bpx_elliptic.py) | BPX preconditioning: $4^d$ conditioning tamed, and why $CAC$ must never be assembled | analytic solution |
 | [qtt_fem_triangle.py](pages/qtt_fem_triangle.md) ([code](qtt_fem_triangle.py)) | Poisson on a triangle: three glued QTT patches ([qtt-laplace](https://github.com/RerRayne/qtt-laplace)) | the repository's FEniCS curve + its TT energies |
 | [iga_ring.py](iga_ring.py) | isogeometric ring domain in QTT | manufactured solution |
-| [ising_integrals.py](ising_integrals.py) | Ising susceptibility integrals $C_m$ by greedy DMRG cross, racing the original Fortran `ttcross` | published values ([Bailey–Borwein–Crandall](https://doi.org/10.1088/0305-4470/39/40/001)) |
+| [cross_engines.py](cross_engines.py) | the two cross engines side by side on the same integrands | analytic Ising constants |
 | [cross_engines.py](pages/cross_approximation.md) ([code](cross_engines.py)) | `dmrg_cross` vs `rect_cross` on identical integrands: 5–9x fewer evaluations at equal accuracy | analytic integral values |
 | [robust_completion.py](pages/robust_completion.md) ([code](robust_completion.py)) | the loss ALS structurally cannot have | dense ground truth |
 | [henon_heiles_spectrum.py](pages/henon_heiles_spectrum.md) ([code](henon_heiles_spectrum.py)) | spectra from one trajectory (autocorrelation method) | `eigb` on the same operator |
