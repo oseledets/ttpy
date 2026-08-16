@@ -48,17 +48,83 @@ def run(d):
         note = "  <- warned: " + str(caught[0].message).split(".")[0][:60]
     print(f"{d:3d} | {n:11,d} | {info.nswp_done:6d} | {max(info.ranks):4d} | "
           f"{dt:7.2f}s | {info.max_res:9.2e} | {err:9.2e}{note}", flush=True)
+    return {
+        "d": d,
+        "err": err,
+        "sweeps": info.nswp_done,
+        "time": dt,
+        "sol_rank": max(info.ranks),
+        "op_rank": max(a.tt.r),
+        "max_res": info.max_res,
+        "converged": info.converged and not caught,
+    }
+
+
+def render_png(results, path):
+    """The conditioning wall in two panels: error vs d, sweeps/time vs d."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    ds = [r["d"] for r in results]
+    err = [r["err"] for r in results]
+    swp = [r["sweeps"] for r in results]
+    tim = [r["time"] for r in results]
+    conv = [r["converged"] for r in results]
+    nswp_cap = max(swp)
+
+    fig, (axe, axs) = plt.subplots(1, 2, figsize=(9.6, 4.2), dpi=100)
+
+    axe.semilogy(ds, err, "o-", color="#1f4e79", zorder=3,
+                 label=r"error vs analytic $u_i$")
+    axe.axhline(EPS, ls="--", color="#b00020", lw=1.2,
+                label=r"requested $\varepsilon=10^{-10}$")
+    axe.axhline(np.finfo(float).eps, ls=":", color="#888888", lw=1.0,
+                label=r"float64 $\varepsilon_{\mathrm{mach}}$")
+    axe.set_xlabel(r"$d$  (grid $N=2^d$)")
+    axe.set_ylabel(r"relative error $\|u-u^\star\|/\|u^\star\|$")
+    axe.set_title(r"error climbs as $\kappa(A)=O(4^d)$", fontsize=10)
+    axe.set_xticks(ds)
+    axe.grid(True, which="both", ls=":", alpha=0.4)
+    axe.legend(fontsize=8, loc="lower right")
+
+    axs.plot(ds, swp, "s-", color="#1f4e79", zorder=3, label="sweeps")
+    axs.axhline(nswp_cap, ls="--", color="#b00020", lw=1.2,
+                label="max sweeps (cap)")
+    axs.set_xlabel(r"$d$  (grid $N=2^d$)")
+    axs.set_ylabel("AMEn sweeps to stop", color="#1f4e79")
+    axs.set_xticks(ds)
+    axs.set_ylim(0, nswp_cap * 1.15)
+    axs.grid(True, ls=":", alpha=0.4)
+    axt = axs.twinx()
+    axt.plot(ds, tim, "^:", color="#2e7d32", label="wall time")
+    axt.set_ylabel("wall time (s)", color="#2e7d32")
+    axs.set_title("sweeps saturate at the cap", fontsize=10)
+    lines = axs.get_lines()[:2] + axt.get_lines()
+    axs.legend(lines, [l.get_label() for l in lines], fontsize=8,
+               loc="center right")
+
+    fig.suptitle(r"$-u''=1$ on $2^d$ points, unpreconditioned AMEn "
+                 r"(QTT, float64)", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+    print(f"saved {path}")
 
 
 def main(argv):
-    ds = [int(v) for v in argv[1:]] or [8, 12, 16, 20]
+    png = None
+    if "--png" in argv:
+        png = argv[argv.index("--png") + 1]
+    ds = [int(v) for v in argv[1:] if v.isdigit()] or [8, 12, 16, 20]
     print(__doc__.split("What to watch")[0].strip())
     print()
     print(f"requested accuracy eps = {EPS:g}")
     print("  d |    unknowns | sweeps | rank |    time |  max_res |     error")
     print("----+-------------+--------+------+---------+----------+----------")
-    for d in ds:
-        run(d)
+    results = [run(d) for d in ds]
+    if png:
+        render_png(results, png)
     print()
     print("The error grows with d and the last rows warn: that is correct, not a")
     print("bug.  kappa(A) is O(4^d), so a backward-stable solve leaves a relative")

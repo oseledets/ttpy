@@ -134,20 +134,78 @@ def solve(p, n_el, eps_cross=1e-9, eps_solve=1e-9, verbose=True):
     return err, max(K.r), int(np.prod(nb))
 
 
+def make_png(p, sizes, errs, path):
+    """House-style two-panel figure: the curved solution field, and the rate.
+
+    Left: the analytic temperature ``u(r)`` of Eq.(46) painted on the physical
+    annular sector, so the curved geometry that ``tt.cross`` sees is visible.
+    Right: relative error against Eq.(46) versus elements per direction on a
+    log-log axis, with the ``O(n^-(p+1))`` IGA reference slope.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, (axf, axc) = plt.subplots(1, 2, figsize=(9.6, 4.2), dpi=100)
+
+    nr, nth = 64, 96
+    rr = np.linspace(R_IN, R_OUT, nr)
+    th = np.linspace(0.0, THETA_MAX, nth)
+    Rg, Tg = np.meshgrid(rr, th)
+    X, Y, U = Rg * np.cos(Tg), Rg * np.sin(Tg), exact(Rg)
+    im = axf.pcolormesh(X, Y, U, cmap="magma", shading="gouraud")
+    axf.set_aspect("equal")
+    axf.set_xlabel(r"$x$")
+    axf.set_ylabel(r"$y$")
+    axf.set_title(r"analytic $u(r)$ on the annular sector", fontsize=10)
+    cb = fig.colorbar(im, ax=axf, fraction=0.046, pad=0.04)
+    cb.set_label(r"$u$")
+
+    sizes = np.asarray(sizes, float)
+    errs = np.asarray(errs, float)
+    axc.loglog(sizes, errs, "o-", color="C3", label=r"cross-assembled IGA")
+    ref = errs[0] * (sizes / sizes[0]) ** (-(p + 1))
+    axc.loglog(sizes, ref, "k--", lw=1.0,
+               label=r"$\mathcal{O}(n^{-(p+1)})$")
+    axc.set_xlabel(r"elements per direction $n$")
+    axc.set_ylabel(r"max rel. error vs Eq.(46)")
+    axc.set_title(r"convergence, degree $p=%d$" % p, fontsize=10)
+    from matplotlib.ticker import NullFormatter, NullLocator
+    axc.xaxis.set_minor_locator(NullLocator())
+    axc.xaxis.set_minor_formatter(NullFormatter())
+    axc.set_xticks(sizes)
+    axc.set_xticklabels([r"$%d$" % int(v) for v in sizes])
+    axc.grid(True, which="both", ls=":", alpha=0.4)
+    axc.legend(fontsize=8, frameon=False)
+
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+    print(f"saved {path}")
+
+
 def main(argv):
+    png = None
+    if "--png" in argv:
+        i = argv.index("--png")
+        png = argv[i + 1]
+        argv = argv[:i] + argv[i + 2:]
     p = int(argv[1]) if len(argv) > 1 else 2
     sizes = [int(v) for v in argv[2:]] or [32]
     print(__doc__.split("Why this example")[0].strip())
     print()
     print(f"=== annular sector, r in [{R_IN}, {R_OUT}], theta in [0, pi/2], "
           f"h = {HEIGHT}; u_in = {U_IN}, u_out = {U_OUT} ===")
-    prev = None
+    prev, errs = None, []
     for n_el in sizes:
         err, rk, dofs = solve(p, n_el)
+        errs.append(err)
         if prev is not None:
             rate = np.log2(prev[0] / err) / np.log2(n_el / prev[1])
             print(f"      observed convergence order: {rate:.2f}", flush=True)
         prev = (err, n_el)
+    if png is not None:
+        make_png(p, sizes, errs, png)
     print()
     print("The geometry never enters the assembly as a mesh: only the six fields")
     print("R = J^-1 J^-T |J|, compressed by tt.cross, and one contraction per")

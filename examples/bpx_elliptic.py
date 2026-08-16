@@ -167,7 +167,77 @@ def part_2d(d=12):
     print("  from a rank-1 guess the enrichment adds 4 per sweep and never gets there.")
 
 
+# --- figure ------------------------------------------------------------------
+
+def make_figure(path, dfield=9):
+    """Gallery figure: the conditioning claim, plus the 2D three-peak field."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    # left panel: kappa(A) vs kappa(B) as d grows, dense eigenvalues, D = 1
+    ds = (2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+    kA, kB = [], []
+    for d in ds:
+        ad = np.asarray(tt.qlaplace_dn([d], "DN", order="dim").full())
+        cd = np.asarray(bpx(d, 1, weight=1, scaled=True).full())
+        wa = np.linalg.eigvalsh(ad)
+        wb = np.linalg.eigvalsh(cd @ ad @ cd)
+        kA.append(wa[-1] / wa[0])
+        kB.append(wb[-1] / wb[0])
+
+    # right panel: the three sharp Gaussian peaks.  The 2D part builds this
+    # field by cross approximation (multifuncrs) to TT rank ~78 at eps 1e-11;
+    # since the field is exactly the sum of Gaussians below, we sample it on
+    # the grid directly -- an identical picture at a fraction of the cost.
+    n = 2 ** dfield
+    gx = (np.arange(n) + 1) / n
+    XX, YY = np.meshgrid(gx, gx, indexing="ij")
+    peaks = [(0.5, 0.5, 2.0 ** -9, 1.0),
+             (0.25, 0.7, 2.0 ** -6, 0.6),
+             (0.8, 0.3, 2.0 ** -4, 0.3)]
+    field = np.zeros((n, n))
+    for cx, cy, s, wgt in peaks:
+        field += wgt * np.exp(-((XX - cx) ** 2 + (YY - cy) ** 2) / (2 * s * s))
+
+    fig, (axk, axf) = plt.subplots(1, 2, figsize=(9.6, 4.2), dpi=100)
+
+    axk.semilogy(ds, kA, "o-", color="#c1272d", lw=1.8, ms=5,
+                 label=r"unpreconditioned  $\kappa(A)\sim 4^{d}$")
+    axk.semilogy(ds, kB, "s-", color="#0b6e4f", lw=1.8, ms=5,
+                 label=r"BPX  $\kappa(BA)$, bounded in $d$")
+    guide = [kA[0] * 4.0 ** (d - ds[0]) for d in ds]
+    axk.semilogy(ds, guide, "--", color="#999999", lw=1.0, zorder=0)
+    axk.set_xlabel(r"levels $d$   (unknowns $2^{d}$)", fontsize=10)
+    axk.set_ylabel(r"condition number", fontsize=10)
+    axk.set_title(r"$-u''=1$ in QTT, $D=1$: conditioning vs depth",
+                  fontsize=10)
+    axk.grid(True, which="both", ls=":", lw=0.5, alpha=0.5)
+    axk.legend(fontsize=8.5, loc="center right")
+
+    imf = axf.imshow(field.T, origin="lower", cmap="magma",
+                     extent=[0, 1, 0, 1])
+    axf.set_title(r"$2^{%d}\times 2^{%d}$ solution: three sharp peaks"
+                  % (dfield, dfield), fontsize=10)
+    axf.set_xlabel(r"$x$", fontsize=10)
+    axf.set_ylabel(r"$y$", fontsize=10)
+    fig.colorbar(imf, ax=axf, fraction=0.046)
+
+    fig.suptitle(r"BPX multilevel preconditioning in QTT  [BK20]:  "
+                 r"$B=\sum_k\Theta_k^{\top}\Theta_k$, never $CAC$",
+                 fontsize=11)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(path, dpi=100)
+    plt.close(fig)
+    print(f"saved {path}   kappa(A): {kA[0]:.1f}..{kA[-1]:.2e}, "
+          f"kappa(BA): {kB[0]:.2f}..{kB[-1]:.2f}")
+
+
 def main(argv):
+    if "--png" in argv:
+        i = argv.index("--png")
+        make_figure(argv[i + 1])
+        return
     what = argv[1] if len(argv) > 1 else "all"
     if what in ("all", "1d"):
         part_1d(tuple(int(v) for v in argv[2:]) or (10, 14, 18, 22, 26, 30))

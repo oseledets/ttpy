@@ -135,6 +135,49 @@ constant to 14 digits.
 <i>Oracle: the analytic Ising integrals of Bailey–Borwein–Crandall, known to
 hundreds of digits.</i>
 </td>
+<td width="50%">
+<img src="../docs/media/amen_laplace_wall.png" width="100%"><br>
+<b><a href="pages/amen_laplace.md">amen_laplace</a></b> (<a href="amen_laplace.py">code</a>) — the QTT
+Laplacian $-u''=1$ solved by <code>amen_solve</code>, and the $O(4^d)$
+conditioning wall an unpreconditioned iteration runs into: the error climbs
+past the requested tolerance near $d=12$, and the solver reports the failure
+rather than returning a plausible wrong answer.
+<i>Oracle: the analytic discrete solution $u_i=i(N+1-i)/2$, exact at any $d$.</i>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<img src="../docs/media/bpx_conditioning.png" width="100%"><br>
+<b><a href="pages/bpx_elliptic.md">bpx_elliptic</a></b> (<a href="bpx_elliptic.py">code</a>) — BPX
+multilevel preconditioning in QTT (Bachmayr–Kazeev,
+<a href="https://doi.org/10.1007/s10208-020-09446-z">FoCM 2020</a>): the
+$4^d$ conditioning tamed to a bounded $\kappa(BA)$, over a billion unknowns
+solved to $2\cdot10^{-13}$ at flat TT rank 17 — and why the preconditioned
+operator must never be assembled as $CAC$.
+<i>Oracle: dense eigenvalues for $\kappa$, the analytic $u(x)=x-x^2/2$ for the solve.</i>
+</td>
+<td width="50%">
+<img src="../docs/media/iga_ring.png" width="100%"><br>
+<b><a href="pages/iga_ring.md">iga_ring</a></b> (<a href="iga_ring.py">code</a>) — isogeometric
+Poisson on a curved 3D annular duct (Tran et al.,
+<a href="https://doi.org/10.1016/j.cma.2026.118802">CMAME 2026</a>): the
+geometry enters only through metric fields compressed by TT-cross, the
+stiffness stays at rank 3, and order-$h^3$ convergence reaches $4\cdot10^{-9}$
+on 2.2M dofs with no element loop anywhere.
+<i>Oracle: the closed-form radial solution, Eq. (46).</i>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<img src="../docs/media/fixed_rank_solvers.png" width="100%"><br>
+<b><a href="pages/fixed_rank_solvers.md">fixed_rank_solvers</a></b> (<a href="qtt_divgrad_solvers.py">code</a>) — the
+same SPD div–grad system solved two ways: <code>amen_solve</code> rank-adaptively
+(enriches and truncates bonds) and <code>lobpcg_solve</code> at fixed rank
+(minimizes the energy over a prescribed profile, bonds never change); a
+manufactured problem isolates when the fixed-rank stationary point is exactly
+the solution.
+<i>Oracle: a manufactured $f=Ax_{\star}$ of known rank, plus the true residual.</i>
+</td>
 <td width="50%"></td>
 </tr>
 </table>
@@ -144,10 +187,11 @@ hundreds of digits.</i>
 | example | what it shows | oracle |
 |---|---|---|
 | [qtt_divgrad_cross.py](pages/qtt_divgrad_cross.md) ([code](qtt_divgrad_cross.py)) | div–grad assembly by TT-cross, AMEn animation | scipy.sparse rebuild |
-| [amen_laplace.py](amen_laplace.py) | the AMEn linear solver on the QTT Laplacian | residual + dense solve |
-| [bpx_elliptic.py](bpx_elliptic.py) | BPX preconditioning: $4^d$ conditioning tamed, and why $CAC$ must never be assembled | analytic solution |
+| [amen_laplace.py](pages/amen_laplace.md) ([code](amen_laplace.py)) | the QTT Laplacian and the $O(4^d)$ conditioning wall | analytic discrete solution |
+| [bpx_elliptic.py](pages/bpx_elliptic.md) ([code](bpx_elliptic.py)) | BPX preconditioning: $4^d$ conditioning tamed, and why $CAC$ must never be assembled | dense eigenvalues + analytic solution |
 | [qtt_fem_triangle.py](pages/qtt_fem_triangle.md) ([code](qtt_fem_triangle.py)) | Poisson on a triangle: three glued QTT patches ([qtt-laplace](https://github.com/RerRayne/qtt-laplace)) | the repository's FEniCS curve + its TT energies |
-| [iga_ring.py](iga_ring.py) | isogeometric ring domain in QTT | manufactured solution |
+| [iga_ring.py](pages/iga_ring.md) ([code](iga_ring.py)) | isogeometric Poisson on a curved 3D annular domain in QTT | closed-form radial solution |
+| [qtt_divgrad_solvers.py](pages/fixed_rank_solvers.md) ([code](qtt_divgrad_solvers.py)) | fixed-rank (`lobpcg_solve`) vs rank-adaptive (`amen_solve`) on one div–grad system | manufactured exact-rank solution + true residual |
 | [cross_engines.py](cross_engines.py) | the two cross engines side by side on the same integrands | analytic Ising constants |
 | [cross_engines.py](pages/cross_approximation.md) ([code](cross_engines.py)) | `dmrg_cross` vs `rect_cross` on identical integrands: 5–9x fewer evaluations at equal accuracy | analytic integral values |
 | [robust_completion.py](pages/robust_completion.md) ([code](robust_completion.py)) | the loss ALS structurally cannot have | dense ground truth |
