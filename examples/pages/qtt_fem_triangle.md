@@ -1,6 +1,6 @@
 # Poisson on a triangle: three glued QTT patches
 
-$-\Delta u = 1$ with $u=0$ on the boundary of a scalene triangle — a domain no single tensor-product grid fits. The triangle is split through the side midpoints and the centroid into **three quadrilaterals**, each mapped bilinearly from the unit square, each assembled as a QTT finite-element system in z-order, and the three glued along their shared edges into one block train that a single `amen_solve` sees whole. The problem, the discretization and the reference numbers come from [`qtt-laplace`](https://github.com/RerRayne/qtt-laplace) and its paper (L. Markeeva, I. Tsybulin, I. Oseledets, [JCP 424:109835, 2021](https://doi.org/10.1016/j.jcp.2020.109835)); the code here is a reimplementation on ttpy2's primitives, not a copy. The z-order machinery it runs on (`tt.zkron`, `tt.zkronv`, `tt.zmeshgrid`, `tt.zaffine`) came into ttpy from the same work in 2018 and is credited where it lives, in `tt/core/tools.py`.
+$-\Delta u = 1$ with $u=0$ on the boundary of a scalene triangle — a domain no single tensor-product grid fits. The triangle is split through the side midpoints and the centroid into **three quadrilaterals**, each mapped bilinearly from the unit square, each assembled as a QTT finite-element system in z-order, and the three glued along their shared edges into one block train that a single `amen_solve` sees whole. The problem, the discretization and the reference numbers are those of [`qtt-laplace`](https://github.com/RerRayne/qtt-laplace) and its paper (L. Markeeva, I. Tsybulin, I. Oseledets, [JCP 424:109835, 2021](https://doi.org/10.1016/j.jcp.2020.109835)); the z-order machinery it runs on — `tt.zkron`, `tt.zkronv`, `tt.zmeshgrid`, `tt.zaffine` — is Markeeva's.
 
 <img src="../../docs/media/qtt_fem_triangle.png" width="100%">
 
@@ -16,7 +16,7 @@ $$K \quad =\quad  \sum_{l_1, l_2 \in \{0,1\}^2} P_{l_1}^{\top} \mathrm{diag}(a_{
 
 where $P_l$ maps an element index to the node at its corner $l$ (identity or shift per direction, rank 2 in QTT) and $a_{l_1 l_2}$ is the vector, over elements, of the local integral between those corners.
 
-Why the triangle is the interesting case: a quadrilateral patch touching the centroid is a genuine curved-index map, so $\det J$ varies over the mesh and the sixteen coefficient fields $a_{l_1 l_2}$ are not constant — they are compressed by TT-cross. The uniform square in `tests/test_qtt_fem.py` never exercises that.
+Why the triangle is the interesting case: a quadrilateral patch touching the centroid is a genuine curved-index map, so $\det J$ varies over the mesh and the sixteen coefficient fields $a_{l_1 l_2}$ are not constant — they are compressed by TT-cross.
 
 ## The code, walked through
 
@@ -32,7 +32,7 @@ def subdomains():
             np.array([rc, r23, R3, r13])]
 ```
 
-One patch system is the `assemble_on_quad` of qtt-laplace: the Jacobian entries are sampled at element centres by TT-cross (in z-order, via `zsplit_index`), combined into the transformed coefficients, and the sixteen $P_{l_1}^{\top} \mathrm{diag} P_{l_2}$ terms are summed — `placement(d)` supplies the corner operators built from `tt.zkron`:
+One patch system is assembled as follows: the Jacobian entries are sampled at element centres by TT-cross (in z-order, via `zsplit_index`), combined into the transformed coefficients, and the sixteen $P_{l_1}^{\top} \mathrm{diag} P_{l_2}$ terms are summed — `placement(d)` supplies the corner operators built from `tt.zkron`:
 
 ```python
     det = field(lambda J: J[0, 0] * J[1, 1] - J[0, 1] * J[1, 0])
@@ -52,7 +52,7 @@ One patch system is the `assemble_on_quad` of qtt-laplace: the Jacobian entries 
                                 + (g1[0] * g2[1] + g1[1] * g2[0]) * tj12)).round(eps)
 ```
 
-The gluing is the qtt-laplace interface coupling with $\lambda = 1/2$: `sew` is the trace operator of one patch side — in z-order "stay on the bottom edge" is the rank-1 statement $i_y = 0$ at every level, so the trace costs $O(d)$ — and `interface_blocks` turns two traces into the four blocks that penalise the jump across the shared edge:
+The gluing penalises the jump across a shared edge with $\lambda = 1/2$: `sew` is the trace operator of one patch side — in z-order "stay on the bottom edge" is the rank-1 statement $i_y = 0$ at every level, so the trace costs $O(d)$ — and `interface_blocks` turns two traces into the four coupling blocks:
 
 ```python
     def glue(i, j, side_i, side_j):
@@ -69,7 +69,7 @@ The gluing is the qtt-laplace interface coupling with $\lambda = 1/2$: `sew` is 
     glue(2, 0, "LEFT", "TOP")
 ```
 
-`block_system` packs the $3\times 3$ grid of TT operators into one train with a final patch mode of size 3, and the whole coupled problem is one `amen_solve` call. The system is driven by the *coupled* right-hand side while the energy pairs the solution with the original load, because $\int|\nabla u|^2 = u^{\top} f$ for the Galerkin solution — the original notebook does the same:
+`block_system` packs the $3\times 3$ grid of TT operators into one train with a final patch mode of size 3, and the whole coupled problem is one `amen_solve` call. The system is driven by the *coupled* right-hand side while the energy pairs the solution with the original load, because $\int|\nabla u|^2 = u^{\top} f$ for the Galerkin solution:
 
 ```python
     S, load = block_system(B, F, eps=eps * 0.01)
@@ -93,13 +93,11 @@ The observable is the energy $\int|\nabla u|^2$, checked against two external co
 
 The three published values are reproduced to the reference's own precision, and beyond that table the energy keeps approaching the continuum from above, as a Galerkin energy must. The left panel of the picture is the solved field itself, the three z-ordered patches pushed through their bilinear maps back into physical coordinates (dashed: the interior interfaces).
 
-Getting there found a real defect in the port, worth remembering (`docs/NUMERICS.md`). A mesh of $2^d$ nodes per direction has $2^d - 1$ elements, but the z-ordered diagonal carries $4^d$ element slots: the row $e = n-1$ is fake. The shift operator drops it by construction, the identity does not — and with a full identity the fake elements deposit their $(0,\cdot)$-corner contributions on the last row of nodes. Under an all-Dirichlet mask (every test on the unit square) that is invisible. On a glued problem those nodes are interface nodes, they are free, and the coupled energy *falls* under refinement (0.2457, 0.1981, 0.1679) instead of rising toward 0.3404. The `W0` of qtt-laplace, materialized densely, has the zero row; `placement` now does too.
-
 ## Why believe it
 
 * The reference comes from **outside the tensor world**: the qtt-laplace repository ships a FEniCS convergence curve (0.34034426 at 11253 dofs, 0.34037443 at 15882, 0.34039282 at 21787), and the QTT energies converge to it from above with the expected first-order rate in the energy.
-* The overlap with **the published QTT column** is at its printing precision: 1.7e-14, 1.5e-9, 1.6e-9 at $d = 2, 3, 4$ — two independent implementations of the same algorithm (the original on ttpy 2018, this one on ttpy2) agreeing digit for digit.
-* The building blocks are pinned separately in `tests/test_qtt_fem.py`: `placement` against dense identity-and-shift (including the zeroed fake row), the assembled stiffness against symmetry and constant-killing, second-order Poisson convergence on the square, and the curved-map cross path against direct sampling.
+* The overlap with **the published QTT column** is at its printing precision: 1.7e-14, 1.5e-9, 1.6e-9 at $d = 2, 3, 4$ — two independent implementations of the same algorithm agreeing digit for digit.
+* The building blocks are pinned separately in `tests/test_qtt_fem.py`: `placement` against dense identity-and-shift, the assembled stiffness against symmetry and constant-killing, second-order Poisson convergence on the square, and the curved-map cross path against direct sampling.
 
 ## Run it
 
@@ -136,5 +134,5 @@ keeps only the triangle's own geometry and its reference numbers.
 ## References
 
 * L. Markeeva — [`qtt-laplace`](https://github.com/RerRayne/qtt-laplace): the original benchmark, the `SolutionOnTriangle` notebook, the FEniCS and TT energy tables this page reproduces.
-* L. Markeeva, I. Tsybulin, I. Oseledets — QTT solvers on complicated domains via z-order curves, *QTT-isogeometric solver in two dimensions*, [J. Comput. Phys. 424:109835, 2021](https://doi.org/10.1016/j.jcp.2020.109835) ([arXiv:1802.02839](https://arxiv.org/abs/1802.02839)): the line of work behind the patch technique; `tt.zkron` / `tt.zkronv` / `tt.zmeshgrid` / `tt.zaffine` are Markeeva's contributions to ttpy (2018), carried into ttpy2 with credit in `tt/core/tools.py`.
+* L. Markeeva, I. Tsybulin, I. Oseledets — QTT solvers on complicated domains via z-order curves, *QTT-isogeometric solver in two dimensions*, [J. Comput. Phys. 424:109835, 2021](https://doi.org/10.1016/j.jcp.2020.109835) ([arXiv:1802.02839](https://arxiv.org/abs/1802.02839)): the line of work behind the patch technique; `tt.zkron` / `tt.zkronv` / `tt.zmeshgrid` / `tt.zaffine` are Markeeva's contributions to ttpy.
 * S. Dolgov, D. Savostyanov — AMEn, *SIAM J. Sci. Comput.* 36(5), 2014: the solver the coupled block system goes through.
