@@ -538,7 +538,7 @@ def test_permute_returns_a_compressed_representation():
 
 
 def test_markdown_math_avoids_the_spacing_commands_github_eats():
-    """``\\,`` ``\;`` ``\\!`` inside math render as literal punctuation on GitHub.
+    """``\\,`` ``\\;`` ``\\!`` inside math render as literal punctuation on GitHub.
 
     GitHub applies markdown backslash-escaping *before* the math renderer
     sees the formula, so a thin space becomes a comma, a medium space a
@@ -560,4 +560,37 @@ def test_markdown_math_avoids_the_spacing_commands_github_eats():
             for hit in re.findall(r"\\[,;!:]", span):
                 bad.append(f"{path.relative_to(root)}: {hit} in {span[:60]!r}")
     assert not bad, ("markdown eats these before KaTeX; use \\quad or \\ :\n"
+                     + "\n".join(bad[:10]))
+
+
+def test_markdown_display_math_has_no_line_starting_with_a_list_marker():
+    """A line inside ``$$...$$`` that starts with ``+``/``-``/``*`` breaks GitHub.
+
+    GitHub runs block-markdown before the math renderer, so a continuation
+    line of a display formula that begins with a list bullet character is
+    parsed as a list item and splits the ``$$`` block: the sample-DIRT bridge
+    formula ``... = \\alpha \\Phi^{-1}(U) \\n + \\sqrt{...} \\varepsilon``
+    rendered as raw LaTeX with a stray bullet until this was found.  Keep
+    display math whose continuation lines start with ``+``/``-`` on a single
+    line (or lead the line with a non-marker token).
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    block = re.compile(r"\$\$(.*?)\$\$", re.S)
+    marker = re.compile(r"^\s*[-+*] ")
+    bad = []
+    for path in list(root.glob("*.md")) + list(root.glob("docs/**/*.md")) \
+            + list(root.glob("examples/**/*.md")):
+        text = path.read_text()
+        for span in block.findall(text):
+            if "\n" not in span:
+                continue
+            for line in span.split("\n"):
+                if marker.match(line):
+                    rel = path.relative_to(root)
+                    bad.append(f"{rel}: {line.strip()[:60]!r}")
+    assert not bad, ("display math line starts with a list marker; GitHub "
+                     "splits the $$ block. Put it on one line:\n"
                      + "\n".join(bad[:10]))

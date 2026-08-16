@@ -10,13 +10,7 @@
 
 The time-dependent Schrödinger equation
 
-$$
-i \frac{\partial\psi}{\partial t} = H\psi,
-\qquad
-H = -\frac{1}{2}\Delta + \frac{1}{2}\sum_{k=1}^{f} q_k^2
-    + \lambda \sum_{k \lt f} \left(q_k^2  q_{k+1} - \frac{q_{k+1}^3}{3}\right),
-\qquad \lambda = 0.111803,
-$$
+$$i \frac{\partial\psi}{\partial t} = H\psi, \qquad H = -\frac{1}{2}\Delta + \frac{1}{2}\sum_{k=1}^{f} q_k^2 + \lambda \sum_{k \lt f} \left(q_k^2  q_{k+1} - \frac{q_{k+1}^3}{3}\right), \qquad \lambda = 0.111803,$$
 
 with $f = 10$ degrees of freedom and the initial packet a product of shifted Gaussians $\prod_k e^{-(q_k-2)^2/2}$ — the experiment of section 6.2 of [LOV15], verbatim, which in turn is the MCTDH benchmark of Nest and Meyer.
 

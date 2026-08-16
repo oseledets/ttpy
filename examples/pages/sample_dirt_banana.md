@@ -40,13 +40,7 @@ def banana_samples(count, rng):
 
 If $U_\star$ is a target sample and $\varepsilon\sim\mathcal N(0,I)$ is fresh noise, define
 
-$$
-Z_\alpha
-= \alpha \Phi^{-1}(U_\star)
-+ \sqrt{1-\alpha^2} \varepsilon,
-\qquad
-U_\alpha = \Phi(Z_\alpha).
-$$
+$$Z_\alpha = \alpha \Phi^{-1}(U_\star) + \sqrt{1-\alpha^2}\varepsilon, \qquad U_\alpha = \Phi(Z_\alpha).$$
 
 At $\alpha=0$, $U_0$ is exactly uniform; at $\alpha=1$, $U_1=U_\star$.  Thus every intermediate law can be sampled without evaluating a density:
 
@@ -74,12 +68,7 @@ $$
 
 If $p_\ell$ is the density of $Y_\ell$ relative to the uniform measure $\mu$ on the square, write its correction as $p_\ell=1+a_\ell$.  The population objective used by the example is
 
-$$
-\mathcal J_\ell(a)
-= \frac12 \mathbb E_\mu[a^2]
-- \mathbb E_{Y_\ell}[a]
-+ \mathbb E_\mu[a].
-$$
+$$\mathcal J_\ell(a) = \tfrac12 \mathbb E_\mu[a^2] - \mathbb E_{Y_\ell}[a] + \mathbb E_\mu[a].$$
 
 Completing the square shows that its unconstrained minimizer is exactly
 

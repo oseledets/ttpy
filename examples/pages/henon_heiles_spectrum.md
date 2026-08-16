@@ -8,13 +8,7 @@
 
 The spectral method of quantum molecular dynamics — the workhorse of MCTDH (Beck–Meyer). Instead of diagonalizing $H$, evolve a packet under the time-dependent Schrödinger equation
 
-$$
-i \frac{\partial\psi}{\partial t} = H\psi,
-\qquad
-H = \sum_{i=1}^{d} \frac{1}{2}\left(-\frac{\partial^2}{\partial q_i^2} + q_i^2\right)
-    + \lambda \sum_{i=1}^{d-1} \left(q_i^2  q_{i+1} - \frac{q_{i+1}^3}{3}\right),
-\qquad \lambda = 0.111803,
-$$
+$$i \frac{\partial\psi}{\partial t} = H\psi, \qquad H = \sum_{i=1}^{d} \frac{1}{2}\left(-\frac{\partial^2}{\partial q_i^2} + q_i^2\right) + \lambda \sum_{i=1}^{d-1} \left(q_i^2  q_{i+1} - \frac{q_{i+1}^3}{3}\right), \qquad \lambda = 0.111803,$$
 
 with $\psi(0)$ a displaced Gaussian (a product coherent state), and record only the **autocorrelation**
 
