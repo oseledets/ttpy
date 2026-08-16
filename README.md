@@ -2,19 +2,20 @@
 
 The Tensor Train toolbox, rewritten in pure Python.
 
-Not on PyPI yet (the `ttpy` name there is still the 1.x Fortran package);
-install straight from this branch -- pure Python, no compiler needed:
+Not on PyPI yet (the `ttpy` name there is still the 1.x Fortran package,
+now kept on the `ttpy1` branch); install straight from the repository --
+pure Python, no compiler needed:
 
 ```bash
-pip install "ttpy[fast] @ git+https://github.com/oseledets/ttpy@ttpy2"
+pip install "ttpy[fast] @ git+https://github.com/oseledets/ttpy"
 # or with uv:
-uv pip install "ttpy[fast] @ git+https://github.com/oseledets/ttpy@ttpy2"
+uv pip install "ttpy[fast] @ git+https://github.com/oseledets/ttpy"
 ```
 
 or, for development:
 
 ```bash
-git clone -b ttpy2 https://github.com/oseledets/ttpy && cd ttpy
+git clone https://github.com/oseledets/ttpy && cd ttpy
 uv venv && uv pip install -e ".[fast,test]"    # or plain pip install -e
 uv run pytest -q   # ~1000 tests, a couple of minutes
 ```
