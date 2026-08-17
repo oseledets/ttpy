@@ -207,6 +207,34 @@ def _rhs(ops, u, v, nu, eps, rmax, cross=False, cache=None, tag=""):
     return du, dv
 
 
+def step_rk4(ops, u, v, dt, nu, project, eps=1e-8, rmax=40):
+    """One classical RK4 projection step.
+
+    Heun is unconditionally unstable for pure advection -- its amplification on
+    the imaginary axis is ``sqrt(1 + y^4/4) > 1`` -- and with the 8th-order
+    stencil (whose symbol reaches 1.73/h, 1.73x the second-order one) that grows
+    by 1.0018 per step at CFL 0.2, i.e. 1e8 over a 10^4-step run.  RK4 is stable
+    up to ``|z| = 2 sqrt(2)``, which the same stencil reaches only at CFL ~ 1.6,
+    so the four right-hand sides per step buy a step that is stable at all.
+    """
+    k1u, k1v = _rhs(ops, u, v, nu, eps, rmax)
+    a_u = (u + k1u * (0.5 * dt)).round(eps, rmax=rmax)
+    a_v = (v + k1v * (0.5 * dt)).round(eps, rmax=rmax)
+    a_u, a_v = project(a_u, a_v)
+    k2u, k2v = _rhs(ops, a_u, a_v, nu, eps, rmax)
+    b_u = (u + k2u * (0.5 * dt)).round(eps, rmax=rmax)
+    b_v = (v + k2v * (0.5 * dt)).round(eps, rmax=rmax)
+    b_u, b_v = project(b_u, b_v)
+    k3u, k3v = _rhs(ops, b_u, b_v, nu, eps, rmax)
+    c_u = (u + k3u * dt).round(eps, rmax=rmax)
+    c_v = (v + k3v * dt).round(eps, rmax=rmax)
+    c_u, c_v = project(c_u, c_v)
+    k4u, k4v = _rhs(ops, c_u, c_v, nu, eps, rmax)
+    u2 = (u + (k1u + k2u * 2.0 + k3u * 2.0 + k4u) * (dt / 6.0)).round(eps, rmax=rmax)
+    v2 = (v + (k1v + k2v * 2.0 + k3v * 2.0 + k4v) * (dt / 6.0)).round(eps, rmax=rmax)
+    return project(u2, v2)
+
+
 def step(ops, u, v, dt, nu, project, eps=1e-8, rmax=40, cross=False, cache=None):
     """One second-order (Heun) projection step, all in QTT at bond <= rmax.
 
