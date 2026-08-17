@@ -205,8 +205,11 @@ def _advect_skew(ops, a, u, v, eps, rmax):
     """
     conv = _advect_fused(u, tt.matvec(ops.Dx, a), v, tt.matvec(ops.Dy, a),
                          eps, rmax)
-    ua = (u * a).round(eps, rmax=rmax)
-    va = (v * a).round(eps, rmax=rmax)
+    # the divergence-form products go through the fused Hadamard as well: formed
+    # explicitly they carry rank r_u r_a before rounding, which at a binding cap
+    # costs more than the whole rest of the right-hand side.
+    ua = tt.hadamard(u, a, eps=eps, rmax=rmax)
+    va = tt.hadamard(v, a, eps=eps, rmax=rmax)
     divf = (tt.matvec(ops.Dx, ua) + tt.matvec(ops.Dy, va)).round(eps, rmax=rmax)
     return ((conv + divf) * 0.5).round(eps, rmax=rmax)
 
