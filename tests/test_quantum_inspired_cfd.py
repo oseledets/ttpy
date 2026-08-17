@@ -139,3 +139,35 @@ def test_vorticity_agrees_with_velocity_pressure_solver():
             om, g = vorticity.step_rk2(ops, om, dt, nu, eps=1e-9, rmax=40,
                                        guess=g)
     assert (om - om_vel).norm() / om_vel.norm() < 1e-4
+
+
+# --- 3D solver ---------------------------------------------------------------
+
+ns3d = pytest.importorskip("qtt_ns3d")
+
+
+def test_3d_abc_beltrami_decays_analytically():
+    """The ABC flow is Beltrami (curl V = V), so its advection is a pure
+    gradient absorbed by the pressure and it decays as V(t)=V0 exp(-nu t):
+    the kinetic energy must follow exp(-2 nu t).  Validates the octal 3D
+    operators, the divergence-free projection, and the advection cancellation."""
+    d = 4
+    ops = ns3d.Operators3D(d, box=2 * np.pi, order=8)
+    u = ops.field(lambda x, y, z: np.sin(z) + np.cos(y))
+    v = ops.field(lambda x, y, z: np.sin(x) + np.cos(z))
+    w = ops.field(lambda x, y, z: np.sin(y) + np.cos(x))
+    nu, dt, n = 0.1, 0.1 * ops.h, 20
+
+    def energy(u, v, w):
+        return tt.dot(u, u) + tt.dot(v, v) + tt.dot(w, w)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        project = ns3d.make_projector(ops, eps=1e-9, rmax=30, tol=1e-9)
+        u, v, w = project(u, v, w)
+        assert ns3d.divergence(ops, u, v, w, 1e-12, 30).norm() < 1e-9
+        e0 = energy(u, v, w)
+        for _ in range(n):
+            u, v, w = ns3d.step(ops, u, v, w, dt, nu, project, eps=1e-9, rmax=30)
+    ratio = energy(u, v, w) / e0
+    assert abs(ratio - np.exp(-2 * nu * n * dt)) < 1e-5
