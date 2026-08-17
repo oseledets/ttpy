@@ -200,7 +200,7 @@ def turbulence(d=7, nu=1e-4, T=3.0, chi=80, order=8, cfl=0.3,
     every = max(1, nsteps // nframes)
     idx = _zorder_index(d)
     frames, times, ranks, enst = [], [], [], []
-    guess = None
+    guess, cache = None, {}
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         for s in range(nsteps + 1):
@@ -211,7 +211,7 @@ def turbulence(d=7, nu=1e-4, T=3.0, chi=80, order=8, cfl=0.3,
                 enst.append(0.5 * float(tt.dot(omega, omega)) * ops.h ** 2)
             if s < nsteps:
                 omega, guess = w.step_rk2(ops, omega, dt, nu, eps=eps,
-                                          rmax=chi, guess=guess)
+                                          rmax=chi, guess=guess, cache=cache)
     return dict(frames=frames, t=np.array(times), ranks=np.array(ranks),
                 energy=np.array(enst), enstrophy=np.array(enst), d=d, nu=nu,
                 chi=chi,

@@ -37,26 +37,51 @@ def velocity(ops, omega, eps, rmax, tol=1e-8, guess=None):
     return u.round(eps, rmax=rmax), v.round(eps, rmax=rmax), psi
 
 
-def advection(ops, omega, u, v, eps, rmax):
-    """(V . grad) omega, bounded rank."""
+def advection(ops, omega, u, v, eps, rmax, y0=None, cross_from=200):
+    """(V . grad) omega at bounded rank.
+
+    The Hadamard ``u*ox`` has rank ``r_u r_ox``; forming it and rounding is the
+    default.  A warm-started cross of ``u*ox + v*oy`` (``multifuncrs``) converges
+    in a *single* sweep and beats the naive product once ``r_u r_ox`` is large
+    enough that its dense SVD dominates -- but only when ``y0`` is a genuinely
+    close guess.  In a time loop the previous step's term is a stale guess, so
+    the cross needs several sweeps and loses to the naive SVD at the moderate
+    ranks (bond ~40-90) these flows reach; it pays off only in the paper's
+    saturated regime (bond ~200, where ``r^2 ~ 4e4`` makes the dense SVD
+    prohibitive).  Hence the trigger sits high by default -- pass a lower
+    ``cross_from`` to force it.
+    """
     ox = tt.matvec(ops.Dx, omega)
     oy = tt.matvec(ops.Dy, omega)
-    return (u * ox + v * oy).round(eps, rmax=rmax)
+    if max(max(u.r), max(ox.r)) >= cross_from:
+        term = tt.multifuncrs([u, ox, v, oy],
+                              lambda P: P[:, 0] * P[:, 1] + P[:, 2] * P[:, 3],
+                              eps=eps, rmax=rmax, verb=0, y0=y0)
+    else:
+        term = (u * ox + v * oy).round(eps, rmax=rmax)
+    return term
 
 
-def rhs(ops, omega, nu, eps, rmax, guess=None):
+def rhs(ops, omega, nu, eps, rmax, guess=None, adv_y0=None):
     u, v, psi = velocity(ops, omega, eps, rmax, guess=guess)
-    adv = advection(ops, omega, u, v, eps, rmax)
+    adv = advection(ops, omega, u, v, eps, rmax, y0=adv_y0)
     visc = tt.matvec(ops.Lap, omega) * nu
-    return (visc - adv).round(eps, rmax=rmax), psi
+    return (visc - adv).round(eps, rmax=rmax), psi, adv
 
 
-def step_rk2(ops, omega, dt, nu, eps=1e-8, rmax=60, guess=None):
-    """Explicit Heun step on the full vorticity RHS (baseline integrator)."""
-    k1, psi = rhs(ops, omega, nu, eps, rmax, guess)
+def step_rk2(ops, omega, dt, nu, eps=1e-8, rmax=60, guess=None, cache=None):
+    """Explicit Heun step on the full vorticity RHS (baseline integrator).
+
+    ``cache`` is a persistent dict; pass the same one every step to warm-start
+    the cross-approximated advection (`advection`) from the previous step.
+    """
+    y0 = cache.get("adv") if cache is not None else None
+    k1, psi, a1 = rhs(ops, omega, nu, eps, rmax, guess, adv_y0=y0)
     w1 = (omega + k1 * dt).round(eps, rmax=rmax)
-    k2, _ = rhs(ops, w1, nu, eps, rmax, psi)
+    k2, _, a2 = rhs(ops, w1, nu, eps, rmax, psi, adv_y0=a1)
     w2 = (omega + (k1 + k2) * (0.5 * dt)).round(eps, rmax=rmax)
+    if cache is not None:
+        cache["adv"] = a2
     return w2, psi
 
 
