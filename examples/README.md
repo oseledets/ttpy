@@ -179,7 +179,7 @@ the solution.
 <i>Oracle: a manufactured $f=Ax_{\star}$ of known rank, plus the true residual.</i>
 </td>
 <td width="50%">
-<img src="../docs/media/qi_cfd_taylor_green.png" width="100%"><br>
+<img src="../docs/media/qi_cfd_turbulence.gif" width="100%"><br>
 <b><a href="quantum_inspired_cfd/README.md">quantum_inspired_cfd</a></b> (<a href="quantum_inspired_cfd/run.py">code</a>) — the
 "quantum-inspired" turbulence solver of Gourianov et al.
 (<a href="https://doi.org/10.1038/s43588-021-00181-1">Nature Comput. Sci. 2022</a>),
