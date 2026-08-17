@@ -25,34 +25,47 @@ all.  Two things make this the natural formulation here:
   the bounded-rank manifold, which is the paper's whole premise.  Passing
   ``solver="amen"`` instead lets the rank adapt, for reference runs.
 
-Measured against the projection route, though, the penalty loses on this stack.
-Taylor-Green, 64^2 grid, fixed rank 30, 30 steps::
+Which route wins depends on whether the rank cap **binds**, and that is the
+distinction that matters.
 
-    penalty, mu=1e5    |E - analytic| 9.4e-05   div 1.5e-02   0.27 s/step
+*When the flow is genuinely low rank* (Taylor-Green is rank 4, ABC rank 8) the
+cap never binds, no truncation happens, and the comparison is just "which solver
+is more accurate": the projection wins outright.  Taylor-Green, 64^2, rank cap
+30, 30 steps::
+
     penalty, mu=1e7    |E - analytic| 4.7e-05   div 1.5e-04   0.32 s/step
-    penalty, mu=1e8    |E - analytic| 4.7e-02   div 1.3e-04   0.31 s/step
     Chorin projection  |E - analytic| 8.7e-09   div 2.8e-07   0.02 s/step
 
-The same holds in 3D, more sharply.  ABC flow, 16^3, fixed rank 30, 20 steps
-(analytic ``E/E0 = 0.854636``)::
+*When the cap binds* -- the regime the paper is about -- the two do something
+structurally different: the projection solves and *then* truncates, so the
+truncation sits outside the scheme, while the penalty searches for the best
+field **on** the rank-chi manifold.  3D Taylor-Green at Re=400, 32^3, run to
+t=3 (full rank is 64), measured against the full-rank reference whose enstrophy
+peaks at ``Z/Z0 = 2.081``::
 
-    penalty, mu=1e5 (lobpcg)   E/E0 0.854375   div 1.2e-02   0.54 s/step
-    penalty, mu=1e7 (lobpcg)   E/E0 0.963050   div 1.8e-04   0.79 s/step
-    penalty, mu=1e7 (amen)     E/E0 0.745052   div 2.8e-04   1.30 s/step
-    Chorin projection          E/E0 0.854636   div 2.4e-06   0.14 s/step
+    chi=16  projection + truncation    Zpeak/Z0 2.380   (+14%)
+    chi=16  penalty / fixed-rank ALS   Zpeak/Z0 2.024   (-2.7%)
+    chi= 8  projection + truncation    Zpeak/Z0 2.409   (+16%)
 
-Note the mu=1e7 row: the two solvers miss in *opposite directions* by the same
-amount, which is the signature of an ill-conditioned system each stops solving
-somewhere different -- not noise.
+So at a binding cap the variational step reproduces the vortex-stretching peak
+several times more faithfully -- optimizing on the manifold beats truncating
+after the fact, which is the paper's premise.
 
-The penalty enforces ``div V = 0`` only to ``O(1/mu)`` while the conditioning of
-``mu D^T D + I/dt^2`` grows with ``mu`` -- by ``mu = 1e8`` the fixed-rank solve
-no longer converges in its sweep budget and the accuracy collapses, so there is
-a window in ``mu`` rather than a limit to take.  The projection is exact and,
-with ``amen_solve`` on the QTT Poisson, cheap: four orders more accurate and 15x
-faster here.  The variational step is the right tool when one must stay strictly
-on a fixed-rank manifold, or has no fast Poisson solve; with this toolbox's
-solvers, projection is the better default.
+``mu`` must be scaled, not guessed.  The penalty term ``mu ||D||^2`` competes
+with the data term ``1/dt^2``; with ``h=0.196, dt=0.0295`` those are ``mu*78``
+and ``1153``, so the balance sits near ``mu ~ 15`` and the useful window is a
+decade or two above it.  The sweep at ``chi=16`` (reference 2.081)::
+
+    mu=1e1   Zpeak/Z0 1.334   div 3.4e+01
+    mu=1e2   Zpeak/Z0 1.900   div 6.1e+00
+    mu=1e3   Zpeak/Z0 2.024   div 1.5e+00
+    mu=1e4   Zpeak/Z0 1.867   div 5.1e-01
+    mu=1e5   Zpeak/Z0 1.014   div  --      (over-damped: the solve minimizes
+                                            divergence and ignores momentum)
+
+Raising ``mu`` buys incompressibility and costs conditioning: too small and the
+field drifts off the divergence-free manifold, too large and the momentum term
+is swamped, the fixed-rank solve stalls, and the flow freezes.
 """
 
 import numpy as np
