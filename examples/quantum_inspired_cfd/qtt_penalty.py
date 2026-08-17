@@ -33,6 +33,18 @@ Taylor-Green, 64^2 grid, fixed rank 30, 30 steps::
     penalty, mu=1e8    |E - analytic| 4.7e-02   div 1.3e-04   0.31 s/step
     Chorin projection  |E - analytic| 8.7e-09   div 2.8e-07   0.02 s/step
 
+The same holds in 3D, more sharply.  ABC flow, 16^3, fixed rank 30, 20 steps
+(analytic ``E/E0 = 0.854636``)::
+
+    penalty, mu=1e5 (lobpcg)   E/E0 0.854375   div 1.2e-02   0.54 s/step
+    penalty, mu=1e7 (lobpcg)   E/E0 0.963050   div 1.8e-04   0.79 s/step
+    penalty, mu=1e7 (amen)     E/E0 0.745052   div 2.8e-04   1.30 s/step
+    Chorin projection          E/E0 0.854636   div 2.4e-06   0.14 s/step
+
+Note the mu=1e7 row: the two solvers miss in *opposite directions* by the same
+amount, which is the signature of an ill-conditioned system each stops solving
+somewhere different -- not noise.
+
 The penalty enforces ``div V = 0`` only to ``O(1/mu)`` while the conditioning of
 ``mu D^T D + I/dt^2`` grows with ``mu`` -- by ``mu = 1e8`` the fixed-rank solve
 no longer converges in its sweep budget and the accuracy collapses, so there is
