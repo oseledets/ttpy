@@ -194,13 +194,8 @@ def hadamard(*factors, eps=1e-10, rmax=None):
 
     Equivalent to ``(a * b * ...).round(eps, rmax)`` but never forms the
     inflated product: ``O(d n^2 r^4)`` instead of ``O(d n r^6)`` for two
-    factors of rank ``r``.  Measured on ``n=4, d=8`` against the explicit
-    route, at identical ranks and 1e-14 agreement::
-
-        rank 16    0.034 s -> 0.052 s   (explicit still wins)
-        rank 32    0.493 s -> 0.202 s   (2.4x)
-        rank 64   11.97  s -> 0.480 s   (25x)
-        rank 96   79.6   s -> 0.622 s   (128x)
+    factors of rank ``r``, so it pays off from bond ~20 upwards and is an order
+    of magnitude or more ahead by bond 64.
 
     Args:
         *factors: two or more :class:`tt.vector` with identical mode sizes.

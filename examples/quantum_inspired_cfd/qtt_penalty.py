@@ -7,86 +7,38 @@ solve per stage.  Gourianov et al. instead advance the velocity by *minimizing*
     Theta(V*) = mu ||div V*||^2 + || (V* - V)/dt + (V.grad)V - nu Lap V ||^2
 
 over the MPS manifold.  Written out, ``Theta`` is a quadratic form: with
-
-    R = V/dt - (V.grad)V + nu Lap V,
-
-its stationarity condition is the SPD linear system
+``R = V/dt - (V.grad)V + nu Lap V`` its stationarity condition is the SPD system
 
     (mu D^T D + I/dt^2) V* = R/dt,
 
-so a step is one SPD solve and no Poisson equation and no projection appear at
-all.  Two things make this the natural formulation here:
+so a step is one SPD solve, with no Poisson equation and no projection at all.
+The penalty couples the velocity components, so the unknown is the whole field:
+one tensor train with a trailing component mode of size ``K`` (2 in 2D, 3 in 3D)
+appended to the z-order spatial modes, and the divergence as a non-square
+``K -> 1`` TT-matrix.  Being SPD, at a **fixed** bond dimension the system is
+exactly the fixed-rank energy minimization of ``tt.lobpcg_solve``, so the flow
+never leaves the bounded-rank manifold -- the paper's premise.  ``solver="amen"``
+lets the rank adapt instead, for reference runs.
 
-* the penalty couples the velocity components, so the unknown is the whole
-  field -- carried as one tensor train with an extra *component* mode of size
-  ``K`` (2 in 2D, 3 in 3D) appended to the z-order spatial modes;
-* the system is SPD, so at a **fixed** bond dimension it is exactly the
-  fixed-rank energy minimization of ``tt.lobpcg_solve`` -- the flow never leaves
-  the bounded-rank manifold, which is the paper's whole premise.  Passing
-  ``solver="amen"`` instead lets the rank adapt, for reference runs.
+Choosing ``mu``
+---------------
+``mu`` must be scaled, not guessed: the penalty term ``mu ||D||^2`` competes with
+the data term ``1/dt^2``, so the balance sits near ``mu ~ (1/dt^2) / ||D||^2`` and
+the useful window is one or two decades above it.  Larger ``mu`` presses the
+divergence down but conditions the system worse, and past the window the
+fixed-rank solve stops converging inside its sweep budget.
 
-Which route wins depends on whether the rank cap **binds**, and that is the
-distinction that matters.
+Do not answer that cost by capping the sweeps.  An under-solved ill-conditioned
+step does not fail -- it returns a plausible wrong field (measured on the 1024^2
+jet: one sweep at an over-large ``mu`` collapsed the enstrophy to zero while
+running eight times faster).  Lower ``mu`` until the solve converges on its own.
 
-*When the flow is genuinely low rank* (Taylor-Green is rank 4, ABC rank 8) the
-cap never binds, no truncation happens, and the comparison is just "which solver
-is more accurate": the projection wins outright.  Taylor-Green, 64^2, rank cap
-30, 30 steps::
-
-    penalty, mu=1e7    |E - analytic| 4.7e-05   div 1.5e-04   0.32 s/step
-    Chorin projection  |E - analytic| 8.7e-09   div 2.8e-07   0.02 s/step
-
-*When the cap binds* -- the regime the paper is about -- the two do something
-structurally different: the projection solves and *then* truncates, so the
-truncation sits outside the scheme, while the penalty searches for the best
-field **on** the rank-chi manifold.  3D Taylor-Green at Re=400, 32^3, run to
-t=3 (full rank is 64), measured against the full-rank reference whose enstrophy
-peaks at ``Z/Z0 = 2.081``::
-
-    chi=16  projection + truncation    Zpeak/Z0 2.380   (+14%)
-    chi=16  penalty / fixed-rank ALS   Zpeak/Z0 2.024   (-2.7%)
-    chi= 8  projection + truncation    Zpeak/Z0 2.409   (+16%)
-
-So at a binding cap the variational step reproduces the vortex-stretching peak
-several times more faithfully -- optimizing on the manifold beats truncating
-after the fact, which is the paper's premise.
-
-``mu`` must be scaled, not guessed.  The penalty term ``mu ||D||^2`` competes
-with the data term ``1/dt^2``; with ``h=0.196, dt=0.0295`` those are ``mu*78``
-and ``1153``, so the balance sits near ``mu ~ 15`` and the useful window is a
-decade or two above it.  The sweep at ``chi=16`` (reference 2.081)::
-
-    mu=1e1   Zpeak/Z0 1.334   div 3.4e+01
-    mu=1e2   Zpeak/Z0 1.900   div 6.1e+00
-    mu=1e3   Zpeak/Z0 2.024   div 1.5e+00
-    mu=1e4   Zpeak/Z0 1.867   div 5.1e-01
-    mu=1e5   Zpeak/Z0 1.014   div  --      (over-damped: the solve minimizes
-                                            divergence and ignores momentum)
-
-Raising ``mu`` buys incompressibility and costs conditioning: too small and the
-field drifts off the divergence-free manifold, too large and the momentum term
-is swamped, the fixed-rank solve stalls, and the flow freezes.
-
-That cost is not only accuracy, it is time, and it hides a trap.  On the paper's
-1024^2 jet at fixed rank 33 the sweep budget the solve needs is set by ``mu``::
-
-    mu = 1x balance    1.25 s/step   1 sweep    converged   div 3.35
-    mu = 10x           1.73 s/step   1 sweep    converged   div 2.43
-    mu = 100x          3.72 s/step   3 sweeps   converged   div 1.03
-    mu = 1000x        10.67 s/step  20 sweeps   NOT conv    div 0.34
-
-(``div`` is absolute; against the flow scale ``||V||/h`` even the first row is a
-relative 5e-6, so incompressibility is not what the extra sweeps buy.)  The trap
-is what happens if one answers the cost by capping the sweeps instead of
-lowering ``mu``.  At ``mu = 1000x``, against a 20-sweep reference::
-
-    1 sweep    7.7x faster   field differs by 1.0e+00   enstrophy 0 -- collapsed
-    2 sweeps   5.7x faster   field differs by 6.3e-02   enstrophy +39%
-    3 sweeps   4.4x faster   field differs by 2.1e-02   enstrophy +21%
-
-An under-solved ill-conditioned step does not fail, it returns a plausible wrong
-field.  Lower ``mu`` until the solve converges on its own; do not buy speed by
-stopping it early.
+Which route wins depends on whether the rank cap binds.  Where the flow is
+genuinely low rank the cap never binds, no truncation happens, and the
+projection is both more accurate and faster.  Where the cap binds -- the regime
+the paper is about -- the projection solves and *then* truncates, while this
+step searches for the best field on the rank-chi manifold, and it reproduces the
+vortex-stretching peak several times more faithfully.
 """
 
 import numpy as np
