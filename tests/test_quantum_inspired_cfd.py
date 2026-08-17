@@ -18,7 +18,17 @@ import tt
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir,
                                 "examples", "quantum_inspired_cfd"))
 qtt_ns = pytest.importorskip("qtt_ns")
-import run as ns_run  # noqa: E402
+
+# both this example and examples/smoluchowski ship a `run.py`; importing either
+# as the bare name `run` poisons sys.modules for the other, so load ours under
+# its own name.
+import importlib.util as _ilu  # noqa: E402
+_spec = _ilu.spec_from_file_location(
+    "qi_cfd_run", os.path.join(os.path.dirname(__file__), os.pardir,
+                               "examples", "quantum_inspired_cfd", "run.py"))
+ns_run = _ilu.module_from_spec(_spec)
+sys.modules["qi_cfd_run"] = ns_run
+_spec.loader.exec_module(ns_run)
 
 
 def _zorder_grid(vec, d):
