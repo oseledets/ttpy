@@ -31,10 +31,18 @@ horizontal projected energy gradient, divided by ``||f||``.  It certifies a
 stationary point of the *fixed-rank* problem; it is not the same as the full
 linear residual when the selected ranks cannot represent the exact solution.
 Set ``check_true_res=True`` to report the latter as well.
+
+Backend agnostic: every array operation goes through :mod:`tt.backend`, so the
+solver runs unchanged on numpy and on torch (CPU or GPU) cores; ``A`` and ``f``
+are brought to the backend of ``x0``, which owns the answer.  The only numpy in
+here is the host-side bookkeeping (ranks, convergence tests, printing) and the
+compiled float64 local kernel, which is one branch of a dispatch whose other
+branch is the pure implementation.
 """
 
 from __future__ import annotations
 
+import math
 import time
 import warnings
 from dataclasses import dataclass, field
@@ -57,6 +65,7 @@ from .amen import (
     _push_right,
     _qr_left,
     _rq_right,
+    _vdot,
 )
 from .amen_mv import (
     _matrix_cores,
@@ -67,6 +76,12 @@ from .amen_mv import (
 )
 
 __all__ = ["LOBPCGSolveHistory", "lobpcg_solve"]
+
+#: Smallest positive float64.  It only ever guards a division by a *host* scalar
+#: (``||rhs||`` of a local block), so it is a plain Python constant and not a
+#: per-backend quantity: it is below the smallest normal of every dtype the
+#: package supports, which is all a guard needs to be.
+_TINY = float(np.finfo(np.float64).tiny)
 
 
 @dataclass
@@ -106,22 +121,31 @@ class LOBPCGSolveHistory:
 
 def _interfaces(depth, boundary):
     result = [None] * (depth + 1)
-    result[0] = boundary.copy()
-    result[depth] = boundary.copy()
+    result[0] = bk.copy(boundary)
+    result[depth] = bk.copy(boundary)
     return result
 
 
 def _copy_cores(cores):
-    return [np.array(core, copy=True) for core in cores]
+    return [bk.copy(core) for core in cores]
 
 
-def _require_numpy(name, cores):
-    for site, core in enumerate(cores):
-        if type(core) is not np.ndarray:
-            raise NotImplementedError(
-                f"lobpcg_solve currently supports numpy cores; {name} core "
-                f"{site} has backend {bk.backend_of(core).name!r}"
-            )
+def _numel(a):
+    """Number of entries of a backend array (torch spells ``.size`` a method)."""
+    total = 1
+    for extent in a.shape:
+        total *= int(extent)
+    return total
+
+
+def _ones(shape, like):
+    """``ones`` on the backend and dtype of ``like`` (no ``bk.ones`` exists)."""
+    return bk.zeros(shape, dtype=bk.dtype_of(like), like=like) + 1.0
+
+
+def _conj_t(a):
+    """``a^H`` of a matrix.  ``.T`` is numpy-only spelling for a permutation."""
+    return bk.transpose(a.conj(), (1, 0))
 
 
 def _check_fixed_profile(cores):
@@ -151,7 +175,7 @@ def _right_canonicalize(acores, fcores, xcores, one, one2):
     for site in range(depth - 1, 0, -1):
         factor, core = _rq_right(xcores[site])
         xcores[site] = core
-        right_frame[site] = np.array(core, copy=True)
+        right_frame[site] = bk.copy(core)
         xcores[site - 1] = _push_right(xcores[site - 1], factor)
         phia_right[site] = _phi_next(
             _project(phia_right[site + 1], acores[site], core, "rl"),
@@ -163,7 +187,7 @@ def _right_canonicalize(acores, fcores, xcores, one, one2):
         )
     # It is not part of a right frame used by a local chart, but keeping the
     # slot populated makes snapshots self-describing and easier to inspect.
-    right_frame[0] = np.array(xcores[0], copy=True)
+    right_frame[0] = bk.copy(xcores[0])
     return phia_right, phif_right, right_frame
 
 
@@ -171,7 +195,7 @@ def _right_frame_overlaps(old, new):
     """All ``R_old.H R_new`` contractions needed to transport core vectors."""
     depth = len(new)
     result = [None] * (depth + 1)
-    result[depth] = np.ones((1, 1), dtype=new[-1].dtype)
+    result[depth] = _ones((1, 1), new[-1])
     overlap = result[depth]
     for site in range(depth - 1, 0, -1):
         old_core = old[site]
@@ -180,9 +204,9 @@ def _right_frame_overlaps(old, new):
         contracted = (
             old_core.reshape(old_left * mode, old_right) @ overlap
         ).reshape(old_left, mode * new_core.shape[2])
-        overlap = contracted @ new_core.reshape(
-            new_core.shape[0], mode * new_core.shape[2]
-        ).conj().T
+        overlap = contracted @ _conj_t(
+            new_core.reshape(new_core.shape[0], mode * new_core.shape[2])
+        )
         result[site] = overlap
     return result
 
@@ -199,9 +223,10 @@ def _transport_direction(direction, left_overlap, right_overlap):
 def _valid_direction(direction):
     if direction is None:
         return None
-    norm = float(np.linalg.norm(direction))
-    threshold = 1000.0 * np.finfo(float).eps * np.sqrt(direction.size)
-    if not np.isfinite(norm) or norm <= threshold:
+    norm = float(bk.norm(direction))
+    threshold = (1000.0 * bk.eps_of(bk.dtype_of(direction))
+                 * math.sqrt(_numel(direction)))
+    if not math.isfinite(norm) or norm <= threshold:
         return None
     return direction / norm
 
@@ -210,63 +235,64 @@ def _generic_augmented_pcg(apply, precondition, rhs, coarse, tol, steps):
     """Backend-independent formula used when the fused float64 path is absent."""
     shape = rhs.shape
     right = rhs.reshape(-1)
-    right_norm = float(np.linalg.norm(right))
-    correction = np.zeros_like(right)
-    residual = right.copy()
+    right_norm = float(bk.norm(right))
+    eps_mach = bk.eps_of(bk.dtype_of(right))
+    correction = bk.zeros(right.shape, dtype=bk.dtype_of(right), like=right)
+    residual = bk.copy(right)
     matvecs = 0
     coarse_ok = False
     hp = None
     denominator = 0.0
 
     def matvec(value):
-        return np.asarray(apply(value.reshape(shape))).reshape(-1)
+        return apply(value.reshape(shape)).reshape(-1)
 
     if coarse is not None:
         coarse = coarse.reshape(-1)
         hp = matvec(coarse)
         matvecs += 1
-        denominator = float(np.real(np.vdot(coarse, hp)))
-        scale = np.sqrt(float(np.vdot(coarse, coarse).real)
-                        * float(np.vdot(hp, hp).real))
-        if denominator > 100.0 * np.finfo(float).eps * scale:
-            alpha = np.vdot(coarse, residual) / denominator
-            correction += alpha * coarse
-            residual -= alpha * hp
+        denominator = float(_vdot(coarse, hp).real)
+        scale = math.sqrt(float(_vdot(coarse, coarse).real)
+                          * float(_vdot(hp, hp).real))
+        if denominator > 100.0 * eps_mach * scale:
+            alpha = _vdot(coarse, residual) / denominator
+            correction = correction + alpha * coarse
+            residual = residual - alpha * hp
             coarse_ok = True
 
     def projected_precondition(value):
-        z = np.asarray(precondition(value.reshape(shape))).reshape(-1).copy()
+        z = bk.copy(precondition(value.reshape(shape)).reshape(-1))
         if coarse_ok:
-            z -= coarse * (np.vdot(hp, z) / denominator)
+            z = z - coarse * (_vdot(hp, z) / denominator)
         return z
 
     zvec = projected_precondition(residual)
-    rho = float(np.real(np.vdot(residual, zvec)))
-    search = zvec.copy()
+    rho = float(_vdot(residual, zvec).real)
+    search = bk.copy(zvec)
     last_search = None
     used = 0
     breakdown = False
     fresh_budget = max(int(steps) - int(coarse is not None), 0)
     for _ in range(fresh_budget):
-        if float(np.linalg.norm(residual)) <= tol * right_norm:
+        if float(bk.norm(residual)) <= tol * right_norm:
             break
         image = matvec(search)
         matvecs += 1
-        curvature = float(np.real(np.vdot(search, image)))
-        scale = np.sqrt(float(np.vdot(search, search).real)
-                        * float(np.vdot(image, image).real))
-        if curvature <= 100.0 * np.finfo(float).eps * scale or rho <= 0.0:
+        curvature = float(_vdot(search, image).real)
+        scale = math.sqrt(float(_vdot(search, search).real)
+                          * float(_vdot(image, image).real))
+        if curvature <= 100.0 * eps_mach * scale or rho <= 0.0:
             breakdown = True
             break
-        last_search = search.copy()
+        last_search = bk.copy(search)
         used += 1
         alpha = rho / curvature
-        correction += alpha * search
-        residual -= alpha * image
-        if float(np.linalg.norm(residual)) <= tol * right_norm:
+        correction = correction + alpha * search
+        residual = residual - alpha * image
+        if float(bk.norm(residual)) <= tol * right_norm:
             break
         zvec = projected_precondition(residual)
-        rho_new = float(np.real(np.vdot(residual, zvec)))
+        rho_new = float(_vdot(residual, zvec).real)
         if rho_new <= 0.0:
             breakdown = True
             break
@@ -276,9 +302,7 @@ def _generic_augmented_pcg(apply, precondition, rhs, coarse, tol, steps):
     memory = last_search if last_search is not None else (
         coarse if coarse_ok else None
     )
-    relative = float(np.linalg.norm(residual)) / max(
-        right_norm, np.finfo(float).tiny
-    )
+    relative = float(bk.norm(residual)) / max(right_norm, _TINY)
     return correction.reshape(shape), _valid_direction(
         None if memory is None else memory.reshape(shape)
     ), {
@@ -292,11 +316,19 @@ def _generic_augmented_pcg(apply, precondition, rhs, coarse, tol, steps):
 
 def _augmented_pcg(phi_left, acore, phi_right, rhs, coarse, tol, steps,
                    prec_kind):
-    """Solve one local correction equation and return its next memory vector."""
+    """Solve one local correction equation and return its next memory vector.
+
+    The fused kernel below is compiled for contiguous real float64 *numpy*
+    buffers and nothing else, so the dispatch is the one used throughout the
+    package (``amen_mv._project``): the compiled path when the block is such an
+    array, the backend-agnostic :func:`_generic_augmented_pcg` otherwise --
+    complex blocks, float32, and every torch/GPU block.  The two paths compute
+    the same recurrence, so the choice is a cost decision only.
+    """
     apply, shape = _local_operator(phi_left, acore, phi_right)
     coarse = _valid_direction(coarse)
     precondition = (
-        (lambda value: value.copy())
+        bk.copy
         if prec_kind == "n"
         else _jacobi(prec_kind, phi_left, acore, phi_right)
     )
@@ -348,15 +380,15 @@ def _augmented_pcg(phi_left, acore, phi_right, rhs, coarse, tol, steps,
     )
     correction, residual, last, matvecs, used, breakdown, coarse_ok = result
     memory = last if used else (coarse_flat if coarse_ok else None)
-    right_norm = float(np.linalg.norm(rhs))
+    right_norm = float(bk.norm(rhs))
     return correction.reshape(shape), _valid_direction(
         None if memory is None else memory.reshape(shape)
     ), {
         "matvecs": int(matvecs),
         "fresh_steps": int(used),
         "coarse_used": int(coarse_ok),
-        "relative_residual": float(np.linalg.norm(residual)) / max(
-            right_norm, np.finfo(float).tiny
+        "relative_residual": float(bk.norm(residual)) / max(
+            right_norm, _TINY
         ),
         "breakdown": bool(breakdown),
     }
@@ -380,15 +412,15 @@ def _projected_gradient_norm(acores, fcores, cores, fnorm, one, one2):
             )[0](work[site])
             - rhs
         )
-        residual_norm_squared = float(np.vdot(residual, residual).real)
+        residual_norm_squared = float(_vdot(residual, residual).real)
         if site == depth - 1:
             norm_squared += residual_norm_squared
             continue
         core, factor = _qr_left(work[site])
         core_matrix = core.reshape((-1, core.shape[2]))
         residual_matrix = residual.reshape((-1, residual.shape[2]))
-        gauge = core_matrix.conj().T @ residual_matrix
-        horizontal = residual_norm_squared - float(np.vdot(gauge, gauge).real)
+        gauge = _conj_t(core_matrix) @ residual_matrix
+        horizontal = residual_norm_squared - float(_vdot(gauge, gauge).real)
         norm_squared += max(horizontal, 0.0)
         work[site] = core
         work[site + 1] = _push_left(work[site + 1], factor)
@@ -398,7 +430,7 @@ def _projected_gradient_norm(acores, fcores, cores, fnorm, one, one2):
         phif_left[site + 1] = _phi_yy_next(
             phif_left[site], core, fcores[site], "lr"
         )
-    return np.sqrt(norm_squared) / fnorm
+    return math.sqrt(norm_squared) / fnorm
 
 
 def _true_residual(acores, fcores, xcores, fnorm):
@@ -453,8 +485,7 @@ def lobpcg_solve(
     Raises:
         ValueError: For incompatible modes, an infeasible rank profile, a
             zero right-hand side, or invalid iteration/tolerance arguments.
-        NotImplementedError: Currently for non-numpy backends or an unknown
-            local preconditioner.
+        NotImplementedError: For an unknown local preconditioner.
 
     Example:
         >>> import tt
@@ -470,7 +501,7 @@ def lobpcg_solve(
     """
     started = time.time()
     tol = float(eps)
-    if not np.isfinite(tol) or tol < 0.0:
+    if not math.isfinite(tol) or tol < 0.0:
         raise ValueError(f"eps={eps!r}: expected a finite non-negative value")
     if int(nswp) < 1:
         raise ValueError(f"nswp={nswp!r}: expected an integer >= 1")
@@ -479,7 +510,7 @@ def lobpcg_solve(
             f"local_steps={local_steps!r}: expected an integer >= 1"
         )
     forcing_values = (forcing_gamma, forcing_power, forcing_min, forcing_max)
-    if not all(np.isfinite(float(value)) for value in forcing_values):
+    if not all(math.isfinite(float(value)) for value in forcing_values):
         raise ValueError("forcing parameters must be finite")
     if forcing_gamma <= 0 or forcing_power <= 0:
         raise ValueError("forcing_gamma and forcing_power must be positive")
@@ -496,9 +527,6 @@ def lobpcg_solve(
     xcores, _ = _vector_cores(x0)
     depth = len(fcores)
     acores = _matrix_cores(A, depth)
-    _require_numpy("A", acores)
-    _require_numpy("f", fcores)
-    _require_numpy("x0", xcores)
 
     row_modes = [int(core.shape[1]) for core in acores]
     column_modes = [int(core.shape[2]) for core in acores]
@@ -512,12 +540,23 @@ def lobpcg_solve(
     if [int(core.shape[1]) for core in xcores] != column_modes:
         raise ValueError("the modes of x0 do not match the column modes of A")
 
-    dtype = np.result_type(acores[0].dtype, fcores[0].dtype, xcores[0].dtype)
-    if dtype.kind not in "fc":
-        dtype = np.dtype(np.float64)
-    acores = [np.asarray(core, dtype=dtype) for core in acores]
-    fcores = [np.asarray(core, dtype=dtype) for core in fcores]
-    xcores = [np.array(core, dtype=dtype, copy=True) for core in xcores]
+    try:
+        dtype = bk.result_dtype(bk.dtype_of(acores[0]), bk.dtype_of(fcores[0]),
+                                bk.dtype_of(xcores[0]))
+    except TypeError:
+        # Integer (or otherwise non-inexact) cores carry no working precision of
+        # their own; float64 is what the arithmetic below needs.
+        dtype = "float64"
+    # ``x0`` owns the device: the answer has its rank profile and must come back
+    # where it came from, so ``A`` and ``f`` are brought to that backend.
+    try:
+        home = bk.backend_of(xcores[0])
+    except TypeError:
+        home = None                      # non-inexact host cores: default backend
+    acores = [bk.asarray(core, dtype, backend=home) for core in acores]
+    fcores = [bk.asarray(core, dtype, backend=home) for core in fcores]
+    xcores = [bk.copy(bk.asarray(core, dtype, backend=home))
+              for core in xcores]
     target_ranks = _check_fixed_profile(xcores)
     fnorm = float(_ops.norm(fcores))
     if fnorm == 0.0:
@@ -526,8 +565,8 @@ def lobpcg_solve(
             "undefined; the solution is tt.zeros"
         )
 
-    one = np.ones((1, 1, 1), dtype=dtype)
-    one2 = np.ones((1, 1), dtype=dtype)
+    one = _ones((1, 1, 1), xcores[0])
+    one2 = _ones((1, 1), xcores[0])
     projected = _projected_gradient_norm(
         acores, fcores, xcores, fnorm, one, one2
     )
@@ -556,7 +595,7 @@ def lobpcg_solve(
                 float(forcing_gamma) * projected ** float(forcing_power),
             ),
         )
-        real_tol = forcing / np.sqrt(max(depth - 1, 1)) / RESID_DAMP
+        real_tol = forcing / math.sqrt(max(depth - 1, 1)) / RESID_DAMP
         phia_right, phif_right, current_right_frame = _right_canonicalize(
             acores, fcores, xcores, one, one2
         )
@@ -565,7 +604,7 @@ def lobpcg_solve(
             if old_right_frame is not None
             else None
         )
-        left_overlap = np.ones((1, 1), dtype=dtype)
+        left_overlap = _ones((1, 1), xcores[0])
         phia_left = _interfaces(depth, one)
         phif_left = _interfaces(depth, one2)
         max_dx = 0.0
@@ -590,14 +629,14 @@ def lobpcg_solve(
                 phia_left[site], acores[site], phia_right[site + 1]
             )
             residual = apply(xcores[site]) - rhs
-            rhs_norm = float(np.linalg.norm(rhs))
+            rhs_norm = float(bk.norm(rhs))
             scale = rhs_norm if rhs_norm > 0.0 else 1.0
-            incoming = float(np.linalg.norm(residual)) / scale
+            incoming = float(bk.norm(residual)) / scale
             max_incoming = max(max_incoming, incoming)
             local_info = None
             if incoming > real_tol:
-                local_tol = min(0.1, real_tol / max(incoming * incoming,
-                                                     np.finfo(float).tiny))
+                local_tol = min(0.1,
+                                real_tol / max(incoming * incoming, _TINY))
                 correction, next_memory, local_info = _augmented_pcg(
                     phia_left[site],
                     acores[site],
@@ -609,8 +648,8 @@ def lobpcg_solve(
                     prec_kind,
                 )
                 xcores[site] = xcores[site] - correction
-                correction_norm = float(np.linalg.norm(correction))
-                core_norm = float(np.linalg.norm(xcores[site]))
+                correction_norm = float(bk.norm(correction))
+                core_norm = float(bk.norm(xcores[site]))
                 max_dx = max(
                     max_dx,
                     correction_norm / core_norm if core_norm > 0 else correction_norm,
@@ -645,9 +684,9 @@ def lobpcg_solve(
                         old_core.shape[0], old_core.shape[1] * old_core.shape[2]
                     )
                 ).reshape(core.shape[0] * core.shape[1], old_core.shape[2])
-                left_overlap = core.reshape(
+                left_overlap = _conj_t(core.reshape(
                     core.shape[0] * core.shape[1], core.shape[2]
-                ).conj().T @ contracted
+                )) @ contracted
             xcores[site] = core
             xcores[site + 1] = _push_left(xcores[site + 1], factor)
             phia_left[site + 1] = _phi_next(
