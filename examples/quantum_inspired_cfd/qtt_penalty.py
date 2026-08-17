@@ -24,6 +24,23 @@ all.  Two things make this the natural formulation here:
   fixed-rank energy minimization of ``tt.lobpcg_solve`` -- the flow never leaves
   the bounded-rank manifold, which is the paper's whole premise.  Passing
   ``solver="amen"`` instead lets the rank adapt, for reference runs.
+
+Measured against the projection route, though, the penalty loses on this stack.
+Taylor-Green, 64^2 grid, fixed rank 30, 30 steps::
+
+    penalty, mu=1e5    |E - analytic| 9.4e-05   div 1.5e-02   0.27 s/step
+    penalty, mu=1e7    |E - analytic| 4.7e-05   div 1.5e-04   0.32 s/step
+    penalty, mu=1e8    |E - analytic| 4.7e-02   div 1.3e-04   0.31 s/step
+    Chorin projection  |E - analytic| 8.7e-09   div 2.8e-07   0.02 s/step
+
+The penalty enforces ``div V = 0`` only to ``O(1/mu)`` while the conditioning of
+``mu D^T D + I/dt^2`` grows with ``mu`` -- by ``mu = 1e8`` the fixed-rank solve
+no longer converges in its sweep budget and the accuracy collapses, so there is
+a window in ``mu`` rather than a limit to take.  The projection is exact and,
+with ``amen_solve`` on the QTT Poisson, cheap: four orders more accurate and 15x
+faster here.  The variational step is the right tool when one must stay strictly
+on a fixed-rank manifold, or has no fast Poisson solve; with this toolbox's
+solvers, projection is the better default.
 """
 
 import numpy as np
