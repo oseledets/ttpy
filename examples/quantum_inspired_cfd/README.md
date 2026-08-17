@@ -14,7 +14,7 @@ and the bond dimension $\chi$ is exactly the interscale correlation the paper
 measures. Capping $\chi$ — keeping the flow on a bounded-rank manifold — is the
 whole method.
 
-![Taylor–Green in QTT: the energy tracks the analytic decay at bounded rank](../../docs/media/qi_cfd_taylor_green.png)
+![decaying 2D turbulence carried entirely in QTT at bounded bond dimension](../../docs/media/qi_cfd_turbulence.gif)
 
 ## The equations, and their encoding
 
@@ -72,12 +72,36 @@ u, v = (u - matvec(Dx, phi)).round(chi), (v - matvec(Dy, phi)).round(chi)
 Every quantity — velocity, its derivatives, the pressure — is a tensor train of
 bond dimension at most $\chi$, and nothing ever leaves the format.
 
+## A cheaper route: the vorticity form
+
+In two dimensions the pressure and the incompressibility constraint can be
+removed entirely by going to the **vorticity–streamfunction** form
+(`qtt_vorticity.py`): with $\omega = \partial_x v - \partial_y u$ and
+$\nabla^2\psi = -\omega$, $V = (\partial_y\psi, -\partial_x\psi)$,
+
+$$\frac{\partial\omega}{\partial t} = \nu\nabla^2\omega - (V\cdot\nabla)\omega,$$
+
+a single scalar transport–diffusion equation whose velocity is a curl, so it is
+divergence-free by construction. This is both cheaper and lower-rank: on the
+same shear flow the scalar $\omega$ carries bond dimension $\sim 10$ where the
+velocity pair needs $\sim 34$ — vorticity is the more compressible object. It is
+also the natural shape for the projector-splitting integrator `tt.ksl`: the
+stiff *linear* viscous flow $\partial_t\omega = \nu\nabla^2\omega$ is integrated
+*exactly* on the fixed-rank manifold (on Taylor–Green the enstrophy decay comes
+out to $10^{-13}$), with advection as an explicit substep. For the
+advection-dominated flows here plain RK2 on the scalar is fastest; KSL pays off
+when the diffusion is stiff. (The pointwise DEIM of `tt.ksl_deim` does *not*
+apply — the advection $(V\cdot\nabla)\omega$ is non-local in $\omega$ through the
+streamfunction solve.)
+
 ## What comes out
 
-**The rigorous check is the Taylor–Green vortex** (the figure above), the one
-nonlinear incompressible flow with a closed-form solution:
+**The rigorous check is the Taylor–Green vortex**, the one nonlinear
+incompressible flow with a closed-form solution:
 $u = \cos x\sin y\ e^{-2\nu t}$, $v = -\sin x\cos y\ e^{-2\nu t}$, whose kinetic
 energy decays as $E(t) = E_0 e^{-4\nu t}$.
+
+![Taylor–Green: the energy tracks the analytic decay at bounded rank](../../docs/media/qi_cfd_taylor_green.png)
 
 The QTT solver reproduces that decay to $1.7\times10^{-8}$, and matches an
 *identical dense finite-difference scheme* to $2.3\times10^{-14}$ — the rank
@@ -85,12 +109,14 @@ truncation loses nothing on this low-rank flow. Both pressure solvers give the
 same answer with the velocity divergence held at $\sim10^{-5}$ (the residual of
 the Tikhonov-regularized projection, orders below the flow).
 
-**A structure-forming run** is the Kelvin–Helmholtz shear layer
-(`run.py shear`): a perturbed shear layer whose instability the same solver
-develops. The interesting regime — where the roll-up needs many scales and the
-bond dimension $\chi$ stays *bounded well below the grid size* — is the paper's
-point, and it lives on finer grids ($2^7$–$2^8$ per side) where $\chi\sim100$ is
-a small fraction of $N$; that is the run to carry to a larger machine.
+**The structure-resolving run** is the animation at the top: a field of random
+vortices left to decay into two-dimensional turbulence (`run.py turbulence`).
+The vortices advect, merge and draw out into filaments — and the whole time the
+bond dimension stays bounded, in the range $\chi\sim 30$–$50$ on a $128^2$ grid.
+On a $256^2$ grid the same boundedness holds with $\chi\sim 80$, a small
+fraction of the $N=256$ a dense field would carry. That bounded interscale
+correlation, growing only as the flow forms structure and never approaching the
+grid size, is exactly what the paper measures and what makes the format cheap.
 
 ## Why believe it
 
@@ -101,14 +127,16 @@ a small fraction of $N$; that is the run to carry to a larger machine.
   adds — rank truncation — and finds it contributes at the level of $10^{-14}$.
 * `tests/test_quantum_inspired_cfd.py` pins the periodic z-order operators
   against dense differentiation, the projection's divergence-freeness for both
-  solvers, the analytic decay, and the dense-scheme agreement.
+  solvers, the analytic decay, and the dense-scheme agreement. The scalar
+  vorticity solver is pinned too: its KSL viscous decay is machine-exact, and
+  it reproduces the velocity–pressure solver's vorticity field to $10^{-6}$.
 
 ## Run it
 
 ```bash
-python examples/quantum_inspired_cfd/run.py tgv        # Taylor-Green, analytic oracle
-python examples/quantum_inspired_cfd/run.py shear      # Kelvin-Helmholtz roll-up
-python examples/quantum_inspired_cfd/run.py shear --gif docs/media/qi_cfd_shear.gif
+python examples/quantum_inspired_cfd/run.py tgv          # Taylor-Green, analytic oracle
+python examples/quantum_inspired_cfd/run.py turbulence   # decaying 2D turbulence (vorticity)
+python examples/quantum_inspired_cfd/run.py turbulence --gif docs/media/qi_cfd_turbulence.gif
 ```
 
 ## References

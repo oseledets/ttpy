@@ -25,8 +25,10 @@ import tt
 
 try:
     from . import qtt_ns as q
+    from . import qtt_vorticity as w
 except ImportError:
     import qtt_ns as q
+    import qtt_vorticity as w
 
 
 # --- z-order <-> 2D grid, diagnostics ----------------------------------------
@@ -164,6 +166,59 @@ def shear_layer(d=7, nu=1e-4, T=1.2, chi=60, order=8, solver="amen",
                 d=d, nu=nu, chi=chi)
 
 
+# --- decaying 2D turbulence, in the vorticity-streamfunction form ------------
+
+def turbulence(d=7, nu=1e-4, T=3.0, chi=80, order=8, cfl=0.3,
+               nv=14, sigma=0.5, seed=3, eps=1e-5, nframes=40):
+    """A field of random vortices decaying into 2D turbulence, carried in QTT.
+
+    Uses the scalar vorticity solver (`qtt_vorticity`): the initial vorticity is
+    a sum of ``nv`` random Gaussian vortices; they advect, merge and filament,
+    while the bond dimension stays bounded well below the grid size -- the
+    structure-at-bounded-chi claim, on a flow that forms structure by itself.
+    """
+    ops = q.Operators(d, box=2 * np.pi, order=order)
+    rng = np.random.default_rng(seed)
+    cx = rng.uniform(0, 2 * np.pi, nv)
+    cy = rng.uniform(0, 2 * np.pi, nv)
+    sg = rng.choice([-1.0, 1.0], nv)
+    L = 2 * np.pi
+
+    def vort0(x, y):
+        out = np.zeros_like(x)
+        for k in range(nv):
+            for px in (-L, 0.0, L):
+                for py in (-L, 0.0, L):
+                    out += sg[k] * np.exp(
+                        -(((x - cx[k] - px) ** 2 + (y - cy[k] - py) ** 2)
+                          / (2 * sigma ** 2)))
+        return out
+
+    omega = ops.field(vort0, eps=1e-6)
+    dt = cfl * ops.h
+    nsteps = int(round(T / dt))
+    every = max(1, nsteps // nframes)
+    idx = _zorder_index(d)
+    frames, times, ranks, enst = [], [], [], []
+    guess = None
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for s in range(nsteps + 1):
+            if s % every == 0:
+                frames.append(to_grid(omega, d, idx))
+                times.append(s * dt)
+                ranks.append(int(max(omega.r)))
+                enst.append(0.5 * float(tt.dot(omega, omega)) * ops.h ** 2)
+            if s < nsteps:
+                omega, guess = w.step_rk2(ops, omega, dt, nu, eps=eps,
+                                          rmax=chi, guess=guess)
+    return dict(frames=frames, t=np.array(times), ranks=np.array(ranks),
+                energy=np.array(enst), enstrophy=np.array(enst), d=d, nu=nu,
+                chi=chi,
+                title=r"decaying 2D turbulence on a $2^{%d}\times2^{%d}$ torus, "
+                      r"entirely in QTT" % (d, d))
+
+
 # --- figures -----------------------------------------------------------------
 
 def render_tg_figure(res, path):
@@ -193,13 +248,17 @@ def render_tg_figure(res, path):
     print(f"saved {path}")
 
 
-def render_shear_gif(res, path):
+def render_shear_gif(res, path, title=None):
     import io
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from PIL import Image
 
+    if title is None:
+        title = res.get("title",
+                        r"Kelvin--Helmholtz roll-up on a $2^{%d}\times2^{%d}$ "
+                        r"torus, entirely in QTT" % (res["d"], res["d"]))
     frames, t, ranks = res["frames"], res["t"], res["ranks"]
     vmax = np.abs(frames[len(frames) // 2]).max()
     pngs = []
@@ -214,8 +273,7 @@ def render_shear_gif(res, path):
         axr.set_xlim(t[0], t[-1]); axr.set_ylim(0, ranks.max() + 4)
         axr.set_xlabel(r"$t$"); axr.set_ylabel(r"bond dimension $\chi$")
         axr.set_title(r"interscale correlation stays bounded", fontsize=10)
-        fig.suptitle(r"Kelvin--Helmholtz roll-up on a $2^{%d}\times2^{%d}$ torus, "
-                     r"entirely in QTT" % (res["d"], res["d"]), fontsize=11)
+        fig.suptitle(title, fontsize=11)
         fig.tight_layout()
         buf = io.BytesIO(); fig.savefig(buf, format="png"); plt.close(fig)
         buf.seek(0)
@@ -254,6 +312,18 @@ def main(argv):
         print(f"  energy drift {abs(res['energy'][-1]/res['energy'][0]-1):.2e}, "
               f"enstrophy grew x{res['enstrophy'].max()/res['enstrophy'][0]:.1f}")
         print(f"  bond dimension peaked at {res['ranks'].max()} (cap {res['chi']})")
+        if gif:
+            render_shear_gif(res, gif)
+
+    elif kind == "turbulence":
+        t0 = time.time()
+        res = turbulence()
+        dt = time.time() - t0
+        print(f"Turbulence  d={res['d']}  ({dt:.1f}s)")
+        print(f"  bond dimension stayed in "
+              f"[{res['ranks'].min()}, {res['ranks'].max()}], grid N={2**res['d']}")
+        print(f"  enstrophy {res['enstrophy'][-1]/res['enstrophy'][0]:.3f} of "
+              f"initial (2D: nearly conserved)")
         if gif:
             render_shear_gif(res, gif)
 
