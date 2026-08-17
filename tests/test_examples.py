@@ -540,6 +540,34 @@ def test_divgrad_cross_assembly_matches_scipy_sparse():
 
 # --- examples/smoluchowski/ ------------------------------------
 
+def _smoluchowski_run():
+    """The ``run`` entry point of ``examples/smoluchowski/run.py``.
+
+    Loaded under its own module name: ``examples/quantum_inspired_cfd`` ships a
+    ``run.py`` too, and whichever of the two is reached by the bare name
+    ``run`` first wins ``sys.modules`` for the rest of the session.  Which one
+    that is depends on the order the example directories landed on
+    ``sys.path``, i.e. on which test modules pytest collected -- so importing
+    it as ``run`` passes this file alone and fails in the full suite.
+    """
+    import importlib.util
+    import pathlib
+    import sys
+    d = pathlib.Path(__file__).resolve().parent.parent / "examples" / "smoluchowski"
+    # run.py does `from solver import ...`, so its directory still has to be
+    # importable -- only the name of *this* module is being pinned.
+    if str(d) not in sys.path:
+        sys.path.insert(0, str(d))
+    mod = sys.modules.get("smoluchowski_run")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location(
+            "smoluchowski_run", str(d / "run.py"))
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["smoluchowski_run"] = mod
+        spec.loader.exec_module(mod)
+    return mod.run
+
+
 def test_smoluchowski_example_reproduces_the_analytic_solution():
     """The showcase script's own run loop against the paper's eq. (18).
 
@@ -550,13 +578,7 @@ def test_smoluchowski_example_reproduces_the_analytic_solution():
     for the same TT run and the 215580 s it reports for the direct one.
     """
     pytest.importorskip("scipy.special")
-    _examples_path()
-    import pathlib
-    import sys
-    d = pathlib.Path(__file__).resolve().parent.parent / "examples" / "smoluchowski"
-    if str(d) not in sys.path:
-        sys.path.insert(0, str(d))
-    from run import run
+    run = _smoluchowski_run()
 
     _, report = run(N=200, vmax=20.0, T=1.0, tau=0.05, eps=1e-8)
     assert report["error"] < 5e-3, report
@@ -571,13 +593,7 @@ def test_smoluchowski_example_additive_kernel_keeps_its_two_identities():
     unbounded domain -- the check is that on the truncated box the mass drift
     stays an order below the density decay it is measured against.
     """
-    _examples_path()
-    import pathlib
-    import sys
-    d = pathlib.Path(__file__).resolve().parent.parent / "examples" / "smoluchowski"
-    if str(d) not in sys.path:
-        sys.path.insert(0, str(d))
-    from run import run
+    run = _smoluchowski_run()
 
     _, report = run(N=200, vmax=40.0, T=0.2, tau=0.01, eps=1e-8,
                     kernel_name="additive")
@@ -603,13 +619,7 @@ def test_smoluchowski_example_ballistic_kernel_reproduces_table_5():
     paper's own table moves by 5% between this row and its converged one, so
     the threshold here is deliberately tighter than that spread.
     """
-    _examples_path()
-    import pathlib
-    import sys
-    d = pathlib.Path(__file__).resolve().parent.parent / "examples" / "smoluchowski"
-    if str(d) not in sys.path:
-        sys.path.insert(0, str(d))
-    from run import run
+    run = _smoluchowski_run()
 
     _, report = run(N=100, vmax=10.0, T=1.0, tau=0.05, eps=1e-6,
                     kernel_name="ballistic")
