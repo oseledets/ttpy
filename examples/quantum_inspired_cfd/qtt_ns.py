@@ -223,8 +223,12 @@ def _rhs(ops, u, v, nu, eps, rmax, cross=False, cache=None, tag="", skew=False):
     vx, vy = tt.matvec(ops.Dx, v), tt.matvec(ops.Dy, v)
     y0u = cache.get(tag + "u") if cache is not None else None
     y0v = cache.get(tag + "v") if cache is not None else None
-    adv_u = _advect(u, ux, v, uy, eps, rmax, cross, y0u)
-    adv_v = _advect(u, vx, v, vy, eps, rmax, cross, y0v)
+    if cross:
+        adv_u = _advect(u, ux, v, uy, eps, rmax, cross, y0u)
+        adv_v = _advect(u, vx, v, vy, eps, rmax, cross, y0v)
+    else:
+        adv_u = _advect_fused(u, ux, v, uy, eps, rmax)
+        adv_v = _advect_fused(u, vx, v, vy, eps, rmax)
     if cache is not None:
         cache[tag + "u"], cache[tag + "v"] = adv_u, adv_v
     du = (tt.matvec(ops.Lap, u) * nu - adv_u).round(eps, rmax=rmax)
@@ -260,17 +264,18 @@ def step_rk4(ops, u, v, dt, nu, project, eps=1e-8, rmax=40, skew=True):
     return project(u2, v2)
 
 
-def step(ops, u, v, dt, nu, project, eps=1e-8, rmax=40, cross=False, cache=None):
+def step(ops, u, v, dt, nu, project, eps=1e-8, rmax=40, cross=False, cache=None,
+         skew=False):
     """One second-order (Heun) projection step, all in QTT at bond <= rmax.
 
     Pass a persistent ``cache`` dict (and ``cross=True``) to warm-start the
     cross-approximated advection term from step to step.
     """
-    du1, dv1 = _rhs(ops, u, v, nu, eps, rmax, cross, cache, "1")
+    du1, dv1 = _rhs(ops, u, v, nu, eps, rmax, cross, cache, "1", skew=skew)
     u1 = (u + du1 * dt).round(eps, rmax=rmax)
     v1 = (v + dv1 * dt).round(eps, rmax=rmax)
     u1, v1 = project(u1, v1)
-    du2, dv2 = _rhs(ops, u1, v1, nu, eps, rmax, cross, cache, "2")
+    du2, dv2 = _rhs(ops, u1, v1, nu, eps, rmax, cross, cache, "2", skew=skew)
     u2 = (u + (du1 + du2) * (0.5 * dt)).round(eps, rmax=rmax)
     v2 = (v + (dv1 + dv2) * (0.5 * dt)).round(eps, rmax=rmax)
     return project(u2, v2)
