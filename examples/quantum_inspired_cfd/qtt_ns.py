@@ -192,8 +192,33 @@ def _advect(a, b, c, e, eps, rmax, cross, y0=None):
                           eps=eps, rmax=rmax, verb=0, y0=y0)
 
 
-def _rhs(ops, u, v, nu, eps, rmax, cross=False, cache=None, tag=""):
+def _advect_skew(ops, a, u, v, eps, rmax):
+    """``(V.grad)a`` in skew-symmetric form, which conserves energy discretely.
+
+    The convective form ``u a_x + v a_y`` is not energy conserving once the
+    products are discretized, so aliasing feeds the grid scales and a run whose
+    truncation is too weak to damp them can go nonlinearly unstable even where
+    von Neumann analysis of the linearized scheme says it is stable.  The skew
+    average ``(convective + divergence)/2`` removes that channel: the discrete
+    advection operator becomes skew-symmetric, so it moves energy between modes
+    without creating any.
+    """
+    conv = _advect_fused(u, tt.matvec(ops.Dx, a), v, tt.matvec(ops.Dy, a),
+                         eps, rmax)
+    ua = (u * a).round(eps, rmax=rmax)
+    va = (v * a).round(eps, rmax=rmax)
+    divf = (tt.matvec(ops.Dx, ua) + tt.matvec(ops.Dy, va)).round(eps, rmax=rmax)
+    return ((conv + divf) * 0.5).round(eps, rmax=rmax)
+
+
+def _rhs(ops, u, v, nu, eps, rmax, cross=False, cache=None, tag="", skew=False):
     """The convection-diffusion right-hand side (no pressure)."""
+    if skew:
+        adv_u = _advect_skew(ops, u, u, v, eps, rmax)
+        adv_v = _advect_skew(ops, v, u, v, eps, rmax)
+        du = (tt.matvec(ops.Lap, u) * nu - adv_u).round(eps, rmax=rmax)
+        dv = (tt.matvec(ops.Lap, v) * nu - adv_v).round(eps, rmax=rmax)
+        return du, dv
     ux, uy = tt.matvec(ops.Dx, u), tt.matvec(ops.Dy, u)
     vx, vy = tt.matvec(ops.Dx, v), tt.matvec(ops.Dy, v)
     y0u = cache.get(tag + "u") if cache is not None else None
@@ -207,7 +232,7 @@ def _rhs(ops, u, v, nu, eps, rmax, cross=False, cache=None, tag=""):
     return du, dv
 
 
-def step_rk4(ops, u, v, dt, nu, project, eps=1e-8, rmax=40):
+def step_rk4(ops, u, v, dt, nu, project, eps=1e-8, rmax=40, skew=True):
     """One classical RK4 projection step.
 
     Heun is unconditionally unstable for pure advection -- its amplification on
@@ -217,19 +242,19 @@ def step_rk4(ops, u, v, dt, nu, project, eps=1e-8, rmax=40):
     up to ``|z| = 2 sqrt(2)``, which the same stencil reaches only at CFL ~ 1.6,
     so the four right-hand sides per step buy a step that is stable at all.
     """
-    k1u, k1v = _rhs(ops, u, v, nu, eps, rmax)
+    k1u, k1v = _rhs(ops, u, v, nu, eps, rmax, skew=skew)
     a_u = (u + k1u * (0.5 * dt)).round(eps, rmax=rmax)
     a_v = (v + k1v * (0.5 * dt)).round(eps, rmax=rmax)
     a_u, a_v = project(a_u, a_v)
-    k2u, k2v = _rhs(ops, a_u, a_v, nu, eps, rmax)
+    k2u, k2v = _rhs(ops, a_u, a_v, nu, eps, rmax, skew=skew)
     b_u = (u + k2u * (0.5 * dt)).round(eps, rmax=rmax)
     b_v = (v + k2v * (0.5 * dt)).round(eps, rmax=rmax)
     b_u, b_v = project(b_u, b_v)
-    k3u, k3v = _rhs(ops, b_u, b_v, nu, eps, rmax)
+    k3u, k3v = _rhs(ops, b_u, b_v, nu, eps, rmax, skew=skew)
     c_u = (u + k3u * dt).round(eps, rmax=rmax)
     c_v = (v + k3v * dt).round(eps, rmax=rmax)
     c_u, c_v = project(c_u, c_v)
-    k4u, k4v = _rhs(ops, c_u, c_v, nu, eps, rmax)
+    k4u, k4v = _rhs(ops, c_u, c_v, nu, eps, rmax, skew=skew)
     u2 = (u + (k1u + k2u * 2.0 + k3u * 2.0 + k4u) * (dt / 6.0)).round(eps, rmax=rmax)
     v2 = (v + (k1v + k2v * 2.0 + k3v * 2.0 + k4v) * (dt / 6.0)).round(eps, rmax=rmax)
     return project(u2, v2)
