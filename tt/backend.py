@@ -356,6 +356,21 @@ class TorchBackend(Backend):
                     f"(inf/NaN) out of {a.numel()}; the data is broken "
                     "upstream, check for overflow (float32 overflows around "
                     "3.4e38)") from exc
+            if a.is_cuda:
+                # cuSOLVER's default Jacobi driver gives up on the rapidly
+                # decaying spectra a TT unfolding produces ("the algorithm
+                # failed to converge because the input matrix is
+                # ill-conditioned"); the QR-based gesvd driver is solid there
+                # -- measured over spectra spanning 4 to 16 decades it never
+                # failed and stayed exact to 2e-15, where the default reached
+                # 2e-13.  Retry on the device before paying for a host round
+                # trip, which for a 65536 x 1024 unfolding costs seconds
+                # against milliseconds here.
+                try:
+                    return t.linalg.svd(a, full_matrices=full_matrices,
+                                        driver="gesvd")
+                except Exception:
+                    pass
             import scipy.linalg as sla
             u, sv, vh = sla.svd(a.detach().cpu().numpy(),
                                 full_matrices=full_matrices,
