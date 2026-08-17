@@ -42,32 +42,49 @@ Two generalizations beyond the paper:
 
 import numpy as np
 
+from .. import backend as bk
 from ..core.vector import vector
 
 __all__ = ["hadamard", "hadamard_sum"]
 
 def _cores_of(x):
-    return [np.asarray(c, dtype=float) for c in vector.to_list(x)]
+    """Cores as the backend holds them -- numpy arrays or cuda tensors."""
+    return list(vector.to_list(x))
+
+
+def _contig(a):
+    """Contiguous copy on whichever backend ``a`` lives (transposes need it)."""
+    return bk.asarray(a, backend=bk.backend_of(a))
+
+
+def _fold(r, core):
+    """``r @ core`` over the core's left bond, backend-agnostically."""
+    r0, n, r1 = core.shape
+    return (r @ core.reshape(r0, n * r1)).reshape(-1, n, r1)
 
 
 def _left_orthogonalize(cores):
     """Left-orthonormal cores; the norm is carried into the last core."""
-    cores = [c.copy() for c in cores]
+    cores = list(cores)
     for k in range(len(cores) - 1):
         r0, n, r1 = cores[k].shape
-        q, r = np.linalg.qr(cores[k].reshape(r0 * n, r1))
+        q, r = bk.qr(cores[k].reshape(r0 * n, r1))
         cores[k] = q.reshape(r0, n, -1)
-        cores[k + 1] = np.tensordot(r, cores[k + 1], axes=(1, 0))
+        cores[k + 1] = _fold(r, cores[k + 1])
     return cores
 
 
 def _trunc_rank(s, delta, rmax):
-    """Largest tail with ``||tail||_2 <= delta``; capped by ``rmax``."""
-    if s.size == 0:
+    """Largest tail with ``||tail||_2 <= delta``; capped by ``rmax``.
+
+    The singular values are a short vector, so the rank decision is made on the
+    host (as elsewhere in the package) and only the slicing happens on device.
+    """
+    sv = np.asarray(bk.to_numpy(s), dtype=np.float64)
+    if sv.size == 0:
         return 0
-    tail = np.cumsum(s[::-1] ** 2)[::-1]
-    keep = int(np.count_nonzero(tail > delta ** 2))
-    keep = max(1, keep)
+    tail = np.cumsum(sv[::-1] ** 2)[::-1]
+    keep = max(1, int(np.count_nonzero(tail > delta ** 2)))
     return min(keep, int(rmax)) if rmax else keep
 
 
@@ -85,32 +102,36 @@ def _term_core(factors, k, carry, shapes=None):
     """
     m = len(factors)
     cores = [factors[j][k] for j in range(m)]
-    p0 = [c.shape[0] for c in cores]
-    n = cores[0].shape[1]
-    p1 = [c.shape[2] for c in cores]
+    p0 = [int(c.shape[0]) for c in cores]
+    n = int(cores[0].shape[1])
+    p1 = [int(c.shape[2]) for c in cores]
     if carry is None:
-        carry = np.ones((int(np.prod(p1)), 1))
-    t = carry.shape[1]
+        like = cores[0]
+        carry = bk.zeros((int(np.prod(p1)), 1), dtype=bk.dtype_of(like),
+                         like=like) + 1.0
+    t = int(carry.shape[1])
 
     # factor 0: (p0_0 n, p1_0) @ (p1_0, rest) -- one GEMM.
-    cur = np.tensordot(cores[0], carry.reshape(*p1, t), axes=([2], [0]))
+    w = carry.reshape(int(np.prod(p1)), t)
+    cur = (cores[0].reshape(p0[0] * n, p1[0]) @ w.reshape(p1[0], -1))
+    cur = cur.reshape(p0[0], n, *p1[1:], t)
     # dims now: [p0_0, n, p1_1, ..., p1_{m-1}, t]
     for j in range(1, m):
-        nd = cur.ndim
+        nd = len(cur.shape)
         # bring the mode and this factor's right bond to the front:
         # [n, p1_j, (p0_0..p0_{j-1}), (p1_{j+1}..), t]
         perm = [j, j + 1] + list(range(j)) + list(range(j + 2, nd))
-        cur = np.ascontiguousarray(cur.transpose(perm))
-        rest = cur.shape[2:]
+        cur = _contig(bk.transpose(cur, perm))
+        rest = tuple(int(s) for s in cur.shape[2:])
         cur = cur.reshape(n, p1[j], -1)
-        B = np.ascontiguousarray(cores[j].transpose(1, 0, 2))   # (n, p0_j, p1_j)
+        B = _contig(bk.transpose(cores[j], (1, 0, 2)))          # (n, p0_j, p1_j)
         cur = B @ cur                                           # batched GEMM
         cur = cur.reshape(n, p0[j], *rest)
         # back to [p0_0..p0_{j-1}, p0_j, n, (p1_{j+1}..), t]
         head = list(range(2, 2 + j))
-        tail = list(range(2 + j, cur.ndim))
-        cur = cur.transpose(head + [1, 0] + tail)
-    return np.ascontiguousarray(cur).reshape(int(np.prod(p0)), n * t), n, t
+        tail = list(range(2 + j, len(cur.shape)))
+        cur = bk.transpose(cur, tuple(head + [1, 0] + tail))
+    return _contig(cur).reshape(int(np.prod(p0)), n * t), n, t
 
 
 def _right_sweep(terms, coefs, eps, rmax):
@@ -135,15 +156,17 @@ def _right_sweep(terms, coefs, eps, rmax):
         if k == 0:
             # the sum's first core is a horizontal concatenation: left rank 1,
             # so the term contributions add instead of stacking.
-            M = sum(c * blk for c, blk in zip(coefs, blocks))
+            M = blocks[0] * coefs[0]
+            for c, blk in zip(coefs[1:], blocks[1:]):
+                M = M + blk * c
         else:
-            M = np.vstack(blocks)
-        norm = np.linalg.norm(M)
-        u, s, vt = np.linalg.svd(M, full_matrices=False)
+            M = bk.concatenate(blocks, axis=0)
+        norm = float(bk.norm(M))
+        u, s, vt = bk.svd(M)
         keep = _trunc_rank(s, delta * norm, rmax)
         cores[k] = vt[:keep].reshape(keep, n, t)      # right-orthonormal
         carry = u[:, :keep] * s[:keep]
-    cores[0] = np.tensordot(carry, cores[0], axes=(1, 0))
+    cores[0] = _fold(carry, cores[0])
     return cores
 
 
@@ -152,18 +175,17 @@ def _left_truncate(cores, eps, rmax):
     d = len(cores)
     if d == 1:
         return cores
-    norm = np.linalg.norm(cores[0])
+    norm = float(bk.norm(cores[0]))
     delta = eps * norm / np.sqrt(d - 1)
     carry = None
     for k in range(d - 1):
-        c = cores[k] if carry is None else np.tensordot(carry, cores[k],
-                                                        axes=(1, 0))
-        r0, n, r1 = c.shape
-        u, s, vt = np.linalg.svd(c.reshape(r0 * n, r1), full_matrices=False)
+        c = cores[k] if carry is None else _fold(carry, cores[k])
+        r0, n, r1 = (int(s) for s in c.shape)
+        u, s, vt = bk.svd(c.reshape(r0 * n, r1))
         keep = _trunc_rank(s, delta, rmax)
         cores[k] = u[:, :keep].reshape(r0, n, keep)
-        carry = s[:keep, None] * vt[:keep]
-    cores[d - 1] = np.tensordot(carry, cores[d - 1], axes=(1, 0))
+        carry = s[:keep].reshape(-1, 1) * vt[:keep]
+    cores[d - 1] = _fold(carry, cores[d - 1])
     return cores
 
 
