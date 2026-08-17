@@ -167,6 +167,13 @@ def make_projector(ops, solver="amen", eps=1e-8, rmax=40, tol=1e-8):
     return project
 
 
+def _advect_fused(a, b, c, e, eps, rmax, fused_from=16):
+    """``a*b + c*e`` already compressed (``tt.hadamard_sum``) when it pays."""
+    if max(max(a.r), max(b.r)) >= fused_from:
+        return tt.hadamard_sum([[a, b], [c, e]], eps=eps, rmax=rmax)
+    return (a * b + c * e).round(eps, rmax=rmax)
+
+
 def _advect(a, b, c, e, eps, rmax, cross, y0=None):
     """The bilinear advection term ``a*b + c*e`` at bounded rank.
 

@@ -88,6 +88,9 @@ def _adv(ops, a, u, v, w, eps, rmax):
     ax = tt.matvec(ops.Dx, a)
     ay = tt.matvec(ops.Dy, a)
     az = tt.matvec(ops.Dz, a)
+    if max(max(u.r), max(ax.r)) >= 16:
+        # already-compressed three-term combination (see tt.hadamard_sum)
+        return tt.hadamard_sum([[u, ax], [v, ay], [w, az]], eps=eps, rmax=rmax)
     return (u * ax + v * ay + w * az).round(eps, rmax=rmax)
 
 

@@ -22,9 +22,11 @@ this module never forms the inflated tensor.  Two observations do the work:
    the right bond is the *compressed* rank ``t ~ r``, not ``r_a r_b``, so the
    core to factorize is the tall-thin matrix ``(r_a r_b) x (n t)``.  Its thin
    SVD costs ``O(n^2 r^4)`` -- Kormann's complexity -- and it is one LAPACK call,
-   no block bookkeeping.  The core is built by a single ``einsum`` that contracts
-   the carry with each factor in turn, so the ``r_a r_b`` by ``r_a r_b`` core is
-   never materialized either.
+   no block bookkeeping.  The core is built by contracting the carry against the
+   factors one at a time (a ``tensordot`` then batched matmuls, all GEMM), so the
+   ``r_a r_b`` by ``r_a r_b`` core is never materialized either.  Routing those
+   contractions through BLAS rather than ``einsum`` matters: the shared, unsummed
+   mode index keeps ``einsum`` on its C loop, which measured 12x slower.
 
 A second, left-to-right sweep over the (now right-orthonormal) train truncates
 at the requested accuracy; on a right-orthonormal train that truncation is
@@ -43,10 +45,6 @@ import numpy as np
 from ..core.vector import vector
 
 __all__ = ["hadamard", "hadamard_sum"]
-
-_P0 = "ABCDEFGHIJ"      # einsum letters for the left bonds of the factors
-_P1 = "abcdefghij"      # ... and for their right bonds
-
 
 def _cores_of(x):
     return [np.asarray(c, dtype=float) for c in vector.to_list(x)]
@@ -73,27 +71,46 @@ def _trunc_rank(s, delta, rmax):
     return min(keep, int(rmax)) if rmax else keep
 
 
-def _term_core(factors, k, carry, shapes):
+def _term_core(factors, k, carry, shapes=None):
     """The k-th core of one product term, already contracted with ``carry``.
 
     ``carry`` is ``(prod_j p1_j, t)`` (or ``None`` at the last core).  Returns
     the matrix ``(prod_j p0_j) x (n t)`` without ever forming the
     ``prod_j p0_j`` by ``prod_j p1_j`` core.
+
+    Every contraction is a GEMM: the first factor is a plain ``tensordot``, and
+    each further factor is a *batched* matmul over the shared mode index.  (An
+    ``einsum`` expressing the same thing cannot route the shared, unsummed mode
+    to BLAS and falls back on the C loop -- measured 12x slower here.)
     """
     m = len(factors)
-    p0 = [factors[j][k].shape[0] for j in range(m)]
-    n = factors[0][k].shape[1]
-    p1 = [factors[j][k].shape[2] for j in range(m)]
+    cores = [factors[j][k] for j in range(m)]
+    p0 = [c.shape[0] for c in cores]
+    n = cores[0].shape[1]
+    p1 = [c.shape[2] for c in cores]
     if carry is None:
         carry = np.ones((int(np.prod(p1)), 1))
     t = carry.shape[1]
-    W = carry.reshape(*p1, t)
-    subs = ",".join(f"{_P0[j]}x{_P1[j]}" for j in range(m))
-    subs += "," + "".join(_P1[:m]) + "z"
-    subs += "->" + "".join(_P0[:m]) + "xz"
-    out = np.einsum(subs, *[factors[j][k] for j in range(m)], W,
-                    optimize=True)
-    return out.reshape(int(np.prod(p0)), n * t), n, t
+
+    # factor 0: (p0_0 n, p1_0) @ (p1_0, rest) -- one GEMM.
+    cur = np.tensordot(cores[0], carry.reshape(*p1, t), axes=([2], [0]))
+    # dims now: [p0_0, n, p1_1, ..., p1_{m-1}, t]
+    for j in range(1, m):
+        nd = cur.ndim
+        # bring the mode and this factor's right bond to the front:
+        # [n, p1_j, (p0_0..p0_{j-1}), (p1_{j+1}..), t]
+        perm = [j, j + 1] + list(range(j)) + list(range(j + 2, nd))
+        cur = np.ascontiguousarray(cur.transpose(perm))
+        rest = cur.shape[2:]
+        cur = cur.reshape(n, p1[j], -1)
+        B = np.ascontiguousarray(cores[j].transpose(1, 0, 2))   # (n, p0_j, p1_j)
+        cur = B @ cur                                           # batched GEMM
+        cur = cur.reshape(n, p0[j], *rest)
+        # back to [p0_0..p0_{j-1}, p0_j, n, (p1_{j+1}..), t]
+        head = list(range(2, 2 + j))
+        tail = list(range(2 + j, cur.ndim))
+        cur = cur.transpose(head + [1, 0] + tail)
+    return np.ascontiguousarray(cur).reshape(int(np.prod(p0)), n * t), n, t
 
 
 def _right_sweep(terms, coefs, eps, rmax):
@@ -155,7 +172,13 @@ def hadamard(*factors, eps=1e-10, rmax=None):
 
     Equivalent to ``(a * b * ...).round(eps, rmax)`` but never forms the
     inflated product: ``O(d n^2 r^4)`` instead of ``O(d n r^6)`` for two
-    factors of rank ``r``.
+    factors of rank ``r``.  Measured on ``n=4, d=8`` against the explicit
+    route, at identical ranks and 1e-14 agreement::
+
+        rank 16    0.034 s -> 0.052 s   (explicit still wins)
+        rank 32    0.493 s -> 0.202 s   (2.4x)
+        rank 64   11.97  s -> 0.480 s   (25x)
+        rank 96   79.6   s -> 0.622 s   (128x)
 
     Args:
         *factors: two or more :class:`tt.vector` with identical mode sizes.

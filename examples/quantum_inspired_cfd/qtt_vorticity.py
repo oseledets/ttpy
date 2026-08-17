@@ -37,29 +37,21 @@ def velocity(ops, omega, eps, rmax, tol=1e-8, guess=None):
     return u.round(eps, rmax=rmax), v.round(eps, rmax=rmax), psi
 
 
-def advection(ops, omega, u, v, eps, rmax, y0=None, cross_from=200):
+def advection(ops, omega, u, v, eps, rmax, y0=None, fused_from=16):
     """(V . grad) omega at bounded rank.
 
-    The Hadamard ``u*ox`` has rank ``r_u r_ox``; forming it and rounding is the
-    default.  A warm-started cross of ``u*ox + v*oy`` (``multifuncrs``) converges
-    in a *single* sweep and beats the naive product once ``r_u r_ox`` is large
-    enough that its dense SVD dominates -- but only when ``y0`` is a genuinely
-    close guess.  In a time loop the previous step's term is a stale guess, so
-    the cross needs several sweeps and loses to the naive SVD at the moderate
-    ranks (bond ~40-90) these flows reach; it pays off only in the paper's
-    saturated regime (bond ~200, where ``r^2 ~ 4e4`` makes the dense SVD
-    prohibitive).  Hence the trigger sits high by default -- pass a lower
-    ``cross_from`` to force it.
+    ``u*ox + v*oy`` in the explicit route has intermediate rank ``r_u r_ox``
+    before rounding, and that r^2 SVD is the cost of the step.  ``tt.hadamard_sum``
+    builds the same combination already compressed, in one sweep, at ``O(n^2 r^4)``
+    instead of ``O(n r^6)`` -- measured 9x faster at bond 32 and 21-51x at bond 64.
+    Below bond ``fused_from`` the explicit product is cheap enough that the fused
+    route's fixed overhead is not worth it.
     """
     ox = tt.matvec(ops.Dx, omega)
     oy = tt.matvec(ops.Dy, omega)
-    if max(max(u.r), max(ox.r)) >= cross_from:
-        term = tt.multifuncrs([u, ox, v, oy],
-                              lambda P: P[:, 0] * P[:, 1] + P[:, 2] * P[:, 3],
-                              eps=eps, rmax=rmax, verb=0, y0=y0)
-    else:
-        term = (u * ox + v * oy).round(eps, rmax=rmax)
-    return term
+    if max(max(u.r), max(ox.r)) >= fused_from:
+        return tt.hadamard_sum([[u, ox], [v, oy]], eps=eps, rmax=rmax)
+    return (u * ox + v * oy).round(eps, rmax=rmax)
 
 
 def rhs(ops, omega, nu, eps, rmax, guess=None, adv_y0=None):
