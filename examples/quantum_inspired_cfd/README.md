@@ -118,6 +118,22 @@ fraction of the $N=256$ a dense field would carry. That bounded interscale
 correlation, growing only as the flow forms structure and never approaching the
 grid size, is exactly what the paper measures and what makes the format cheap.
 
+## In three dimensions
+
+The same construction runs in 3D (`qtt_ns3d.py`): each velocity component is an
+interleaved **octal** QTT — the three grid-index bits at each level share one
+mode of size 8, built by a nested `tt.zkron` — so a bond still separates length
+scales. Three dimensions have vortex stretching, so the vorticity is a vector
+and the scalar shortcut is gone; the solver keeps the velocity–pressure form
+with a 3D Chorin projection.
+
+Its analytic oracle is the **ABC (Arnold–Beltrami–Childress) flow**, the 3D
+analogue of Taylor–Green: it is a Beltrami field, $\nabla\times V = V$, so its
+advection is a pure gradient the pressure absorbs and it decays as
+$V(t) = V_0 e^{-\nu t}$. The QTT solver reproduces the resulting energy decay
+$e^{-2\nu t}$ to $3.7\times10^{-7}$, with the divergence held at $10^{-13}$; the
+octal operators match dense periodic differentiation to $10^{-15}$.
+
 ## Why believe it
 
 * The Taylor–Green oracle is analytic and exact at any resolution, so the energy
