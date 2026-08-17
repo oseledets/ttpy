@@ -66,14 +66,51 @@ decade or two above it.  The sweep at ``chi=16`` (reference 2.081)::
 Raising ``mu`` buys incompressibility and costs conditioning: too small and the
 field drifts off the divergence-free manifold, too large and the momentum term
 is swamped, the fixed-rank solve stalls, and the flow freezes.
+
+That cost is not only accuracy, it is time, and it hides a trap.  On the paper's
+1024^2 jet at fixed rank 33 the sweep budget the solve needs is set by ``mu``::
+
+    mu = 1x balance    1.25 s/step   1 sweep    converged   div 3.35
+    mu = 10x           1.73 s/step   1 sweep    converged   div 2.43
+    mu = 100x          3.72 s/step   3 sweeps   converged   div 1.03
+    mu = 1000x        10.67 s/step  20 sweeps   NOT conv    div 0.34
+
+(``div`` is absolute; against the flow scale ``||V||/h`` even the first row is a
+relative 5e-6, so incompressibility is not what the extra sweeps buy.)  The trap
+is what happens if one answers the cost by capping the sweeps instead of
+lowering ``mu``.  At ``mu = 1000x``, against a 20-sweep reference::
+
+    1 sweep    7.7x faster   field differs by 1.0e+00   enstrophy 0 -- collapsed
+    2 sweeps   5.7x faster   field differs by 6.3e-02   enstrophy +39%
+    3 sweeps   4.4x faster   field differs by 2.1e-02   enstrophy +21%
+
+An under-solved ill-conditioned step does not fail, it returns a plausible wrong
+field.  Lower ``mu`` until the solve converges on its own; do not buy speed by
+stopping it early.
 """
 
 import numpy as np
 
 import tt
+from tt import backend as bk
 from tt.algs.amen import amen_solve
 
 import qtt_ns as q
+
+
+def _like(x, ref):
+    """Move the TT vector ``x`` onto the backend/device that ``ref`` lives on."""
+    core = tt.vector.to_list(ref)[0]
+    backend = bk.backend_of(core)
+    if backend.name == "numpy":
+        return x
+    return x.to(backend.name, device=bk.device_of(core))
+
+
+def _fold(r, core):
+    """``r @ core`` over the core's left bond, on any backend."""
+    r0, n, r1 = (int(s) for s in core.shape)
+    return (r @ core.reshape(r0, n * r1)).reshape(-1, n, r1)
 
 
 # --- the extended (component x space) representation -------------------------
@@ -85,7 +122,8 @@ def stack(components):
     for i, comp in enumerate(components):
         sel = np.zeros((1, K, 1))
         sel[0, i, 0] = 1.0
-        term = tt.kron(comp, tt.vector.from_list([sel]))
+        unit = _like(tt.vector.from_list([sel]), comp)
+        term = tt.kron(comp, unit)
         out = term if out is None else out + term
     return out.round(1e-14)
 
@@ -93,12 +131,13 @@ def stack(components):
 def unstack(V, K, eps=1e-14):
     """Inverse of :func:`stack`: slice the component mode, fold the tail in."""
     cores = tt.vector.to_list(V)
-    spatial, last = [c.copy() for c in cores[:-1]], cores[-1]
+    spatial, last = list(cores[:-1]), cores[-1]
     out = []
     for i in range(K):
         tail = last[:, i, :]                       # (r, r_last)
-        comp = [c.copy() for c in spatial]
-        comp[-1] = np.tensordot(comp[-1], tail, axes=(2, 0))
+        comp = list(spatial)
+        r0, n, r1 = (int(s) for s in comp[-1].shape)
+        comp[-1] = (comp[-1].reshape(r0 * n, r1) @ tail).reshape(r0, n, -1)
         out.append(tt.vector.from_list(comp).round(eps))
     return out
 
@@ -144,8 +183,13 @@ def _feasible_start(d, n, K, chi, seed=0):
     return x * (1.0 / x.norm())
 
 
+def _start_like(ref, d, n, K, chi, seed=0):
+    """A feasible fixed-rank start on the backend/device of ``ref``."""
+    return _like(_feasible_start(d, n, K, chi, seed=seed), ref)
+
+
 def step_penalty(ops, comps, dt, nu, A, chi, mu=1e5, eps=1e-8,
-                 solver="lobpcg", guess=None, derivs=None):
+                 solver="lobpcg", guess=None, derivs=None, nswp=5):
     """One variational step: minimize the paper's cost over the TT manifold.
 
     Returns ``(components, V_extended)``; pass the latter back as ``guess`` so
@@ -163,9 +207,12 @@ def step_penalty(ops, comps, dt, nu, A, chi, mu=1e5, eps=1e-8,
     b = (stack(rhs_comps) * (1.0 / dt)).round(eps, rmax=chi)
 
     if solver == "lobpcg":
-        x0 = guess if guess is not None else _feasible_start(
-            ops.d, int(ops.Dx.n[0]), K, chi)
-        V = tt.lobpcg_solve(A, b, x0, eps, nswp=40, verb=0, local_prec="c")
+        x0 = guess if guess is not None else _start_like(
+            comps[0], ops.d, int(ops.Dx.n[0]), K, chi)
+        # with a warm start the field barely moves in a step, so a handful of
+        # sweeps suffices; 40 was paying for convergence already in hand (the
+        # same lesson the amen path taught: a warm start cut it to one sweep).
+        V = tt.lobpcg_solve(A, b, x0, eps, nswp=nswp, verb=0, local_prec="c")
     else:
         V = amen_solve(A, b, guess, eps, nswp=20, verb=0, rmax=chi,
                        local_prec="c")
