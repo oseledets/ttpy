@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+type: software
+title: 'ttpy: Tensor Train Toolbox in Python'
+authors:
+  - family-names: Oseledets
+    given-names: Ivan
+    orcid: https://orcid.org/0000-0003-2071-2163
+  - name: ttpy contributors
+    website: https://github.com/oseledets/ttpy/graphs/contributors
+version: '1.2.0'
+repository-code: https://github.com/oseledets/ttpy
+url: https://github.com/oseledets/ttpy
+license: MIT
+abstract: >-
+  Tensor Train toolbox for TT/QTT decompositions, cross approximation, and AMEn
+  solvers, implemented in pure Python with NumPy.
+keywords:
+  - tensor train
+  - low-rank
+  - cross approximation
+  - AMEn
+  - TT
+  - QTT
