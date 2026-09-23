@@ -385,6 +385,16 @@ other people's methods and codes:
 Every example that reproduces a published experiment names its paper in its
 docstring, with section and table numbers.
 
+## Citation
+
+If you use `ttpy` in your research, please cite the software using
+[CITATION.cff](CITATION.cff). The citation credits Ivan Oseledets, the original
+author, and the [ttpy contributors][contributors] collectively. Individual
+contributor credits and references for the algorithms are listed in [Origins
+and credits](#origins-and-credits).
+
+[contributors]: (https://github.com/oseledets/ttpy/graphs/contributors)
+
 ## License
 
 MIT, as before.
